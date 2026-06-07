@@ -44,6 +44,8 @@ models/
 weights/
 checkpoints/
 outputs/runs/
+ml/runs/
+ml/artifacts/pretrained/
 
 # Agent/tooling state
 .omc/
@@ -53,6 +55,7 @@ outputs/runs/
 
 # Skill eval run outputs (local benchmark artifacts, not source)
 .claude/skills/*/evals/runloop-results/
+.agents/skills/*/evals/runloop-results/
 
 # Private/large video assets (kept local, NEVER pushed)
 # Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
