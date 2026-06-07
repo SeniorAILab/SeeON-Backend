@@ -6,13 +6,21 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Node / TypeScript
+# Node / TypeScript (pnpm workspace: front + backend)
 node_modules/
 dist/
 build/
 *.tsbuildinfo
 .npm/
 .pnpm-store/
+coverage/
+
+# Next.js (front)
+front/.next/
+front/out/
+.turbo/
+
+# NestJS (backend) build output is covered by dist/ above
 
 # Env / secrets
 .env
@@ -41,11 +49,14 @@ outputs/runs/
 .omc/
 .omo/
 .omx/
+.claude/scheduled_tasks.lock
 
 # Skill eval run outputs (local benchmark artifacts, not source)
 .claude/skills/*/evals/runloop-results/
 
 # Private/large video assets (kept local, NEVER pushed)
+# Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
+ml/data/
 assets/
 # extra safety net: block raw media anywhere in the tree
 *.mp4

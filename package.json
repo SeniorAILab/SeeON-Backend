@@ -1,0 +1,25 @@
+{
+  "name": "eldercare-fall-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fall-detection platform monorepo: orchestration layer only. Dependency locks live per ecosystem (pnpm: front/backend, uv: ml).",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev:front": "pnpm --filter front dev",
+    "dev:backend": "pnpm --filter backend start:dev",
+    "dev:ml": "uv run --directory ml uvicorn serving.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:demo": "uv run --directory ml --group demo streamlit run demo/app.py",
+    "build:front": "pnpm --filter front build",
+    "build:backend": "pnpm --filter backend build",
+    "typecheck": "pnpm --filter front exec tsc --noEmit && pnpm --filter backend exec tsc --noEmit",
+    "lint": "pnpm -r lint && uv run --directory ml ruff check .",
+    "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "prisma:generate": "pnpm --filter backend exec prisma generate",
+    "prisma:migrate": "pnpm --filter backend exec prisma migrate dev"
+  }
+}
