@@ -1,0 +1,8 @@
+packages:
+  - front
+  - backend
+
+# Native deps create-next-app prefers to use prebuilt binaries for (skip build step).
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
