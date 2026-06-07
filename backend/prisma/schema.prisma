@@ -1,0 +1,29 @@
+// Prisma schema — Postgres everywhere (dev/prod differ only by DATABASE_URL).
+// NOTE: Prisma bakes `provider` into the schema AND migrations; engine is NOT
+// runtime-swappable (unlike Hibernate dialects). Keep provider = postgresql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Domain models go here (deferred for PoC) ──────────────────────────────
+// Backend owns product-level decisions (alert policy, dedup, webhook).
+// ML only returns predictions. Example shape for later:
+//
+// model AnalysisJob {
+//   id        String   @id @default(cuid())
+//   status    String
+//   createdAt DateTime @default(now())
+// }
+//
+// model Prediction {
+//   id              String   @id @default(cuid())
+//   fallProbability Float
+//   window          Json
+//   createdAt       DateTime @default(now())
+// }
