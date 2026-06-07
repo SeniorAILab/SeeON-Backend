@@ -6,11 +6,35 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
 # macOS/local editor noise
 .DS_Store
 
-# Downloaded local model weights and generated runtime artifacts
+# ML model weights / checkpoints (never commit large weights)
+*.pt
+*.pth
+*.onnx
+*.pte
+*.tflite
+*.safetensors
+*.ckpt
+*.h5
 yolo11n-pose.pt
+models/
+weights/
+checkpoints/
 outputs/runs/
 
 # Agent/tooling state
@@ -18,5 +42,13 @@ outputs/runs/
 .omo/
 .omx/
 
-# Private/large video assets (kept local, not pushed)
+# Skill eval run outputs (local benchmark artifacts, not source)
+.claude/skills/*/evals/runloop-results/
+
+# Private/large video assets (kept local, NEVER pushed)
 assets/
+# extra safety net: block raw media anywhere in the tree
+*.mp4
+*.mov
+*.avi
+*.mkv
