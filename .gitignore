@@ -44,6 +44,8 @@ models/
 weights/
 checkpoints/
 outputs/runs/
+ml/runs/
+ml/artifacts/pretrained/
 
 # Agent/tooling state
 .omc/
@@ -53,11 +55,16 @@ outputs/runs/
 
 # Skill eval run outputs (local benchmark artifacts, not source)
 .claude/skills/*/evals/runloop-results/
+.agents/skills/*/evals/runloop-results/
 
 # Private/large video assets (kept local, NEVER pushed)
 # Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
 ml/data/
 assets/
+# Throwaway experiment scratch (pose-probe weights + annotated frames derived
+# from private footage). Local-only, NEVER pushed.
+ml/.scratch/
+.scratch/
 # extra safety net: block raw media anywhere in the tree
 *.mp4
 *.mov
