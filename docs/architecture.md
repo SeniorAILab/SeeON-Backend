@@ -110,7 +110,7 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --re
 [PostgreSQL]  +  [outbound webhook / Kakao alert]
 ```
 
-The PoC placeholder (`serving/model.py`) returns `min(1.0, len(window) / 100.0)` so the full path is exercisable without trained weights. Replace `FallDetector.predict` with real YOLO11-pose keypoint inference when weights are ready.
+The PoC placeholder (`serving/model.py`) returns `min(1.0, len(window) / 100.0)` so the full path is exercisable without trained weights. Replace `FallDetector.predict` with real YOLO26-pose keypoint inference when weights are ready (framework choice per [ADR-005](decisions/ADR-005-yolo26-pose-and-module-seam.md)).
 
 The Streamlit demo (`ml/demo/app.py`) exercises this same path locally (uploads video → constructs a dummy window → calls `model.predict` → displays probability) without going through the backend. It is a **developer tool**, not the product frontend.
 
@@ -205,5 +205,6 @@ Lint philosophy: basics only — ESLint defaults for TS, ruff rule sets E/F/I/UP
 | [ADR-002 — PostgreSQL everywhere](decisions/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma's provider-lock problem with SQLite↔Postgres migration divergence |
 | [ADR-003 — ML serving/training lifecycle split](decisions/ADR-003-ml-serving-training-split.md) | Serving (online, FastAPI) and training (batch, deferred) share one uv project but have distinct entry points and responsibility boundaries |
 | [ADR-004 — Relocate video data from assets/ to ml/data/](decisions/ADR-004-relocate-video-data-to-ml-data.md) | Video assets moved from `assets/` to `ml/data/raw` and `ml/data/processed`; ML owns its training data |
+| [ADR-005 — YOLO26-pose stack + two-seam module architecture](decisions/ADR-005-yolo26-pose-and-module-seam.md) | Framework moves MediaPipe→Ultralytics YOLO26-pose (domain-fit **partially verified** 2026-06-08: pose locks precisely where a person is detected, but bedridden ceiling top-down views are an out-of-distribution detection-miss → scale-up then domain fine-tuning); a `FrameSource` stream-seam unifies file + live stream and a `ModelModule.predict(frame)→DetectionResult` model-seam makes models pluggable. Complements ADR-003, does not supersede it |
 
 > Rationale for each decision lives in the ADR files above, not repeated here.

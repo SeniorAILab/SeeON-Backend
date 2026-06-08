@@ -61,6 +61,10 @@ ml/artifacts/pretrained/
 # Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
 ml/data/
 assets/
+# Throwaway experiment scratch (pose-probe weights + annotated frames derived
+# from private footage). Local-only, NEVER pushed.
+ml/.scratch/
+.scratch/
 # extra safety net: block raw media anywhere in the tree
 *.mp4
 *.mov
