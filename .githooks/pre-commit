@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# pre-commit: assert not on a protected branch; warn if behind upstream.
+# Zero inline logic — all enforcement lives in scripts/git-guard/.
+set -eu
+root=$(git rev-parse --show-toplevel)
+"$root/scripts/git-guard/assert-not-main.sh"
+"$root/scripts/git-guard/check-freshness.sh" warn
