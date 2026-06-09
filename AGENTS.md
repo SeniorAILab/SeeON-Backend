@@ -8,6 +8,7 @@
 ```
 .
 ├── docs/
+│   ├── research/            # Fact collection — what I found (sources, comparisons), pre-decision
 │   ├── exec-plan/           # All work-scoped plans (active + archive)
 │   │   ├── active/{slug}/   #   spec.md + plan.md while work is in progress
 │   │   └── archive/{slug}/  #   same folder after done / discarded / superseded
@@ -25,13 +26,19 @@
 
 ## Artifact Ontology
 
-Three artifact types with non-overlapping responsibilities:
+Four artifact types with non-overlapping responsibilities:
 
 | Artifact | Question answered | Lifespan | Author | Canonical location |
 |----------|------------------|----------|--------|--------------------|
+| **research** | *What did I find* — facts, sources, comparisons (pre-decision) | Topic-scoped; superseded as evidence evolves | deep-research / research passes | `docs/research/{slug}.md` |
 | **spec** | *What* is this work / are requirements clear? | Work-scoped, one-shot | deep-interview skill | `docs/exec-plan/active/{slug}/spec.md` |
 | **plan** | *How* to implement (steps, files, order) | Work-scoped, body immutable; lifecycle = folder position | omc-plan / omo / omx | `docs/exec-plan/active/{slug}/plan.md` |
 | **ADR** | One expensive-to-reverse *cross-cutting* decision that constrains all future plans | Work-independent, permanent (superseded only, never deleted) | documentation-and-adrs | `docs/decisions/ADR-NNN-*.md` |
+
+**The decision pipeline:** `research` (facts I found) → `ADR` (decision I made) → `plan` (implementation I built).
+Research collects evidence; it does **not** decide. A decision distilled from research is an **ADR**; how to
+build that decision is a **plan**. Never let a research doc assert a decision — it presents options and findings,
+the human (or a later ADR) chooses.
 
 **Key principle:** plan != ADR. A plan is archived when its work ends. Any expensive-to-reverse
 cross-cutting choice made inside a plan is **distilled** into a new ADR in `docs/decisions/` —
@@ -109,6 +116,7 @@ distill  -->  docs/decisions/ADR-NNN-{topic}.md   (ADRs are never deleted)
 
 | Store | Role | Git canonical? |
 |-------|------|---------------|
+| `docs/research/` | Fact collection — findings, sources, comparisons (pre-decision) | Yes |
 | `docs/exec-plan/active/{slug}/` | In-progress spec + plan | Yes |
 | `docs/exec-plan/archive/{slug}/` | Completed / discarded spec + plan | Yes |
 | `docs/decisions/` | ADRs (permanent) | Yes |
