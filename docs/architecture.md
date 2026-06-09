@@ -42,12 +42,18 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │   └── app.py                  ← Streamlit ML-demo (not the product UI)
 │   ├── util/                       ← shared, demo-agnostic helpers (ADR-006)
 │   │   └── frame_source.py         ← Frame / FrameSource / VideoFileSource (stream intake)
+│   ├── weights/                    ← upstream pose-weight cache (ADR-007; gitignored, re-downloadable)
+│   │   └── yolo26{n,s,m}-pose.pt   ← Ultralytics auto-download target (never the ml/ root)
 │   ├── artifacts/
-│   │   └── fall-detector/0.1.0/
-│   │       └── metadata.json       ← versioned artifact descriptor; model.pt gitignored
-│   └── data/
-│       ├── raw/                    ← source videos (gitignored; relocated from assets/)
-│       └── processed/              ← cropped/renamed clips (gitignored)
+│   │   ├── fall-detector/0.1.0/
+│   │   │   └── metadata.json       ← versioned artifact descriptor; model.pt gitignored
+│   │   └── pretrained/             ← curated comparison checkpoints (ADR-005; gitignored)
+│   └── data/                       ← ml/data/ is gitignored as a whole (ADR-004 invariant)
+│       ├── raw/                    ← INPUT: source videos (relocated from assets/) ─┐ ADR-004
+│       ├── processed/              ← INPUT: cropped/renamed clips                    │ (input-role)
+│       ├── uploads/                ← INPUT: demo-uploaded clips                     ─┘
+│       ├── annotated/              ← OUTPUT: rendered overlay mp4s ────────┐ ADR-007
+│       └── eval/ (reserved)        ← OUTPUT: future eval writers           ─┘ (derived-role)
 │
 └── docs/
     ├── architecture.md             ← this file
@@ -210,5 +216,6 @@ Lint philosophy: basics only — ESLint defaults for TS, ruff rule sets E/F/I/UP
 | [ADR-004 — Relocate video data from assets/ to ml/data/](decisions/ADR-004-relocate-video-data-to-ml-data.md) | Video assets moved from `assets/` to `ml/data/raw` and `ml/data/processed`; ML owns its training data |
 | [ADR-005 — YOLO26-pose stack + two-seam module architecture](decisions/ADR-005-yolo26-pose-and-module-seam.md) | Framework moves MediaPipe→Ultralytics YOLO26-pose (domain-fit **partially verified** 2026-06-08: pose locks precisely where a person is detected, but bedridden ceiling top-down views are an out-of-distribution detection-miss → scale-up then domain fine-tuning); a `FrameSource` stream-seam unifies file + live stream and a `ModelModule.predict(frame)→DetectionResult` model-seam makes models pluggable. Complements ADR-003, does not supersede it |
 | [ADR-006 — Frame-source intake in `ml/util/`](decisions/ADR-006-frame-source-intake-in-ml-util.md) | The stream-seam intake (`Frame`/`FrameSource`/`VideoFileSource`) moves to `ml/util/` so serving/realtime can reuse one frame-intake without depending on `demo/` (strict `demo → util` direction, guard-tested). Model-seam, playback/seek, and overlay stay in `demo/` (YAGNI). References ADR-005, complements ADR-003 |
+| [ADR-007 — `ml/` local filesystem layout](decisions/ADR-007-ml-local-filesystem-layout.md) | Upstream pose weights cache to `ml/weights/` (ephemeral, re-downloadable) instead of the project root; generated outputs live under `ml/data/` output-role subdirs (`annotated/`, reserved `eval/`). MECE vs ADR-003/004/005/006 via permanence (cache vs curated checkpoint) and data-role-by-subdir (input vs derived). Complements ADR-004 |
 
 > Rationale for each decision lives in the ADR files above, not repeated here.
