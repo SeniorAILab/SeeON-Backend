@@ -12,6 +12,7 @@
 │   │   ├── active/{slug}/   #   spec.md + plan.md while work is in progress
 │   │   └── archive/{slug}/  #   same folder after done / discarded / superseded
 │   ├── decisions/           # Cross-cutting ADRs (ADR-001..N, permanent, never deleted)
+│   ├── rules/               # Standing conventions (e.g. streamlit-demo.md); ADRs must be MECE
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
@@ -111,6 +112,7 @@ distill  -->  docs/decisions/ADR-NNN-{topic}.md   (ADRs are never deleted)
 | `docs/exec-plan/active/{slug}/` | In-progress spec + plan | Yes |
 | `docs/exec-plan/archive/{slug}/` | Completed / discarded spec + plan | Yes |
 | `docs/decisions/` | ADRs (permanent) | Yes |
+| `docs/rules/` | Standing conventions (ongoing constraints, not work-scoped) | Yes |
 | `.omc/specs/` | deep-interview scratch output | No — scratch only |
 | `.omc/plans/` | omc tool scratch / drafts | No — scratch only |
 | `.omo/plans/` | omo tool scratch / drafts | No — scratch only |
