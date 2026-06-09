@@ -39,12 +39,9 @@ front/out/
 *.safetensors
 *.ckpt
 *.h5
-yolo11n-pose.pt
 models/
 weights/
 checkpoints/
-outputs/runs/
-ml/runs/
 ml/artifacts/pretrained/
 
 # Agent/tooling state
