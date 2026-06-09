@@ -44,6 +44,11 @@ weights/
 checkpoints/
 ml/artifacts/pretrained/
 
+# ...but the training source package is code, not weights — keep it tracked.
+# (Weight files inside it are still caught by the *.pt/*.pth rules above.)
+!ml/training/models/
+!ml/training/models/*.py
+
 # Agent/tooling state
 .omc/
 .omo/
