@@ -15,6 +15,9 @@
 │   ├── rules/               # Standing conventions (e.g. streamlit-demo.md); ADRs must be MECE
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
+├── .githooks/               # committed git hooks; activated by core.hooksPath
+├── scripts/
+│   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, wt)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
 ├── .omo/                    # omo scratch (plans/) — not git canonical
 ├── .omx/                    # omx scratch (plans/) — not git canonical
@@ -165,6 +168,14 @@ Examples:
 ### Skill mirrors
 `.claude/skills/`, `.agents/skills/`, and `.codex/skills/` carry the same skill set.
 `.codex/skills/` is symlinked to `.agents/skills/`. Do not diverge content between mirrors.
+
+### Worktree workflow
+Every task must be developed on a dedicated worktree off a `<type>/<issue#>-<slug>` branch.
+Use `git wt <issue#>` — never branch directly from `main` or hand-roll `git worktree add`.
+The `git wt` alias is registered by `scripts/git-guard/setup-hooks.sh` (run once per clone).
+
+Standing rule: `docs/rules/worktree-workflow.md`.
+Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | DEPRECATED)`. Never delete. When a decision

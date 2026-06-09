@@ -49,6 +49,7 @@ ml/artifacts/pretrained/
 .omo/
 .omx/
 .claude/scheduled_tasks.lock
+.claude/worktrees/
 
 # Skill eval run outputs (local benchmark artifacts, not source)
 .claude/skills/*/evals/runloop-results/

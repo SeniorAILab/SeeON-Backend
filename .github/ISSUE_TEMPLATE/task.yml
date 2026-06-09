@@ -1,0 +1,39 @@
+name: Task
+description: Standard task template for features, fixes, chores, and docs.
+labels: []
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: >
+        Select the type that best describes this work. This drives the `<type>` prefix in
+        the branch name created by `git wt <issue#>` (see docs/rules/worktree-workflow.md).
+      options:
+        - "feat — new feature or capability"
+        - "fix — bug fix"
+        - "chore — tooling, dependencies, config, CI"
+        - "docs — documentation only"
+        - "refactor — code change, no behavior change"
+        - "test — test-only changes"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be done and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is done? Use a checklist.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
