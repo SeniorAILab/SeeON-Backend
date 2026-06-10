@@ -7,6 +7,10 @@
 #
 # POSIX sh. Sourced, not executed.
 
+# Maximum blob size (bytes) allowed in any commit or push.  5 MB = 5 × 1024 × 1024.
+# Referenced by deny-assets.sh — change the value here and it takes effect everywhere.
+GG_MAX_ASSET_BYTES=5242880
+
 # Colors only on a TTY (keeps hook/CI logs clean).
 if [ -t 2 ]; then
   _GG_RED=$(printf '\033[31m')

@@ -1,7 +1,11 @@
 #!/usr/bin/env sh
-# pre-push: assert not on a protected branch; block push if behind upstream.
+# pre-push: assert not on a protected branch; block push if behind upstream;
+#           deny irreversible asset uploads in outgoing commits.
 # Zero inline logic — all enforcement lives in scripts/git-guard/.
+# Note: check-freshness.sh does not read stdin, so deny-assets.sh receives
+#       the git-provided stdin (local_ref local_sha remote_ref remote_sha lines) intact.
 set -eu
 root=$(git rev-parse --show-toplevel)
 "$root/scripts/git-guard/assert-not-main.sh"
 "$root/scripts/git-guard/check-freshness.sh" block
+"$root/scripts/git-guard/deny-assets.sh" push
