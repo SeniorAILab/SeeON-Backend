@@ -67,7 +67,7 @@ ml/artifacts/fall-detector/
 
 # Private/large video assets (kept local, NEVER pushed)
 # Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
-ml/data/
+ml/data
 assets/
 # Throwaway experiment scratch (pose-probe weights + annotated frames derived
 # from private footage). Local-only, NEVER pushed.
