@@ -28,6 +28,9 @@ pnpm db:up
 
 # 5. Generate Prisma client
 pnpm prisma:generate
+
+# 6. Register git hooks + git wt alias (run once per clone)
+bash scripts/git-guard/setup-hooks.sh
 ```
 
 > Real `.env.*` files (`.env.development`, `.env.production`) are gitignored. Never commit secrets.
@@ -59,7 +62,7 @@ eldercare-fall-ai/
 │   ├── training/   # Batch training pipeline (deferred)
 │   ├── demo/       # Streamlit demo UI
 │   ├── artifacts/  # Versioned model weights: <model>/<version>/
-│   └── data/       # Video dataset — raw/ + processed/ (gitignored)
+│   └── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
 │   └── decisions/        # Architecture Decision Records (ADRs)

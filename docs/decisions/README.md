@@ -6,10 +6,11 @@ An Architecture Decision Record (ADR) captures a significant technical choice ma
 
 ```
 Proposed  →  Accepted  →  Superseded
+                       →  Partially Superseded
                        →  Deprecated
 ```
 
-A decision moves from **Proposed** (drafted, under review) to **Accepted** (ratified and in effect) once the team agrees. If circumstances change and a new decision overrides an existing one, the old ADR is marked **Superseded** (with a reference to its successor) — it is never deleted. Removing an ADR would erase the reasoning trail; supersession preserves it. **Deprecated** is used when a decision is retired without a direct replacement (e.g., a component is removed).
+A decision moves from **Proposed** (drafted, under review) to **Accepted** (ratified and in effect) once the team agrees. If circumstances change and a new decision overrides an existing one, the old ADR is marked **Superseded** (with a reference to its successor) — it is never deleted. Removing an ADR would erase the reasoning trail; supersession preserves it. **Partially Superseded** is used when a later ADR overrides only a subset of an earlier decision's clauses — the ADR remains Accepted for the non-superseded parts. **Deprecated** is used when a decision is retired without a direct replacement (e.g., a component is removed).
 
 > **Rule: never delete, always supersede.** Future readers need the historical chain to understand how the system evolved and why dead-end paths were rejected.
 
