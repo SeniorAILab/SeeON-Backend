@@ -37,23 +37,25 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   ├── serving/
 │   │   ├── main.py                 ← FastAPI app: GET /health, POST /predict
 │   │   └── model.py                ← FallDetector loader (placeholder → real weights later)
-│   ├── training/                   ← batch lifecycle placeholder (deferred)
+│   ├── training/                   ← batch lifecycle; scaffolded; pipeline operational
 │   ├── demo/
 │   │   └── app.py                  ← Streamlit ML-demo (not the product UI)
 │   ├── util/                       ← shared, demo-agnostic helpers (ADR-006)
-│   │   └── frame_source.py         ← Frame / FrameSource / VideoFileSource (stream intake)
+│   │   └── frame_source.py         ← Frame / FrameSource / VideoFileSource / CameraSource (stream intake)
 │   ├── weights/                    ← upstream pose-weight cache (ADR-007; gitignored, re-downloadable)
 │   │   └── yolo26{n,s,m}-pose.pt   ← Ultralytics auto-download target (never the ml/ root)
 │   ├── artifacts/
 │   │   ├── fall-detector/0.1.0/
 │   │   │   └── metadata.json       ← versioned artifact descriptor; model.pt gitignored
 │   │   └── pretrained/             ← curated comparison checkpoints (ADR-005; gitignored)
-│   └── data/                       ← ml/data/ is gitignored as a whole (ADR-004 invariant)
-│       ├── raw/                    ← INPUT: source videos (relocated from assets/) ─┐ ADR-004
-│       ├── processed/              ← INPUT: cropped/renamed clips                    │ (input-role)
-│       ├── uploads/                ← INPUT: demo-uploaded clips                     ─┘
-│       ├── annotated/              ← OUTPUT: rendered overlay mp4s ────────┐ ADR-007
-│       └── eval/ (reserved)        ← OUTPUT: future eval writers           ─┘ (derived-role)
+│   └── data/                       ← ml/data gitignored as a whole (ADR-004 invariant)
+│       ├── {domain}/               ← domain-first layout (ADR-012): nursing-home/, le2i/, …
+│       │   ├── raw/                ← INPUT: source footage (raw is sacred)  ─┐ ADR-012
+│       │   ├── processed/          ← INPUT: lossless processed clips          │ (domain-scoped)
+│       │   ├── poses/              ← INPUT: extracted keypoint caches (.npz)  │
+│       │   └── annotated/          ← OUTPUT: rendered overlay videos         ─┘
+│       ├── uploads/                ← INPUT: demo-uploaded clips (session-scoped; ADR-012)
+│       └── eval/                   ← OUTPUT: cross-domain comparison outputs (ADR-007/012)
 │
 └── docs/
     ├── architecture.md             ← this file
@@ -92,7 +94,7 @@ Independent uv project. Two distinct lifecycles share one project:
 | Lifecycle | Entry | Runtime | Trigger |
 |-----------|-------|---------|---------|
 | **Serving** (online) | `serving/main.py` (FastAPI) | milliseconds | HTTP request from backend |
-| **Training** (batch) | `training/` (deferred) | minutes–hours | manual / scheduled job |
+| **Training** (batch) | `training/` (scaffolded; pipeline operational) | minutes–hours | manual / scheduled job |
 | **Demo** (dev tool) | `demo/app.py` (Streamlit) | interactive | developer |
 
 Serving exposes `GET /health` and `POST /predict`. The `FallDetector` class in `serving/model.py` loads `ml/artifacts/fall-detector/<version>/metadata.json`; `model.pt` weights are gitignored and must be placed manually (or produced by training).
@@ -158,9 +160,10 @@ ml/uv.lock                   ← uv lock; resolved separately from pnpm
 **Why the split?** Node and Python have incompatible package managers. The root `package.json` intentionally carries no `dependencies` or `devDependencies` — it is a script hub only. Running `pnpm install` at root installs only TS workspace packages. Python deps are managed exclusively via `uv sync` inside `ml/`. The two lock files never interact.
 
 **uv dependency groups** (`pyproject.toml`):
-- `dependencies` (default, always installed): `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `numpy>=1.26`
-- `[dependency-groups.demo]`: `streamlit>=1.38` — installed with `--group demo`
-- `[dependency-groups.training]`: empty placeholder; add ultralytics/torch/etc. when training starts
+- `dependencies` (always installed): `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `numpy>=1.26`
+- `[dependency-groups.demo]`: `streamlit>=1.38`, `opencv-python-headless>=4.10`, `ultralytics>=8.3`
+- `[dependency-groups.training]`: `torch>=2.3`, `scikit-learn>=1.5`, `joblib>=1.4`, `tqdm>=4.66`, `ultralytics>=8.3`, `opencv-python-headless>=4.10`
+- `[tool.uv] default-groups = ["demo","test","training"]` — bare `uv sync` installs all groups; slim serving image uses `--no-default-groups`
 
 Lock file locations:
 | Lock file | Path | Ecosystem |
@@ -212,10 +215,17 @@ Lint philosophy: basics only — ESLint defaults for TS, ruff rule sets E/F/I/UP
 |-----|----------|
 | [ADR-001 — Polyglot monorepo / per-ecosystem dependency management](decisions/ADR-001-polyglot-monorepo.md) | Node (pnpm workspace) and Python (uv) managed independently; root package.json is orchestration-only |
 | [ADR-002 — PostgreSQL everywhere](decisions/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma's provider-lock problem with SQLite↔Postgres migration divergence |
-| [ADR-003 — ML serving/training lifecycle split](decisions/ADR-003-ml-serving-training-split.md) | Serving (online, FastAPI) and training (batch, deferred) share one uv project but have distinct entry points and responsibility boundaries |
+| [ADR-003 — ML serving/training lifecycle split](decisions/ADR-003-ml-serving-training-split.md) | Serving (online, FastAPI) and training (batch, pipeline operational) share one uv project but have distinct entry points and responsibility boundaries |
 | [ADR-004 — Relocate video data from assets/ to ml/data/](decisions/ADR-004-relocate-video-data-to-ml-data.md) | Video assets moved from `assets/` to `ml/data/raw` and `ml/data/processed`; ML owns its training data |
 | [ADR-005 — YOLO26-pose stack + two-seam module architecture](decisions/ADR-005-yolo26-pose-and-module-seam.md) | Framework moves MediaPipe→Ultralytics YOLO26-pose (domain-fit **partially verified** 2026-06-08: pose locks precisely where a person is detected, but bedridden ceiling top-down views are an out-of-distribution detection-miss → scale-up then domain fine-tuning); a `FrameSource` stream-seam unifies file + live stream and a `ModelModule.predict(frame)→DetectionResult` model-seam makes models pluggable. Complements ADR-003, does not supersede it |
 | [ADR-006 — Frame-source intake in `ml/util/`](decisions/ADR-006-frame-source-intake-in-ml-util.md) | The stream-seam intake (`Frame`/`FrameSource`/`VideoFileSource`) moves to `ml/util/` so serving/realtime can reuse one frame-intake without depending on `demo/` (strict `demo → util` direction, guard-tested). Model-seam, playback/seek, and overlay stay in `demo/` (YAGNI). References ADR-005, complements ADR-003 |
-| [ADR-007 — `ml/` local filesystem layout](decisions/ADR-007-ml-local-filesystem-layout.md) | Upstream pose weights cache to `ml/weights/` (ephemeral, re-downloadable) instead of the project root; generated outputs live under `ml/data/` output-role subdirs (`annotated/`, reserved `eval/`). MECE vs ADR-003/004/005/006 via permanence (cache vs curated checkpoint) and data-role-by-subdir (input vs derived). Complements ADR-004 |
+| [ADR-007 — `ml/` local filesystem layout](decisions/ADR-007-ml-local-filesystem-layout.md) | Upstream pose weights cache to `ml/weights/` (ephemeral, re-downloadable) instead of the project root; generated outputs live under `ml/data/` output-role subdirs (`annotated/`, `eval/`). MECE vs ADR-003/004/005/006 via permanence (cache vs curated checkpoint) and data-role-by-subdir (input vs derived). Partially superseded by ADR-012 (domain-bound rows). Complements ADR-004 |
+| [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch `<type>/<issue#>-<slug>` → one worktree. POSIX scripts in `scripts/git-guard/` as single source of truth; `core.hooksPath` + `.githooks/` enforces on all actors. `git wt` alias as front door |
+| [ADR-009 — Fall-classification strategy](decisions/ADR-009-fall-classification-strategy.md) | Rule-based bbox geometry failed 0/8 on top-down gold clips. Classifier = learned temporal models (LSTM/Transformer/TCN) over COCO-17 keypoint sequences; public datasets first (Le2i track 2b), VLM-labelling of own footage deferred |
+| [ADR-010 — Real-time per-frame live inference as standard demo mode](decisions/ADR-010-realtime-live-inference-demo-mode.md) | Pre-rendered annotated-video playback replaced by live per-frame inference rendered into `st.empty()` placeholder. Recorded-clip first; camera/RTSP later |
+| [ADR-011 — Live camera intake as second `FrameSource`, separate demo page](decisions/ADR-011-live-camera-intake-and-multipage-demo.md) | `CameraSource` joins `VideoFileSource` in `ml/util/frame_source.py`; live camera on a separate Streamlit multipage page; camera selection = index-probe + thumbnail |
+| [ADR-012 — Domain-first two-tier layout for `ml/data/` + access boundary](decisions/ADR-012-ml-data-domain-first-layout.md) | `ml/data/` partitioned domain-first (`{nursing-home,le2i,…}/{raw,processed,poses,annotated}`); `eval/` and `uploads/` are only top-level non-domain entries. `nursing-home/` operator-only; `FALL_DEMO_MODE=public` fail-safe default |
+| [ADR-013 — Le2i training-pipeline decisions](decisions/ADR-013-le2i-training-pipeline-decisions.md) | Dataset (Le2i over UP-Fall); window T=30/stride=5; positive iff overlap ≥ 0.5; clip-wise split (0.25); operating threshold = Recall ≥ 0.90 persisted to `metadata.json`; gold-clip secondary eval |
+| [ADR-014 — Fail-fast error policy](decisions/ADR-014-fail-fast-error-policy.md) | Code refuses with typed exception when it cannot fulfil its contract; fake fallbacks forbidden in production paths. Enforced by ruff/eslint/tsc/jscpd deny-list (`docs/rules/code-stability.md`) |
 
 > Rationale for each decision lives in the ADR files above, not repeated here.
