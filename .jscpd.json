@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
+  "threshold": 2,
+  "minLines": 8,
+  "minTokens": 70,
+  "reporters": ["console"],
+  "gitignore": true,
+  "ignorePattern": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.next/**",
+    "**/.venv/**",
+    "**/.scratch/**",
+    "**/tests/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "format": ["python", "typescript", "tsx", "javascript"]
+}

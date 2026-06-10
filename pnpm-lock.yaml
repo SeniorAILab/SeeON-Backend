@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      jscpd:
+        specifier: ^5.0.5
+        version: 5.0.5
 
   backend:
     dependencies:
@@ -1939,6 +1943,39 @@ packages:
       typescript:
         optional: true
 
+  cpd-darwin-arm64@5.0.5:
+    resolution: {integrity: sha512-Ebbdu8Pzqbpsf2r+tHcY1S5tx23iSYwUrpYb8eYqh6kFlPlPciHpd6rJNA2KrmsABmgiZt/NDcyIzpXhxElaKw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  cpd-darwin-x64@5.0.5:
+    resolution: {integrity: sha512-7hZ8Rjr06933B/i1A7MSc5KpK47Lj5V7zxKMzd4iSMGchQLZtov9zJnaNOldHGmbkNM40O4cL/r7iJpWtlMxqg==}
+    cpu: [x64]
+    os: [darwin]
+
+  cpd-linux-arm64-gnu@5.0.5:
+    resolution: {integrity: sha512-2w8enNvAZTYq+qT5zn+a8GT0hcUjLa460xl75XWggM4Y/I9f+/hbpP/o7iA4BRxa/bVK7q//KtKSasIidHRDag==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  cpd-linux-x64-gnu@5.0.5:
+    resolution: {integrity: sha512-m3V4s0FvrmFHCexqsjr1YpNr1/x0HKRMxg301SJcDkAm2CHYmpv0hz4JP5i6FnwJLzpJvpCRaESyMJFJzr6atw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  cpd-linux-x64-musl@5.0.5:
+    resolution: {integrity: sha512-8Qvk7otkGNpkc8I0+ti8/KzXqU+0WLNg5Lhxl7FzauG5fDo4dAgsZmjUoSc/nQNvQE7pw5i0Ai7AtQ/QNh+xYw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  cpd-windows-x64-msvc@5.0.5:
+    resolution: {integrity: sha512-dwu4CjxNXilMFXVKpPeBSeDApjqAYMj4Y5j3gNADuN5eNIhy/8wPEsF3gexOVdesExBVJR4q8irF3hnseJWJvg==}
+    cpu: [x64]
+    os: [win32]
+
   create-require@1.1.1:
     resolution: {integrity: sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ==}
 
@@ -2952,6 +2989,11 @@ packages:
 
   js-yaml@4.2.0:
     resolution: {integrity: sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw==}
+    hasBin: true
+
+  jscpd@5.0.5:
+    resolution: {integrity: sha512-efwUuW4Uubf+uQ8z7c3rphFoO4Y1Uo4qtfEcqX945dwyuyaUKYmnFzLoNvW0T3y/0QSzn7iNvQxeqxHT4KMcrw==}
+    engines: {node: '>=18'}
     hasBin: true
 
   jsesc@3.1.0:
@@ -6176,6 +6218,24 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
+  cpd-darwin-arm64@5.0.5:
+    optional: true
+
+  cpd-darwin-x64@5.0.5:
+    optional: true
+
+  cpd-linux-arm64-gnu@5.0.5:
+    optional: true
+
+  cpd-linux-x64-gnu@5.0.5:
+    optional: true
+
+  cpd-linux-x64-musl@5.0.5:
+    optional: true
+
+  cpd-windows-x64-msvc@5.0.5:
+    optional: true
+
   create-require@1.1.1: {}
 
   cross-spawn@7.0.6:
@@ -7553,6 +7613,15 @@ snapshots:
   js-yaml@4.2.0:
     dependencies:
       argparse: 2.0.1
+
+  jscpd@5.0.5:
+    optionalDependencies:
+      cpd-darwin-arm64: 5.0.5
+      cpd-darwin-x64: 5.0.5
+      cpd-linux-arm64-gnu: 5.0.5
+      cpd-linux-x64-gnu: 5.0.5
+      cpd-linux-x64-musl: 5.0.5
+      cpd-windows-x64-msvc: 5.0.5
 
   jsesc@3.1.0: {}
 

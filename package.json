@@ -16,10 +16,14 @@
     "build:backend": "pnpm --filter backend build",
     "typecheck": "pnpm --filter front exec tsc --noEmit && pnpm --filter backend exec tsc --noEmit",
     "lint": "pnpm -r lint && uv run --directory ml ruff check .",
+    "dupcheck": "jscpd ml backend/src front/src",
     "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
     "prisma:migrate": "pnpm --filter backend exec prisma migrate dev"
+  },
+  "devDependencies": {
+    "jscpd": "^5.0.5"
   }
 }
