@@ -88,3 +88,5 @@ ml/.scratch/
 *.mov
 *.avi
 *.mkv
+# Autoresearch-loop runtime heartbeat (rewritten every experiment)
+ml/experiments/loop_status.json
