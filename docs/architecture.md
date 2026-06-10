@@ -42,12 +42,14 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │   └── app.py                  ← Streamlit ML-demo (not the product UI)
 │   ├── util/                       ← shared, demo-agnostic helpers (ADR-006)
 │   │   └── frame_source.py         ← Frame / FrameSource / VideoFileSource / CameraSource (stream intake)
-│   ├── weights/                    ← upstream pose-weight cache (ADR-007; gitignored, re-downloadable)
-│   │   └── yolo26{n,s,m}-pose.pt   ← Ultralytics auto-download target (never the ml/ root)
-│   ├── artifacts/
-│   │   ├── fall-detector/0.1.0/
-│   │   │   └── metadata.json       ← versioned artifact descriptor; model.pt gitignored
-│   │   └── pretrained/             ← curated comparison checkpoints (ADR-005; gitignored)
+│   ├── models/                     ← single model root (ADR-015; gitignored in entirety)
+│   │   ├── pose/                   ← YOLO26-pose weight cache (re-downloadable)
+│   │   │   └── yolo26{n,s,m,l,x}-pose.pt
+│   │   └── fall/                   ← fall-detection models (trained + third-party)
+│   │       ├── random-forest/      ← trained sklearn RF + metadata.json
+│   │       ├── lstm/               ← trained PyTorch LSTM + metadata.json
+│   │       ├── transformer/        ← trained PyTorch Transformer + metadata.json
+│   │       └── pretrained/         ← curated comparison checkpoints (ADR-005)
 │   └── data/                       ← ml/data gitignored as a whole (ADR-004 invariant)
 │       ├── {domain}/               ← domain-first layout (ADR-012): nursing-home/, le2i/, …
 │       │   ├── raw/                ← INPUT: source footage (raw is sacred)  ─┐ ADR-012
@@ -97,7 +99,7 @@ Independent uv project. Two distinct lifecycles share one project:
 | **Training** (batch) | `training/` (scaffolded; pipeline operational) | minutes–hours | manual / scheduled job |
 | **Demo** (dev tool) | `demo/app.py` (Streamlit) | interactive | developer |
 
-Serving exposes `GET /health` and `POST /predict`. The `FallDetector` class in `serving/model.py` loads `ml/artifacts/fall-detector/<version>/metadata.json`; `model.pt` weights are gitignored and must be placed manually (or produced by training).
+Serving exposes `GET /health` and `POST /predict`. The `FallDetector` class in `serving/model.py` loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
 
 Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --reload --host 0.0.0.0 --port 8000`
 
@@ -135,7 +137,7 @@ The Streamlit demo (`ml/demo/app.py`) exercises this same path locally (uploads 
 | Alert threshold policy | **Backend** | Product decision, tuneable without redeploying ML |
 | Deduplication | **Backend** | Requires state (recent events in Postgres) |
 | Webhook dispatch | **Backend** | Credential management, retry logic |
-| Model versioning | **ML** (`artifacts/<name>/<version>/`) | Triton-inspired layout; backend passes version in request if needed |
+| Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR-015); backend passes model_type in request if needed |
 
 ML is intentionally thin: it predicts, backend decides. This boundary is explicit in `ml/serving/main.py`'s module docstring and `ml/demo/app.py`'s info callout.
 
@@ -227,5 +229,6 @@ Lint philosophy: basics only — ESLint defaults for TS, ruff rule sets E/F/I/UP
 | [ADR-012 — Domain-first two-tier layout for `ml/data/` + access boundary](decisions/ADR-012-ml-data-domain-first-layout.md) | `ml/data/` partitioned domain-first (`{nursing-home,le2i,…}/{raw,processed,poses,annotated}`); `eval/` and `uploads/` are only top-level non-domain entries. `nursing-home/` operator-only; `FALL_DEMO_MODE=public` fail-safe default |
 | [ADR-013 — Le2i training-pipeline decisions](decisions/ADR-013-le2i-training-pipeline-decisions.md) | Dataset (Le2i over UP-Fall); window T=30/stride=5; positive iff overlap ≥ 0.5; clip-wise split (0.25); operating threshold = Recall ≥ 0.90 persisted to `metadata.json`; gold-clip secondary eval |
 | [ADR-014 — Fail-fast error policy](decisions/ADR-014-fail-fast-error-policy.md) | Code refuses with typed exception when it cannot fulfil its contract; fake fallbacks forbidden in production paths. Enforced by ruff/eslint/tsc/jscpd deny-list (`docs/rules/code-stability.md`) |
+| [ADR-015 — `ml/models/` single root](decisions/ADR-015-ml-models-single-root.md) | Consolidated `ml/weights/`, `ml/artifacts/fall-detector/`, `ml/artifacts/pretrained/` into a single gitignored `ml/models/` root (`pose/` for YOLO weights, `fall/` for trained + third-party models). `metadata.json` mandate. `rf` → `random-forest`. Partially supersedes ADR-003 §3 and ADR-007 rows 1/2/5 |
 
 > Rationale for each decision lives in the ADR files above, not repeated here.
