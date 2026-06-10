@@ -25,10 +25,14 @@ export default tseslint.config(
     },
   },
   {
+    // Stability deny-list (docs/rules/code-stability.md, ADR-014): errors must
+    // surface, never be swallowed or coerced into defaults.
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/only-throw-error': 'error',
+      '@typescript-eslint/prefer-promise-reject-errors': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
