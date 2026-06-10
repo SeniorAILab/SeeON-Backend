@@ -18,7 +18,15 @@
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/
-│   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, wt)
+│   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
+├── ml/                      # ML uv project (ADR-001, ADR-003)
+│   ├── data/                # domain-first {nursing-home,le2i,…}/{raw,processed,poses} — rules/ml-filesystem-layout.md (ADR-012) · gitignored
+│   ├── models/              # model single root {pose,fall} + metadata.json contract — rules/ml-models.md (ADR-015) · gitignored
+│   ├── demo/                # Streamlit demo — rules/streamlit-demo.md (ADR-010/011)
+│   ├── serving/             # FastAPI inference (ADR-003)
+│   └── training/            # training pipeline (ADR-003, ADR-013)
+├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
+├── front/                   # Next.js dashboard (ADR-001)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
 ├── .omo/                    # omo scratch (plans/) — not git canonical
 ├── .omx/                    # omx scratch (plans/) — not git canonical
