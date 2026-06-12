@@ -48,6 +48,8 @@ checkpoints/
 # RF's model.pkl is not caught by *.pt, and committing metadata.json without
 # weights would make the demo report a model "available" that then fails to load.
 ml/models
+# Run outputs (and the worktree symlink to the main clone's store)
+ml/artifacts
 
 # ...but the training source package is code, not weights — keep it tracked.
 # (Weight files inside it are still caught by the *.pt/*.pth rules above.)
@@ -67,7 +69,16 @@ ml/models
 
 # Private/large video assets (kept local, NEVER pushed)
 # Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
-ml/data
+# Complete chain: only nursing-home-gold.csv is trackable under ml/data.
+# `/ **` content patterns (not bare `ml/data`) so git descends for negations;
+# gold-review/ re-blocked explicitly — CCTV-derived strip images must never
+# become stageable via `git add .`.
+ml/data/**
+!ml/data/eval/
+ml/data/eval/**
+!ml/data/eval/nursing-home-gold.csv
+!ml/data/eval/raw-processed-mapping.csv
+ml/data/eval/gold-review/
 assets/
 # Throwaway experiment scratch (pose-probe weights + annotated frames derived
 # from private footage). Local-only, NEVER pushed.
@@ -78,3 +89,5 @@ ml/.scratch/
 *.mov
 *.avi
 *.mkv
+# Autoresearch-loop runtime heartbeat (rewritten every experiment)
+ml/experiments/loop_status.json
