@@ -91,3 +91,4 @@ ml/.scratch/
 *.mkv
 # Autoresearch-loop runtime heartbeat (rewritten every experiment)
 ml/experiments/loop_status.json
+.gstack/
