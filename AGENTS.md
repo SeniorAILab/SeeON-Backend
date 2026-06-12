@@ -196,3 +196,25 @@ Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | DEPRECATED)`. Never delete. When a decision
 changes, write a new ADR that references and supersedes the old one. See `docs/decisions/README.md`.
+
+## gstack (recommended)
+
+This project uses [gstack](https://github.com/garrytan/gstack) for AI-assisted workflows
+(plan review, code review, QA, release). Team mode: the install is **global**, this repo
+only carries this bootstrap section — no vendored files, no version drift.
+
+Install (once per developer; covers Claude Code and Codex):
+
+```bash
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+cd ~/.claude/skills/gstack && ./setup --team --host auto --prefix --no-plan-tune-hooks
+```
+
+Conventions in this repo:
+- Skills are installed with the `gstack-` prefix (`/gstack-review`, `/gstack-qa`,
+  `/gstack-ship`, `/gstack-office-hours`, `/gstack-investigate`, `/gstack-browse`, …)
+  to avoid collisions with built-in `/review` and omc skills.
+- Use `/gstack-browse` for web browsing in gstack workflows; never `mcp__claude-in-chrome__*` tools.
+- gstack file paths are global: `~/.claude/skills/gstack/...`
+- This section is the single source for all runtimes — Codex reads AGENTS.md natively;
+  `.claude/CLAUDE.md` defers here. Do not duplicate into per-runtime files.
