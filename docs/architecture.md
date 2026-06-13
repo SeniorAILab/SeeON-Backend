@@ -61,7 +61,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │
 └── docs/
     ├── architecture.md             ← this file
-    ├── decisions/                  ← ADRs (see below)
+    ├── decisions/                  ← ADRs by MECE category: {ml,backend,frontend,common}/
     └── rules/                      ← standing conventions (e.g. streamlit-demo.md)
 ```
 
@@ -123,7 +123,7 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --re
 [PostgreSQL]  +  [outbound webhook / Kakao alert]
 ```
 
-The PoC placeholder (`serving/model.py`) returns `min(1.0, len(window) / 100.0)` so the full path is exercisable without trained weights. Replace `FallDetector.predict` with real YOLO26-pose keypoint inference when weights are ready (framework choice per [ADR-005](decisions/ADR-005-yolo26-pose-and-module-seam.md)).
+The PoC placeholder (`serving/model.py`) returns `min(1.0, len(window) / 100.0)` so the full path is exercisable without trained weights. Replace `FallDetector.predict` with real YOLO26-pose keypoint inference when weights are ready (framework choice per [ADR-025](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md)).
 
 The Streamlit demo (`ml/demo/app.py`) exercises this same path locally (uploads video → constructs a dummy window → calls `model.predict` → displays probability) without going through the backend. It is a **developer tool**, not the product frontend.
 
@@ -177,7 +177,7 @@ Lock file locations:
 
 ## Data persistence
 
-PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into the schema and migration files — unlike Hibernate, it does not support runtime dialect switching. Using SQLite in dev and PostgreSQL in prod would require maintaining two migration histories. See [docs/decisions/ADR-002-postgres-everywhere.md](decisions/ADR-002-postgres-everywhere.md) for the full trade-off analysis.
+PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into the schema and migration files — unlike Hibernate, it does not support runtime dialect switching. Using SQLite in dev and PostgreSQL in prod would require maintaining two migration histories. See [ADR-002](decisions/backend/ADR-002-postgres-everywhere.md) for the full trade-off analysis.
 
 | Layer | Technology | Config |
 |-------|-----------|--------|
@@ -213,22 +213,25 @@ Lint philosophy: basics only — ESLint defaults for TS, ruff rule sets E/F/I/UP
 
 ## Key ADRs
 
-| ADR | Decision |
-|-----|----------|
-| [ADR-001 — Polyglot monorepo / per-ecosystem dependency management](decisions/ADR-001-polyglot-monorepo.md) | Node (pnpm workspace) and Python (uv) managed independently; root package.json is orchestration-only |
-| [ADR-002 — PostgreSQL everywhere](decisions/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma's provider-lock problem with SQLite↔Postgres migration divergence |
-| [ADR-003 — ML serving/training lifecycle split](decisions/ADR-003-ml-serving-training-split.md) | Serving (online, FastAPI) and training (batch, pipeline operational) share one uv project but have distinct entry points and responsibility boundaries |
-| [ADR-004 — Relocate video data from assets/ to ml/data/](decisions/ADR-004-relocate-video-data-to-ml-data.md) | Video assets moved from `assets/` to `ml/data/raw` and `ml/data/processed`; ML owns its training data |
-| [ADR-005 — YOLO26-pose stack + two-seam module architecture](decisions/ADR-005-yolo26-pose-and-module-seam.md) | Framework moves MediaPipe→Ultralytics YOLO26-pose (domain-fit **partially verified** 2026-06-08: pose locks precisely where a person is detected, but bedridden ceiling top-down views are an out-of-distribution detection-miss → scale-up then domain fine-tuning); a `FrameSource` stream-seam unifies file + live stream and a `ModelModule.predict(frame)→DetectionResult` model-seam makes models pluggable. Complements ADR-003, does not supersede it |
-| [ADR-006 — Frame-source intake in `ml/util/`](decisions/ADR-006-frame-source-intake-in-ml-util.md) | The stream-seam intake (`Frame`/`FrameSource`/`VideoFileSource`) moves to `ml/util/` so serving/realtime can reuse one frame-intake without depending on `demo/` (strict `demo → util` direction, guard-tested). Model-seam, playback/seek, and overlay stay in `demo/` (YAGNI). References ADR-005, complements ADR-003 |
-| [ADR-007 — `ml/` local filesystem layout](decisions/ADR-007-ml-local-filesystem-layout.md) | Upstream pose weights cache to `ml/weights/` (ephemeral, re-downloadable) instead of the project root; generated outputs live under `ml/data/` output-role subdirs (`annotated/`, `eval/`). MECE vs ADR-003/004/005/006 via permanence (cache vs curated checkpoint) and data-role-by-subdir (input vs derived). Partially superseded by ADR-012 (domain-bound rows). Complements ADR-004 |
-| [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch `<type>/<issue#>-<slug>` → one worktree. POSIX scripts in `scripts/git-guard/` as single source of truth; `core.hooksPath` + `.githooks/` enforces on all actors. `git wt` alias as front door |
-| [ADR-009 — Fall-classification strategy](decisions/ADR-009-fall-classification-strategy.md) | Rule-based bbox geometry failed 0/8 on top-down gold clips. Classifier = learned temporal models (LSTM/Transformer/TCN) over COCO-17 keypoint sequences; public datasets first (Le2i track 2b), VLM-labelling of own footage deferred |
-| [ADR-010 — Real-time per-frame live inference as standard demo mode](decisions/ADR-010-realtime-live-inference-demo-mode.md) | Pre-rendered annotated-video playback replaced by live per-frame inference rendered into `st.empty()` placeholder. Recorded-clip first; camera/RTSP later |
-| [ADR-011 — Live camera intake as second `FrameSource`, separate demo page](decisions/ADR-011-live-camera-intake-and-multipage-demo.md) | `CameraSource` joins `VideoFileSource` in `ml/util/frame_source.py`; live camera on a separate Streamlit multipage page; camera selection = index-probe + thumbnail |
-| [ADR-012 — Domain-first two-tier layout for `ml/data/` + access boundary](decisions/ADR-012-ml-data-domain-first-layout.md) | `ml/data/` partitioned domain-first (`{nursing-home,le2i,…}/{raw,processed,poses,annotated}`); `eval/` and `uploads/` are only top-level non-domain entries. `nursing-home/` operator-only; `FALL_DEMO_MODE=public` fail-safe default |
-| [ADR-013 — Le2i training-pipeline decisions](decisions/ADR-013-le2i-training-pipeline-decisions.md) | Dataset (Le2i over UP-Fall); window T=30/stride=5; positive iff overlap ≥ 0.5; clip-wise split (0.25); operating threshold = Recall ≥ 0.90 persisted to `metadata.json`; gold-clip secondary eval |
-| [ADR-014 — Fail-fast error policy](decisions/ADR-014-fail-fast-error-policy.md) | Code refuses with typed exception when it cannot fulfil its contract; fake fallbacks forbidden in production paths. Enforced by ruff/eslint/tsc/jscpd deny-list (`docs/rules/code-stability.md`) |
-| [ADR-015 — `ml/models/` single root](decisions/ADR-015-ml-models-single-root.md) | Consolidated `ml/weights/`, `ml/artifacts/fall-detector/`, `ml/artifacts/pretrained/` into a single gitignored `ml/models/` root (`pose/` for YOLO weights, `fall/` for trained + third-party models). `metadata.json` mandate. `rf` → `random-forest`. Partially supersedes ADR-003 §3 and ADR-007 rows 1/2/5 |
+ADRs are organized by active MECE category under `docs/decisions/{ml,backend,frontend,common}/`. The exhaustive index, coverage matrix, supersession checks, and no-omission audit live in [`docs/decisions/README.md`](decisions/README.md); this section keeps only architecture-level cross-links.
 
-> Rationale for each decision lives in the ADR files above, not repeated here.
+| Concern | Current authority | Architecture note |
+|-----|----------|----------|
+| Repo topology and dependency ownership | [ADR-001 — Polyglot monorepo / per-ecosystem dependency management](decisions/common/ADR-001-polyglot-monorepo.md) | Node (pnpm workspace) and Python (uv) are managed independently; root `package.json` is orchestration-only. |
+| Backend persistence | [ADR-002 — PostgreSQL everywhere](decisions/backend/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma provider-lock and SQLite↔Postgres migration divergence. |
+| ML serving/training lifecycle | [ADR-022 — ML serving and training lifecycle boundary](decisions/ml/ADR-022-ml-serving-training-lifecycle.md) | Active lifecycle authority extracted from historical [ADR-003](decisions/ml/ADR-003-ml-serving-training-split.md). |
+| ML ↔ backend prediction boundary | [ADR-023 — ML prediction boundary and backend product-policy ownership](decisions/common/ADR-023-ml-backend-prediction-boundary.md) | ML returns signals; backend owns alert policy, persistence, deduplication, rate limits, and side effects. |
+| ML demo vs product frontend boundary | [ADR-024 — ML demo surface is not the product frontend](decisions/common/ADR-024-ml-demo-product-surface-boundary.md) | `ml/demo/` is an ML observation harness; `front/` is the product UI. |
+| ML data layout and access | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md) and [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) | ADR-012 owns domain-first ML data layout; ADR-028 owns the cross-domain public/private demo-access boundary. Historical [ADR-004](decisions/ml/ADR-004-relocate-video-data-to-ml-data.md) remains source context. |
+| Pose framework | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md) | Active framework authority extracted from historical [ADR-005](decisions/ml/ADR-005-yolo26-pose-and-module-seam.md). |
+| Frame and model seams | [ADR-026 — Frame and model seam architecture](decisions/ml/ADR-026-frame-model-seam-architecture.md) and [ADR-006 — Frame-source intake in `ml/util/`](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) | `FrameSource` intake is shared from `ml/util/`; stream/model seams keep demo, serving, and models pluggable without reversing dependencies. |
+| Inference output and baselines | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md) | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from ADR-005. |
+| ML local generated/model paths | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md) | Current model and data roots supersede historical [ADR-007](decisions/ml/ADR-007-ml-local-filesystem-layout.md). |
+| Issue/worktree enforcement | [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/common/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch/worktree through `git wt`; guard scripts are shared enforcement source. |
+| Fall-classification strategy | [ADR-009 — Fall-classification strategy](decisions/ml/ADR-009-fall-classification-strategy.md) | Classifier is learned temporal models over COCO-17 keypoint sequences; public datasets first. |
+| Real-time demo mode | [ADR-010 — Real-time per-frame live inference demo mode](decisions/ml/ADR-010-realtime-live-inference-demo-mode.md) and [ADR-011 — Live camera intake as second `FrameSource`](decisions/ml/ADR-011-live-camera-intake-and-multipage-demo.md) | Recorded clip and camera demo modes share frame-source concepts while keeping pages separate. |
+| Training and evaluation gates | [ADR-013 — Le2i training-pipeline decisions](decisions/ml/ADR-013-le2i-training-pipeline-decisions.md), [ADR-017 — Fall-model adoption criteria](decisions/ml/ADR-017-fall-model-adoption-criteria.md), and [ADR-019 — Nursing-home gold dataset construction methodology](decisions/ml/ADR-019-nh-gold-dataset-construction.md) | Training/evaluation choices remain ML-local; backend/frontend consume accepted model behavior rather than training internals. |
+| Fail-fast and enforcement timing | [ADR-014 — Fail-fast error policy](decisions/common/ADR-014-fail-fast-error-policy.md) and [ADR-016 — Enforcement timing principle](decisions/common/ADR-016-enforcement-timing-principle.md) | Cross-runtime refusal policy and enforcement timing remain strict common decisions. |
+| Dataset custody, autoresearch, and demo deployment | [ADR-018 — Cross-machine dataset custody and sync](decisions/ml/ADR-018-cross-machine-dataset-custody.md), [ADR-020 — Autoresearch loop method](decisions/ml/ADR-020-autoresearch-loop-method.md), and [ADR-021 — Demo cloud deployment deferred](decisions/ml/ADR-021-demo-cloud-deployment-deferred.md) | ML operational decisions stay ML-local unless they impose constraints on product backend/frontend surfaces. |
+
+> Rationale for each decision lives in the ADR files. The coverage matrix is the authority for MECE placement and preservation checks.
