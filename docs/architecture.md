@@ -49,15 +49,15 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │       ├── random-forest/      ← trained sklearn RF + metadata.json
 │   │       ├── lstm/               ← trained PyTorch LSTM + metadata.json
 │   │       ├── transformer/        ← trained PyTorch Transformer + metadata.json
-│   │       └── pretrained/         ← curated comparison checkpoints (ADR-005)
-│   └── data/                       ← ml/data gitignored as a whole (ADR-004 invariant)
+│   │       └── pretrained/         ← curated comparison checkpoints (ADR-015/027)
+│   └── data/                       ← ml/data gitignored as a whole (ADR-012 invariant)
 │       ├── {domain}/               ← domain-first layout (ADR-012): nursing-home/, le2i/, …
 │       │   ├── raw/                ← INPUT: source footage (raw is sacred)  ─┐ ADR-012
 │       │   ├── processed/          ← INPUT: lossless processed clips          │ (domain-scoped)
 │       │   ├── poses/              ← INPUT: extracted keypoint caches (.npz)  │
 │       │   └── annotated/          ← OUTPUT: rendered overlay videos         ─┘
 │       ├── uploads/                ← INPUT: demo-uploaded clips (session-scoped; ADR-012)
-│       └── eval/                   ← OUTPUT: cross-domain comparison outputs (ADR-007/012)
+│       └── eval/                   ← OUTPUT: cross-domain comparison outputs (ADR-012)
 │
 └── docs/
     ├── architecture.md             ← this file
@@ -219,14 +219,14 @@ ADRs are organized by active MECE category under `docs/decisions/{ml,backend,fro
 |-----|----------|----------|
 | Repo topology and dependency ownership | [ADR-001 — Polyglot monorepo / per-ecosystem dependency management](decisions/common/ADR-001-polyglot-monorepo.md) | Node (pnpm workspace) and Python (uv) are managed independently; root `package.json` is orchestration-only. |
 | Backend persistence | [ADR-002 — PostgreSQL everywhere](decisions/backend/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma provider-lock and SQLite↔Postgres migration divergence. |
-| ML serving/training lifecycle | [ADR-022 — ML serving and training lifecycle boundary](decisions/ml/ADR-022-ml-serving-training-lifecycle.md) | Active lifecycle authority extracted from historical [ADR-003](decisions/ml/ADR-003-ml-serving-training-split.md). |
+| ML serving/training lifecycle | [ADR-022 — ML serving and training lifecycle boundary](decisions/ml/ADR-022-ml-serving-training-lifecycle.md) | Active lifecycle authority extracted from retired source ADR-003. |
 | ML ↔ backend prediction boundary | [ADR-023 — ML prediction boundary and backend product-policy ownership](decisions/common/ADR-023-ml-backend-prediction-boundary.md) | ML returns signals; backend owns alert policy, persistence, deduplication, rate limits, and side effects. |
 | ML demo vs product frontend boundary | [ADR-024 — ML demo surface is not the product frontend](decisions/common/ADR-024-ml-demo-product-surface-boundary.md) | `ml/demo/` is an ML observation harness; `front/` is the product UI. |
-| ML data layout and access | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md) and [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) | ADR-012 owns domain-first ML data layout; ADR-028 owns the cross-domain public/private demo-access boundary. Historical [ADR-004](decisions/ml/ADR-004-relocate-video-data-to-ml-data.md) remains source context. |
-| Pose framework | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md) | Active framework authority extracted from historical [ADR-005](decisions/ml/ADR-005-yolo26-pose-and-module-seam.md). |
+| ML data layout and access | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md) and [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) | ADR-012 owns domain-first ML data layout; ADR-028 owns the cross-domain public/private demo-access boundary. Retired source ADR-004 is mapped in the README coverage matrix. |
+| Pose framework | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md) | Active framework authority extracted from retired source ADR-005. |
 | Frame and model seams | [ADR-026 — Frame and model seam architecture](decisions/ml/ADR-026-frame-model-seam-architecture.md) and [ADR-006 — Frame-source intake in `ml/util/`](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) | `FrameSource` intake is shared from `ml/util/`; stream/model seams keep demo, serving, and models pluggable without reversing dependencies. |
-| Inference output and baselines | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md) | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from ADR-005. |
-| ML local generated/model paths | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md) | Current model and data roots supersede historical [ADR-007](decisions/ml/ADR-007-ml-local-filesystem-layout.md). |
+| Inference output and baselines | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md) | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from retired source ADR-005. |
+| ML local generated/model paths | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md) | Current model and data roots supersede retired source ADR-007. |
 | Issue/worktree enforcement | [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/common/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch/worktree through `git wt`; guard scripts are shared enforcement source. |
 | Fall-classification strategy | [ADR-009 — Fall-classification strategy](decisions/ml/ADR-009-fall-classification-strategy.md) | Classifier is learned temporal models over COCO-17 keypoint sequences; public datasets first. |
 | Real-time demo mode | [ADR-010 — Real-time per-frame live inference demo mode](decisions/ml/ADR-010-realtime-live-inference-demo-mode.md) and [ADR-011 — Live camera intake as second `FrameSource`](decisions/ml/ADR-011-live-camera-intake-and-multipage-demo.md) | Recorded clip and camera demo modes share frame-source concepts while keeping pages separate. |

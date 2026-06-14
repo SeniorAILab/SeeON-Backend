@@ -19,12 +19,12 @@
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/
 │   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
-├── ml/                      # ML uv project (ADR-001, ADR-003)
+├── ml/                      # ML uv project (ADR-001, ADR-022)
 │   ├── data/                # domain-first {nursing-home,le2i,…}/{raw,processed,poses} — rules/ml-filesystem-layout.md (ADR-012) · gitignored
 │   ├── models/              # model single root {pose,fall} + metadata.json contract — rules/ml-models.md (ADR-015) · gitignored
 │   ├── demo/                # Streamlit demo — rules/streamlit-demo.md (ADR-010/011)
-│   ├── serving/             # FastAPI inference (ADR-003)
-│   └── training/            # training pipeline (ADR-003, ADR-013)
+│   ├── serving/             # FastAPI inference lifecycle / ML-backend boundary (ADR-022/023)
+│   └── training/            # training pipeline (ADR-013, lifecycle boundary ADR-022)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
 ├── front/                   # Next.js dashboard (ADR-001)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
@@ -44,7 +44,7 @@ Four artifact types with non-overlapping responsibilities:
 | **research** | *What did I find* — facts, sources, comparisons (pre-decision) | Topic-scoped; superseded as evidence evolves | deep-research / research passes | `docs/research/{slug}.md` |
 | **spec** | *What* is this work / are requirements clear? | Work-scoped, one-shot | deep-interview skill | `docs/exec-plan/active/{slug}/spec.md` |
 | **plan** | *How* to implement (steps, files, order) | Work-scoped, body immutable; lifecycle = folder position | omc-plan / omo / omx | `docs/exec-plan/active/{slug}/plan.md` |
-| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent, permanent (superseded only, never deleted) | documentation-and-adrs | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
+| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; current ADRs persist, while fully superseded non-MECE source bundles may be retired from the visible corpus with coverage-matrix proof and git-history recovery | documentation-and-adrs | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 **The decision pipeline:** `research` (facts I found) → `ADR` (decision I made) → `plan` (implementation I built).
 Research collects evidence; it does **not** decide. A decision distilled from research is an **ADR**; how to
@@ -63,8 +63,8 @@ Plans and ADRs answer different questions with different lifespans. Never confla
 |---|---|---|
 | Question | *How* to implement this specific work | *Why* this expensive-to-reverse choice — and what alternatives were rejected |
 | Scope | One feature / task (work-scoped) | Ecosystem-local (`ml`, `backend`, `frontend`) or strict common if it still constrains multiple domains after attempted split |
-| Lifespan | Archivable when work ends | Permanent — superseded only, never deleted |
-| Body | Immutable after finalize; scope change → new slug | Superseded by a new ADR that references the old one |
+| Lifespan | Archivable when work ends | Permanent as current authority; fully superseded non-MECE source files may be retired only after successor coverage is proven |
+| Body | Immutable after finalize; scope change → new slug | Superseded by successor ADR(s); retired source bodies must remain recoverable from git history and mapped in the coverage matrix |
 | Author | omc-plan / omo / omx agents | documentation-and-adrs skill |
 | Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
@@ -195,8 +195,7 @@ Standing rule: `docs/rules/worktree-workflow.md`.
 Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
 ### ADR lifecycle (cross-reference)
-ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. Never delete. When a decision
-changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. See `docs/decisions/README.md`.
+ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.
 
 ### Provider review lanes
 
