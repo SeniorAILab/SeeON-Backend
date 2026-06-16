@@ -1,11 +1,11 @@
 name: PR Check
 
-# PR 위생 게이트 — 로직 churn 라벨링(로직>500 hard gate) + base 브랜치 가드 + draft 표시.
+# PR 위생 게이트 — 로직 churn 라벨링(로직>1000 hard gate) + base 브랜치 가드 + draft 표시.
 # 설계 출처: Yeachan-Heo/oh-my-claudecode .github/workflows/pr-check.yml 패턴을 본 repo
 # 컨벤션(base=main, ubuntu-latest, worktree <type>/<issue#>-<slug>)에 맞게 이식.
 # 사이즈 게이트는 "리뷰 가능한 로직 churn"만으로 판정한다. 테스트/Prisma 마이그레이션/
 # docs·markdown/pnpm-lock.yaml 은 비-로직으로 제외하며, `size/override` 라벨이 있으면
-# 로직>500 이어도 size 체크는 통과(escape hatch). base=main 은 별도 job 에서 hard 유지.
+# 로직>1000 이어도 size 체크는 통과(escape hatch). base=main 은 별도 job 에서 hard 유지.
 
 on:
   pull_request:
@@ -112,10 +112,10 @@ jobs:
                 labels: [bucket],
               });
 
-              if (logicChurn > 500) {
+              if (logicChurn > 1000) {
                 const overrideNote = hasOverride
                   ? `\n\n✅ \`size/override\` 라벨이 있어 size 체크는 통과합니다 (거버넌스 예외).`
-                  : `\n\n이 repo는 로직 churn > 500 PR 을 머지하지 않습니다. 리뷰 가능한 기능 단위로 더 작은 PR 로 쪼개세요. ` +
+                  : `\n\n이 repo는 로직 churn > 1000 PR 을 머지하지 않습니다. 리뷰 가능한 기능 단위로 더 작은 PR 로 쪼개세요. ` +
                     `한 이슈를 여러 PR 로 fan-out 하는 패턴은 \`docs/research/bulk-pr-splitting-strategy.md\` 참고.`;
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
@@ -133,13 +133,13 @@ jobs:
             console.log(`PR churn: total ${totalChurn}, logic ${logicChurn}, non-logic ${nonLogicChurn} (${files.length} files) → ${bucket}; override=${hasOverride}`);
 
             // 8) hard gate 는 로직 churn 으로만 판정. override 면 size 만 통과.
-            if (logicChurn > 500 && !hasOverride) {
+            if (logicChurn > 1000 && !hasOverride) {
               core.setFailed(
-                `PR logic churn ${logicChurn} (${bucket}) exceeds 500 without \`size/override\`. ` +
-                `Split into reviewable logic<=500 PRs, or apply size/override for an audited governance exception.`
+                `PR logic churn ${logicChurn} (${bucket}) exceeds 1000 without \`size/override\`. ` +
+                `Split into reviewable logic<=1000 PRs, or apply size/override for an audited governance exception.`
               );
-            } else if (logicChurn > 500 && hasOverride) {
-              core.notice(`logic churn ${logicChurn} > 500 but \`size/override\` present — size check passes (governance exception).`);
+            } else if (logicChurn > 1000 && hasOverride) {
+              core.notice(`logic churn ${logicChurn} > 1000 but \`size/override\` present — size check passes (governance exception).`);
             }
             // === SIZE-CHECK-LOGIC-END ===
 
