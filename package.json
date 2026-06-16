@@ -21,7 +21,7 @@
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
-    "prisma:migrate": "pnpm --filter backend exec prisma migrate dev"
+    "prisma:migrate": "pnpm --filter backend run prisma:migrate"
   },
   "devDependencies": {
     "jscpd": "^5.0.5"
