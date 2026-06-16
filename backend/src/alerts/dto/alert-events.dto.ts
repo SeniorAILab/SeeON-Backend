@@ -1,0 +1,52 @@
+export const AlertEventTypes = {
+  detectionLost: 'detection-lost',
+  fall: 'fall',
+} as const;
+
+export type AlertEventType =
+  (typeof AlertEventTypes)[keyof typeof AlertEventTypes];
+
+export type AlertEventIngressDto = {
+  readonly type: AlertEventType;
+  readonly source_id: string;
+  readonly external_event_id: string;
+  readonly detected_at: string;
+  readonly confidence?: number;
+};
+
+export type PredictFallRequestDto = {
+  readonly window: readonly (readonly number[])[];
+};
+
+export type PredictFallResponseDto = {
+  readonly fall_probability: number;
+  readonly operating_threshold: number;
+  readonly is_fall: boolean;
+};
+
+export type PredictionAlertInputDto = {
+  readonly source_id: string;
+  readonly external_event_id: string;
+  readonly detected_at: string;
+  readonly prediction: PredictFallResponseDto;
+};
+
+export type PredictionWindowAlertInputDto = {
+  readonly source_id: string;
+  readonly external_event_id: string;
+  readonly detected_at: string;
+  readonly request: PredictFallRequestDto;
+};
+
+export type DeliveryStatusDto =
+  | 'pending'
+  | 'sent'
+  | 'retry_scheduled'
+  | 'terminal_failed';
+
+export type AlertEventResponseDto = {
+  readonly event_id: string;
+  readonly duplicate: boolean;
+  readonly delivery_attempt_id?: string;
+  readonly delivery_status?: DeliveryStatusDto;
+};
