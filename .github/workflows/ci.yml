@@ -97,7 +97,7 @@ jobs:
         run: pnpm --filter backend test
 
   frontend:
-    name: Frontend (build + lint)
+    name: Frontend (build + lint + test)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -116,6 +116,8 @@ jobs:
         run: pnpm --filter front build
       - name: Lint
         run: pnpm --filter front lint
+      - name: Test
+        run: pnpm --filter front test
 
   ml:
     name: ML (lint)
