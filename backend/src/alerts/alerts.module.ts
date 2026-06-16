@@ -17,14 +17,17 @@ import {
 } from './services/alert-policy.service.js';
 import { AlertsController } from './alerts.controller.js';
 import { AlertsService } from './alerts.service.js';
+import { AlertWriterService } from './alert-writer.service.js';
 
 /**
- * AlertsModule bounds two cooperating concerns over the same domain:
+ * AlertsModule bounds three cooperating concerns over the same domain:
  *  - #103 ingestion pipeline: AlertEvent outbox + policy + channel/prediction
  *    ports (POST api.alerts/events).
  *  - #105 read-model: dashboard-facing Alert queries + snapshot proxy
- *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by the session/org
- *    boundary from AuthModule.
+ *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by AuthModule.
+ *  - #105 write path: AlertWriterService serializes Alert inserts (alertSeq
+ *    causal order) and fans out live alert/status events for the SSE slice;
+ *    exported for the dashboard SSE transport.
  */
 @Module({
   imports: [ConfigModule, PrismaModule, AuthModule],
@@ -37,7 +40,8 @@ import { AlertsService } from './alerts.service.js';
     { provide: ALERT_CHANNEL_PORT, useClass: KakaoSendToMeChannelAdapter },
     { provide: ALERT_PREDICTION_PORT, useClass: MlServingPredictionAdapter },
     AlertsService,
+    AlertWriterService,
   ],
-  exports: [AlertsService],
+  exports: [AlertsService, AlertWriterService],
 })
 export class AlertsModule {}
