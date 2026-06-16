@@ -12,7 +12,7 @@ Proposed  →  Accepted  →  Superseded
 
 ADRs are the visible current decision corpus, not a landfill for superseded bundles. If a decision changes, write successor ADRs and mark/source-map the old decision. Fully superseded non-MECE source ADR files may be retired from the visible corpus only after this README maps every active clause to successors, live-referenced content is preserved in successor ADRs, and the exact original body remains recoverable from git history.
 
-Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. Pending serving-predict ADRs are ADR-029 and ADR-030. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039.
+Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. Pending serving-predict ADRs are ADR-029 and ADR-030. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039; PR #167 issue auto-label automation lands common ADR-040.
 ## Category ontology
 
 Active/current-effective ADRs live in exactly one of four top-level categories:
@@ -44,6 +44,7 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 | [ADR-024](./common/ADR-024-ml-demo-product-surface-boundary.md) | ML demo surface is not the product frontend | Accepted | 2026-06-13 | `ml/demo/` is an ML observation harness; `front/` is the product UI. |
 | [ADR-028](./common/ADR-028-demo-access-boundary.md) | Demo access boundary for private data and public uploads | Accepted | 2026-06-13 | Nursing-home data is operator-only; public/external demo access is uploads-only and fail-safe by default. |
 | [ADR-039](./common/ADR-039-pr-size-gate-threshold.md) | PR size hard-gate threshold — logic churn > 1000 | Accepted | 2026-06-16 | Relaxes the `pr-check.yml` hard-fail from logic churn >500 to >1000, keeping it logic-based/hard with `size/override`; markdown/docs/tests/lock stay non-logic and free from the gate (issue #167). |
+| [ADR-040](./common/ADR-040-issue-type-autolabel.md) | Issue Type auto-label — fail-closed mapping to `type:` | Accepted | 2026-06-16 | `issue-auto-label.yml` maps the issue form Type to exactly one `type:` label (fail-closed, no `feat` fallback, preserves non-type labels); closes the `git wt` branch-type gap (issue #167). |
 
 ### Backend
 
