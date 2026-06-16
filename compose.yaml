@@ -1,0 +1,78 @@
+# App services are gated by profiles in compose.override.yaml; db stays profile-free for default local startup.
+# PostgreSQL for dev/prod parity.
+# Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
+# Dev:  docker compose up -d db   (then backend reads .env.development)
+#
+# DB role separation (ADR-A / NR1):
+#   fall     = superuser      → migrations, seed (DIRECT_URL)
+#   fall_app = NOSUPERUSER NOBYPASSRLS → application runtime (DATABASE_URL)
+#
+# First-time setup requires a clean volume so initdb scripts run:
+#   docker compose down -v && docker compose up -d db
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: eldercare-fall-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fall}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall}
+      POSTGRES_DB: ${POSTGRES_DB:-fall_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Init scripts run only on first DB initialization (clean volume required).
+      - ./backend/prisma/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fall} -d ${POSTGRES_DB:-fall_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runner
+    environment:
+      PORT: 8080
+      # Runtime uses the fall_app NOSUPERUSER/NOBYPASSRLS role so RLS is enforced (ADR-A / ADR-032).
+      DATABASE_URL: postgresql://${APP_DB_USER:-fall_app}:${APP_DB_PASSWORD:-fall_app}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
+      # DIRECT_URL keeps the privileged fall superuser for migrations / seed only.
+      DIRECT_URL: postgresql://${POSTGRES_USER:-fall}:${POSTGRES_PASSWORD:-fall}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
+      ML_SERVING_URL: http://ml-serving:8000
+      FRONT_ORIGIN: http://localhost:3000
+      # Auth boot config. KakaoClient validates these at startup; defaults are dev
+      # placeholders so the parity/full stack boots out of the box. Override with
+      # real Kakao credentials and a strong SESSION_JWT_SECRET via the root .env in prod.
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:8080/auth/kakao/callback}
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ml-serving:
+    build:
+      context: .
+      dockerfile: ml/Dockerfile
+      target: runner
+    ports:
+      - "${ML_SERVING_PORT:-8000}:8000"
+
+  front:
+    build:
+      context: .
+      dockerfile: front/Dockerfile
+      target: runner
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      API_INTERNAL_URL: http://backend:8080
+    ports:
+      - "${FRONT_PORT:-3000}:3000"
+
+volumes:
+  pgdata:

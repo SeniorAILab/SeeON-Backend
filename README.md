@@ -13,14 +13,19 @@ An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo.
 
 ## Quick Start
 
+Native hot reload is the default daily development loop. Compose runs PostgreSQL by default; app containers are for parity/prod checks.
+
 ```bash
 # 1. Install JS dependencies (front + backend workspace)
 pnpm install
 
 # 2. Install Python dependencies (ml)
-cd ml && uv sync
+cd ml && uv sync && cd ..
 
-# 3. Copy environment template
+# 3. Copy environment templates
+#    Root .env feeds Docker Compose ${VAR} interpolation; backend/.env.development
+#    is what the native NestJS dev server reads (PORT, DATABASE_URL/DIRECT_URL, auth).
+cp .env.example .env
 cp backend/.env.example backend/.env.development
 
 # 4. Start PostgreSQL via Docker
@@ -29,17 +34,42 @@ pnpm db:up
 # 5. Generate Prisma client
 pnpm prisma:generate
 
-# 6. Register git hooks + git wt alias (run once per clone)
+# 6. Start app services in separate terminals
+pnpm dev:backend  # http://localhost:8080
+pnpm dev:ml       # http://localhost:8000
+pnpm dev:front    # http://localhost:3000
+
+# 7. Register git hooks + git wt alias (run once per clone)
 bash scripts/git-guard/setup-hooks.sh
 ```
 
-> Real `.env.*` files (`.env.development`, `.env.production`) are gitignored. Never commit secrets.
+> Real `.env.*` files (`.env`, `.env.development`, `.env.production`) are gitignored. Never commit secrets.
+
+## Standard ports
+
+| Service | Local URL | Container/service port |
+|---|---|---:|
+| `front` | `http://localhost:3000` | `3000` |
+| `backend` | `http://localhost:8080` | `8080` |
+| `ml-serving` | `http://localhost:8000` | `8000` |
+| `db` | `localhost:5432` | `5432` |
+
+Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, backend uses `http://ml-serving:8000` inside Compose, and a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `NEXT_PUBLIC_*` variables.
+
+For container parity and production-shaped runs:
+
+```bash
+pnpm compose:dev:full  # full app stack with dev targets/profile
+pnpm compose:prod:up   # compose.yaml + compose.prod.yaml, runner targets
+```
+
+On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work.
 
 ## Commands
 
 | Script | What it does |
 |--------|-------------|
-| `pnpm dev:front` | Next.js dev server (`front/`) |
+| `pnpm dev:front` | Next.js dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
 | `pnpm dev:ml` | FastAPI serving on `:8000` via uvicorn (`ml/serving/`) |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
@@ -48,6 +78,8 @@ bash scripts/git-guard/setup-hooks.sh
 | `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
 | `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
+| `pnpm compose:dev:full` | Full container-dev parity stack (`--profile full`) |
+| `pnpm compose:prod:up` | Production-shaped Compose stack (`compose.yaml` + `compose.prod.yaml`) |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 
@@ -66,7 +98,7 @@ eldercare-fall-ai/
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
 │   └── decisions/        # Architecture Decision Records (ADRs)
-└── docker-compose.yml    # PostgreSQL service definition
+└── compose*.yaml    # Compose base/dev override/prod overlay
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for ADRs covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.

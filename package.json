@@ -20,6 +20,10 @@
     "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
+    "compose:up": "docker compose up -d db",
+    "compose:dev:full": "docker compose --profile full up -d --build",
+    "compose:prod:up": "docker compose -f compose.yaml -f compose.prod.yaml up -d --build",
+    "compose:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
     "prisma:migrate": "pnpm --filter backend run prisma:migrate"
   },
