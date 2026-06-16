@@ -1,0 +1,137 @@
+name: PR Check
+
+# PR 위생 게이트 — 사이즈 라벨링(size/L부터 hard gate) + base 브랜치 가드 + draft 표시.
+# 설계 출처: Yeachan-Heo/oh-my-claudecode .github/workflows/pr-check.yml 패턴을 본 repo
+# 컨벤션(base=main, ubuntu-latest, worktree <type>/<issue#>-<slug>)에 맞게 이식.
+# 사이즈 임계는 docs/research/bulk-pr-splitting-strategy.md 및
+# git-workflow-and-versioning 스킬의 "~100줄 목표" 정책과 정렬. size/L 이상은 머지 차단.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size-check:
+    name: Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const additions = files.reduce((acc, f) => acc + f.additions, 0);
+            const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
+            const changedFiles = files.length;
+            const churn = additions + deletions;
+
+            // 임계: S ≤100 / M ≤500 / L ≤1000 / XL >1000. L 이상은 hard reject.
+            let sizeLabel = 'size/S';
+            if (churn > 1000) sizeLabel = 'size/XL';
+            else if (churn > 500) sizeLabel = 'size/L';
+            else if (churn > 100) sizeLabel = 'size/M';
+
+            const isFork =
+              context.payload.pull_request.head.repo.full_name !==
+              context.payload.repository.full_name;
+
+            if (isFork) {
+              core.notice(`Fork PR — 라벨/코멘트 건너뜀 (write 권한 없음). Size: ${sizeLabel}`);
+            } else {
+              // 기존 size/* 라벨 제거 후 재부여 (synchronize 때 갱신)
+              const { data: current } = await github.rest.issues.listLabelsOnIssue({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              for (const l of current) {
+                if (l.name.startsWith('size/') && l.name !== sizeLabel) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    name: l.name,
+                  });
+                }
+              }
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [sizeLabel],
+              });
+
+              // size/L 이상이면 분할 요구 코멘트 (hard gate).
+              if (churn > 500) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body:
+                    `⛔ **PR Size Gate** — \`${sizeLabel}\`\n\n` +
+                    `이 PR은 **+${additions} / -${deletions}** (총 ${churn}줄), ` +
+                    `**${changedFiles}개 파일**을 변경합니다.\n\n` +
+                    `이 repo는 \`size/L\` 이상 PR을 머지하지 않습니다. ` +
+                    `리뷰 가능한 기능 단위로 더 작은 PR로 쪼개세요. ` +
+                    `한 이슈를 여러 PR로 fan-out 하는 패턴은 ` +
+                    `\`docs/research/bulk-pr-splitting-strategy.md\` 참고.`,
+                });
+              }
+            }
+
+            console.log(`PR Stats: +${additions} -${deletions} (${changedFiles} files) → ${sizeLabel}`);
+
+            if (churn > 500) {
+              core.setFailed(
+                `PR size ${sizeLabel} is too large (+${additions} / -${deletions}, churn ${churn}). ` +
+                `Split into size/M or smaller PRs.`
+              );
+            }
+
+  base-branch-check:
+    name: Base Branch Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require allowed base branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice('No pull_request payload; skipping base branch check');
+              return;
+            }
+            const base = pr.base.ref;
+            const allowed = new Set(['main']);
+            const isRelease = /^release\/.+/.test(base);
+            const isHotfix = /^hotfix\/.+/.test(base);
+            if (!allowed.has(base) && !isRelease && !isHotfix) {
+              core.setFailed(
+                `PR base는 \`main\`, \`release/*\`, \`hotfix/*\` 중 하나여야 합니다 (현재: \`${base}\`). ` +
+                `수정: gh pr edit ${context.issue.number} --base main`
+              );
+            }
+
+  draft-check:
+    name: Draft PR Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note draft status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (pr && pr.draft) {
+              core.notice('Draft PR — CI는 돌지만 머지는 차단됩니다.');
+            }

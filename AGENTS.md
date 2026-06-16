@@ -194,6 +194,8 @@ The `git wt` alias is registered by `scripts/git-guard/setup-hooks.sh` (run once
 Standing rule: `docs/rules/worktree-workflow.md`.
 Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
+PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
+
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.
 
