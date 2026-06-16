@@ -183,8 +183,14 @@ Examples:
 - `streamlit-preprocessed-poc`
 
 ### Skill mirrors
-`.claude/skills/`, `.agents/skills/`, and `.codex/skills/` carry the same skill set.
-`.codex/skills/` is symlinked to `.agents/skills/`. Do not diverge content between mirrors.
+`.agents/skills/` is the **single source of truth** for the project skill set.
+`.claude/skills/` and `.codex/skills/` are per-skill symlinks into `.agents/skills/`
+(`<name> -> ../../.agents/skills/<name>`), so the three runtimes always read identical
+content and drift is structurally impossible — edit a skill once under `.agents/skills/`.
+**Adding a new skill:** create it under `.agents/skills/<name>/`, then add the matching
+symlink in both `.claude/skills/` and `.codex/skills/`. Never create a real skill directory
+under `.claude/skills/` or `.codex/skills/` — that reintroduces the duplicate-copy drift this
+layout exists to prevent.
 
 ### Worktree workflow
 Every task must be developed on a dedicated worktree off a `<type>/<issue#>-<slug>` branch.
