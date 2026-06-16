@@ -18,5 +18,7 @@ DO $$ BEGIN
 END $$;
 
 -- Grant connection access (table-level grants are applied after migration)
-GRANT CONNECT ON DATABASE fall_dev TO fall_app;
+DO $$ BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO fall_app', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO fall_app;

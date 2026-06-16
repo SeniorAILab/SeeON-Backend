@@ -79,7 +79,7 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 NestJS 11, `@nestjs/config` (env-file per `NODE_ENV`), Prisma 6 (PostgreSQL). Listens on `PORT` (default 3000, configured in `.env.development`).
 
-`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. Domain models (`AnalysisJob`, `Prediction`, `Alert`) are scaffolded as schema comments and will be added when feature work starts.
+`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. The domain model (organization, auth/session, resident, guardian, camera, alert, residentStatus) is defined in the Prisma schema with org-scoped row-level security ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md)). Product logic over these models is deferred to later #105 slices.
 
 Key responsibilities (all deferred, ownership defined now):
 - Call ML serving (`ML_SERVING_URL=http://localhost:8000`) with a video window
