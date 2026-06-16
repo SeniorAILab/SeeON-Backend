@@ -22,6 +22,7 @@ chmod +x .githooks/pre-commit \
          scripts/git-guard/lib.sh \
          scripts/git-guard/assert-not-main.sh \
          scripts/git-guard/check-freshness.sh \
+         scripts/git-guard/sync-main.sh \
          scripts/git-guard/wt.sh \
          scripts/git-guard/setup-hooks.sh
 
@@ -29,5 +30,6 @@ chmod +x .githooks/pre-commit \
 printf '[git-guard] core.hooksPath  = %s\n' "$(git config core.hooksPath)"
 printf '[git-guard] alias.wt        = %s\n' "$(git config alias.wt)"
 printf '[git-guard] hooks active    : .githooks/pre-commit  .githooks/pre-push\n'
+printf '[git-guard] session start   : sync-main (ff main) + check-freshness (warn)\n'
 printf '[git-guard] guard scripts   : scripts/git-guard/\n'
 printf '[git-guard] setup complete  — run `git wt <issue#>` to start work on an issue.\n'
