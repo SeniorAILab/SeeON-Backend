@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { PrismaModule } from '../prisma/prisma.module.js';
+import { AuthModule } from '../auth/auth.module.js';
 import { KakaoSendToMeChannelAdapter } from './adapters/kakao-send-to-me-channel.adapter.js';
 import { MlServingPredictionAdapter } from './adapters/ml-serving-prediction.adapter.js';
 import { AlertEventsController } from './controllers/alert-events.controller.js';
@@ -14,10 +15,20 @@ import {
   AlertPolicyService,
   SystemAlertPolicyClock,
 } from './services/alert-policy.service.js';
+import { AlertsController } from './alerts.controller.js';
+import { AlertsService } from './alerts.service.js';
 
+/**
+ * AlertsModule bounds two cooperating concerns over the same domain:
+ *  - #103 ingestion pipeline: AlertEvent outbox + policy + channel/prediction
+ *    ports (POST api.alerts/events).
+ *  - #105 read-model: dashboard-facing Alert queries + snapshot proxy
+ *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by the session/org
+ *    boundary from AuthModule.
+ */
 @Module({
-  imports: [ConfigModule, PrismaModule],
-  controllers: [AlertEventsController],
+  imports: [ConfigModule, PrismaModule, AuthModule],
+  controllers: [AlertEventsController, AlertsController],
   providers: [
     AlertEventsRepository,
     AlertEventsService,
@@ -25,6 +36,8 @@ import {
     { provide: AlertPolicyClock, useClass: SystemAlertPolicyClock },
     { provide: ALERT_CHANNEL_PORT, useClass: KakaoSendToMeChannelAdapter },
     { provide: ALERT_PREDICTION_PORT, useClass: MlServingPredictionAdapter },
+    AlertsService,
   ],
+  exports: [AlertsService],
 })
 export class AlertsModule {}
