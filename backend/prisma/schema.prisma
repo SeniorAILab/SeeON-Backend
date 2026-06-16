@@ -1,29 +1,214 @@
-// Prisma schema — Postgres everywhere (dev/prod differ only by DATABASE_URL).
-// NOTE: Prisma bakes `provider` into the schema AND migrations; engine is NOT
-// runtime-swappable (unlike Hibernate dialects). Keep provider = postgresql.
+// Prisma schema — Postgres everywhere (ADR-002, ADR-C).
+// provider is locked; dev/prod differ only by DATABASE_URL / DIRECT_URL.
+//
+// DATABASE_URL  = fall_app role (NOSUPERUSER NOBYPASSRLS) — runtime (ADR-A).
+// DIRECT_URL    = fall superuser — migrations + schema introspection only.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// ── Domain models go here (deferred for PoC) ──────────────────────────────
-// Backend owns product-level decisions (alert policy, dedup, webhook).
-// ML only returns predictions. Example shape for later:
-//
-// model AnalysisJob {
-//   id        String   @id @default(cuid())
-//   status    String
-//   createdAt DateTime @default(now())
-// }
-//
-// model Prediction {
-//   id              String   @id @default(cuid())
-//   fallProbability Float
-//   window          Json
-//   createdAt       DateTime @default(now())
-// }
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+}
+
+enum AlertStatus {
+  NEW
+  ACKED
+  RESOLVED
+}
+
+enum ResidentState {
+  NORMAL
+  WARNING
+  FALL
+}
+
+// ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
+
+/// Root tenant. Not RLS-protected (gated by app-layer membership check).
+model Organization {
+  id                         String   @id @default(cuid())
+  name                       String
+  businessRegistrationNumber String?
+  createdAt                  DateTime @default(now())
+
+  users            User[]
+  residents        Resident[]
+  cameras          Camera[]
+  alerts           Alert[]
+  guardians        Guardian[]
+  residentStatuses ResidentStatus[]
+  kakaoIdentities  KakaoIdentity[]
+  sessions         ServerSession[]
+}
+
+/// Platform identity root. orgId is nullable until onboarding completes; auth code
+/// must access users by authenticated user/session only, then bind orgId before
+/// tenant-domain data queries. No tenant data list/detail route may query User.
+model User {
+  id             String   @id @default(cuid())
+  orgId          String?
+  kakaoId        String   @unique
+  email          String?
+  nickname       String
+  role           Role     @default(OWNER)
+  /// Increment to invalidate all existing sessions for this user.
+  sessionVersion Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  org           Organization?  @relation(fields: [orgId], references: [id])
+  kakaoIdentity KakaoIdentity?
+  sessions      ServerSession[]
+}
+
+/// Kakao OAuth identity. Access/refresh tokens are NOT stored (this build).
+model KakaoIdentity {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  orgId          String?
+  kakaoId        String
+  tokenExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization? @relation(fields: [orgId], references: [id])
+}
+
+/// Server-side session root for JWT revocation and SSE re-auth. Session lookup is
+/// by opaque session id/user id only; tenant-domain access starts after org GUC binding.
+model ServerSession {
+  id        String    @id @default(cuid())
+  userId    String
+  orgId     String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization? @relation(fields: [orgId], references: [id])
+}
+
+// ─── Tenant tables (orgId-scoped, RLS ENABLE + FORCE) ────────────────────────
+
+/// Facility resident. RLS-protected. Composite unique (orgId, id) allows
+/// child tables to reference residents via composite FKs (F9).
+model Resident {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  room      String?
+  createdAt DateTime @default(now())
+
+  org            Organization   @relation(fields: [orgId], references: [id])
+  guardians      Guardian[]
+  cameras        Camera[]
+  alerts         Alert[]
+  residentStatus ResidentStatus?
+
+  @@unique([orgId, id])
+}
+
+/// Emergency contact. Composite FK (orgId, residentId) → Resident(orgId, id)
+/// prevents a guardian from being linked to a resident in a different org (F9).
+model Guardian {
+  id         String   @id @default(cuid())
+  orgId      String
+  residentId String
+  name       String
+  /// Phone is stored in full; masked in UI layer.
+  phone      String
+  relation   String?
+  createdAt  DateTime @default(now())
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
+}
+
+/// Ingest-capable camera. Composite unique (orgId, id) to support composite FK
+/// references from Alert. ingestKeyId is a selector (no auth value alone).
+model Camera {
+  id               String    @id @default(cuid())
+  orgId            String
+  /// Nullable: camera may not yet be assigned to a resident.
+  residentId       String?
+  label            String
+  /// Selector-only key identifier sent in X-Ingest-KeyId header.
+  ingestKeyId      String
+  /// SHA-256 hash of the HMAC secret (never store plaintext).
+  ingestSecretHash String
+  lastSeenAt       DateTime?
+  online           Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  /// Composite FK (orgId, residentId) → Resident(orgId, id) prevents
+  /// a camera from being assigned to a resident in a different org (F9).
+  resident Resident?    @relation(fields: [orgId, residentId], references: [orgId, id])
+  alerts   Alert[]
+  residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
+
+  @@unique([orgId, id])
+  @@unique([orgId, label])
+  @@unique([orgId, ingestKeyId])
+}
+
+/// Alert event log. alertSeq (BIGSERIAL) is the SSE Last-Event-ID ordering key.
+/// Composite unique (orgId, idempotencyKey) prevents exact-duplicate ingestion.
+model Alert {
+  id             String      @id @default(cuid())
+  /// Monotonically increasing within the table; used as SSE Last-Event-ID.
+  alertSeq       BigInt      @default(autoincrement())
+  orgId          String
+  residentId     String
+  /// Nullable: alert may originate from an unconfigured camera path.
+  cameraId       String?
+  type           String
+  probability    Float
+  /// Internal org-scoped storage key for the snapshot image (never a raw URL).
+  snapshotKey    String?
+  detectedAt     DateTime
+  status         AlertStatus @default(NEW)
+  /// Server-derived: hash(cameraId + detectedAt + type). Sender-supplied keys ignored.
+  idempotencyKey String
+  createdAt      DateTime    @default(now())
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
+  /// Composite FK (orgId, cameraId) → Camera(orgId, id) prevents
+  /// an alert from referencing a camera in a different org (F9).
+  camera   Camera?      @relation(fields: [orgId, cameraId], references: [orgId, id])
+
+  @@unique([orgId, idempotencyKey])
+  @@index([orgId, alertSeq])
+}
+
+/// Current status read model for each resident. One row per resident.
+/// Composite FK (orgId, residentId) → Resident(orgId, id) (F9).
+model ResidentStatus {
+  id           String        @id @default(cuid())
+  residentId   String        @unique
+  orgId        String
+  state        ResidentState @default(NORMAL)
+  lastSeenAt   DateTime?
+  cameraOnline Boolean       @default(false)
+  /// Nullable cameraId. Composite FK (orgId, sourceId) → Camera(orgId, id)
+  /// prevents dangling or cross-org status source references.
+  sourceId     String?
+  updatedAt    DateTime      @updatedAt
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
+  source   Camera?      @relation("ResidentStatusSource", fields: [orgId, sourceId], references: [orgId, id])
+
+  @@unique([orgId, residentId])
+}

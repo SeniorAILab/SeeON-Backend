@@ -49,6 +49,7 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 | # | Title | Status | Date | Summary |
 |---|---|---|---|---|
 | [ADR-002](./backend/ADR-002-postgres-everywhere.md) | PostgreSQL everywhere | Accepted | 2026-06-07 | Prisma provider is not runtime-swappable; dev and prod both use PostgreSQL with environment-specific URLs. |
+| [ADR-031](./backend/ADR-031-prisma-domain-model.md) | Prisma domain model (org, auth, resident, camera, alert, status) + RLS foundation | Accepted | 2026-06-16 | #105-1 fan-out: multi-tenant Prisma schema with org-scoped RLS as the data foundation (PR #105 split, issue #102). |
 
 ### Frontend
 
@@ -96,7 +97,7 @@ Counts after this reorganization:
 - Retired source ADR files: 4 (`ADR-003`, `ADR-004`, `ADR-005`, `ADR-007`).
 - New successors created: 7 (`ADR-022` through `ADR-028`).
 - Visible ADR files after reorganization: 24 (17 retained originals + 7 successors); ID gaps are intentional and not renumbered.
-- Active ADRs by category: `common` 7, `backend` 1, `frontend` 0, `ml` 16.
+- Active ADRs by category: `common` 7, `backend` 2, `frontend` 0, `ml` 16.
 - Retired source ADRs excluded from active MECE validation: 4 (`ADR-003`, `ADR-004`, `ADR-005`, `ADR-007`).
 - Partially superseded active source: 1 (`ADR-012`).
 
