@@ -7,6 +7,8 @@ import { AlertsModule } from './alerts/alerts.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ResidentsModule } from './residents/residents.module.js';
 import { GuardiansModule } from './guardians/guardians.module.js';
+import { CamerasModule } from './cameras/cameras.module.js';
+import { StatusModule } from './status/status.module.js';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { GuardiansModule } from './guardians/guardians.module.js';
     AuthModule,
     ResidentsModule,
     GuardiansModule,
+    CamerasModule,
+    StatusModule,
     AlertsModule,
   ],
   controllers: [AppController],
