@@ -1,6 +1,6 @@
 name: CI
 
-# Build + test gate for PRs. Path-filtered per package (monorepo: backend, front)
+# Build + test gate for PRs. Path-filtered per package (monorepo: backend, front, ml)
 # so a frontend-only PR never spins up Postgres / runs backend jest, and vice
 # versa. The always-run `ci-gate` job is the single required status check:
 # skipped package jobs count as passing, which avoids the classic
@@ -26,6 +26,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      ml: ${{ steps.filter.outputs.ml }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -43,6 +44,9 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
+              - '.github/workflows/ci.yml'
+            ml:
+              - 'ml/**'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -111,9 +115,21 @@ jobs:
       - name: Lint
         run: pnpm --filter front lint
 
+  ml:
+    name: ML (lint)
+    needs: changes
+    if: needs.changes.outputs.ml == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Ruff
+        run: uvx ruff@0.15.17 check .
+        working-directory: ml
+
   ci-gate:
     name: CI gate
-    needs: [backend, frontend]
+    needs: [backend, frontend, ml]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -121,8 +137,9 @@ jobs:
         run: |
           be='${{ needs.backend.result }}'
           fe='${{ needs.frontend.result }}'
-          echo "backend=$be frontend=$fe"
-          for r in "$be" "$fe"; do
+          ml='${{ needs.ml.result }}'
+          echo "backend=$be frontend=$fe ml=$ml"
+          for r in "$be" "$fe" "$ml"; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "::error::a required package job did not pass"
               exit 1
