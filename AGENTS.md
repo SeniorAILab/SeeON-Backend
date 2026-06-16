@@ -193,6 +193,8 @@ The `git wt` alias is registered by `scripts/git-guard/setup-hooks.sh` (run once
 Standing rule: `docs/rules/worktree-workflow.md`.
 Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
+PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
+
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | DEPRECATED)`. Never delete. When a decision
 changes, write a new ADR that references and supersedes the old one. See `docs/decisions/README.md`.
