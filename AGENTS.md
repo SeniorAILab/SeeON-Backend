@@ -12,19 +12,19 @@
 │   ├── exec-plan/           # All work-scoped plans (active + archive)
 │   │   ├── active/{slug}/   #   spec.md + plan.md while work is in progress
 │   │   └── archive/{slug}/  #   same folder after done / discarded / superseded
-│   ├── decisions/           # Cross-cutting ADRs (ADR-001..N, permanent, never deleted)
+│   ├── decisions/           # ADRs by active MECE category: {ml,backend,frontend,common}/
 │   ├── rules/               # Standing conventions (e.g. streamlit-demo.md); ADRs must be MECE
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/
 │   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
-├── ml/                      # ML uv project (ADR-001, ADR-003)
+├── ml/                      # ML uv project (ADR-001, ADR-022)
 │   ├── data/                # domain-first {nursing-home,le2i,…}/{raw,processed,poses} — rules/ml-filesystem-layout.md (ADR-012) · gitignored
 │   ├── models/              # model single root {pose,fall} + metadata.json contract — rules/ml-models.md (ADR-015) · gitignored
 │   ├── demo/                # Streamlit demo — rules/streamlit-demo.md (ADR-010/011)
-│   ├── serving/             # FastAPI inference (ADR-003)
-│   └── training/            # training pipeline (ADR-003, ADR-013)
+│   ├── serving/             # FastAPI inference lifecycle / ML-backend boundary (ADR-022/023)
+│   └── training/            # training pipeline (ADR-013, lifecycle boundary ADR-022)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
 ├── front/                   # Next.js dashboard (ADR-001)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
@@ -44,7 +44,7 @@ Four artifact types with non-overlapping responsibilities:
 | **research** | *What did I find* — facts, sources, comparisons (pre-decision) | Topic-scoped; superseded as evidence evolves | deep-research / research passes | `docs/research/{slug}.md` |
 | **spec** | *What* is this work / are requirements clear? | Work-scoped, one-shot | deep-interview skill | `docs/exec-plan/active/{slug}/spec.md` |
 | **plan** | *How* to implement (steps, files, order) | Work-scoped, body immutable; lifecycle = folder position | omc-plan / omo / omx | `docs/exec-plan/active/{slug}/plan.md` |
-| **ADR** | One expensive-to-reverse *cross-cutting* decision that constrains all future plans | Work-independent, permanent (superseded only, never deleted) | documentation-and-adrs | `docs/decisions/ADR-NNN-*.md` |
+| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; current ADRs persist, while fully superseded non-MECE source bundles may be retired from the visible corpus with coverage-matrix proof and git-history recovery | documentation-and-adrs | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 **The decision pipeline:** `research` (facts I found) → `ADR` (decision I made) → `plan` (implementation I built).
 Research collects evidence; it does **not** decide. A decision distilled from research is an **ADR**; how to
@@ -52,8 +52,8 @@ build that decision is a **plan**. Never let a research doc assert a decision �
 the human (or a later ADR) chooses.
 
 **Key principle:** plan != ADR. A plan is archived when its work ends. Any expensive-to-reverse
-cross-cutting choice made inside a plan is **distilled** into a new ADR in `docs/decisions/` —
-the plan entry itself is not replaced.
+choice made inside a plan is **distilled** into a new ADR under the correct MECE category in
+`docs/decisions/{ml,backend,frontend,common}/` — the plan entry itself is not replaced.
 
 ### Boundary: plan vs ADR
 
@@ -61,19 +61,20 @@ Plans and ADRs answer different questions with different lifespans. Never confla
 
 | | plan (`docs/exec-plan/`) | ADR (`docs/decisions/`) |
 |---|---|---|
-| Question | *How* to implement this specific work | *Why* this cross-cutting choice — and what alternatives were rejected |
-| Scope | One feature / task (work-scoped) | Cross-cutting — constrains all future work |
-| Lifespan | Archivable when work ends | Permanent — superseded only, never deleted |
-| Body | Immutable after finalize; scope change → new slug | Superseded by a new ADR that references the old one |
+| Question | *How* to implement this specific work | *Why* this expensive-to-reverse choice — and what alternatives were rejected |
+| Scope | One feature / task (work-scoped) | Ecosystem-local (`ml`, `backend`, `frontend`) or strict common if it still constrains multiple domains after attempted split |
+| Lifespan | Archivable when work ends | Permanent as current authority; fully superseded non-MECE source files may be retired only after successor coverage is proven |
+| Body | Immutable after finalize; scope change → new slug | Superseded by successor ADR(s); retired source bodies must remain recoverable from git history and mapped in the coverage matrix |
 | Author | omc-plan / omo / omx agents | documentation-and-adrs skill |
-| Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/ADR-NNN-*.md` |
+| Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 #### Distill rule
 
-When a plan contains an expensive-to-reverse, cross-cutting choice (framework selection, data model,
-auth strategy, API shape, infrastructure), **distill that choice into a new ADR** before or at the
-time the plan is archived. The plan entry itself is not replaced — the ADR lives alongside it in
-`docs/decisions/`.
+When a plan contains an expensive-to-reverse choice (framework selection, data model,
+auth strategy, API shape, infrastructure, repository workflow, safety policy), **distill that
+choice into a new ADR** before or at the time the plan is archived. Place it in the owning
+ecosystem category. Use `common/` only after attempted split proves the decision still
+irreducibly constrains multiple top-level domains.
 
 Ask: "Would a future agent/engineer working on an unrelated feature need to know this decision?"
 If yes → write an ADR. If it only affects this feature's implementation details → leave it in the plan.
@@ -118,9 +119,9 @@ autonomous execution
      v
 move entire folder:  active/{slug}/  -->  archive/{slug}/
      |
-     v  plan contained a cross-cutting or expensive-to-reverse decision?
+     v  plan contained an expensive-to-reverse ecosystem-local or strict-common decision?
      |
-distill  -->  docs/decisions/ADR-NNN-{topic}.md   (ADRs are never deleted)
+distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (ADRs are never deleted)
 ```
 
 ## Locations
@@ -130,7 +131,7 @@ distill  -->  docs/decisions/ADR-NNN-{topic}.md   (ADRs are never deleted)
 | `docs/research/` | Fact collection — findings, sources, comparisons (pre-decision) | Yes |
 | `docs/exec-plan/active/{slug}/` | In-progress spec + plan | Yes |
 | `docs/exec-plan/archive/{slug}/` | Completed / discarded spec + plan | Yes |
-| `docs/decisions/` | ADRs (permanent) | Yes |
+| `docs/decisions/{ml,backend,frontend,common}/` | ADRs (permanent, active MECE by category) | Yes |
 | `docs/rules/` | Standing conventions (ongoing constraints, not work-scoped) | Yes |
 | `.omc/specs/` | deep-interview scratch output | No — scratch only |
 | `.omc/plans/` | omc tool scratch / drafts | No — scratch only |
@@ -196,8 +197,17 @@ Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
 
 ### ADR lifecycle (cross-reference)
-ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | DEPRECATED)`. Never delete. When a decision
-changes, write a new ADR that references and supersedes the old one. See `docs/decisions/README.md`.
+ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.
+
+### Provider review lanes
+
+This repo may use Claude Code, Codex, and Gemini as complementary advisory review lanes:
+
+- Claude Code/GJC owns orchestration, repo-local context management, subagent delegation, and final integration responsibility.
+- Codex is useful for independent candidate/review passes grounded in this `AGENTS.md`, especially placement disagreements and implementation sanity checks.
+- Gemini is useful for adversarial or sanity-check review, especially omission risk, stale links, and category-boundary challenges.
+
+No provider is merge authority. Durable rules live in repo docs (`AGENTS.md`, `docs/decisions/README.md`, `docs/rules/`) and final acceptance depends on the validated diff, coverage matrix, verification evidence, and human review.
 
 ## gstack (recommended)
 
