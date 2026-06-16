@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      target: runner
+    restart: unless-stopped
+    environment:
+      # Fail closed: prod must supply real secrets instead of inheriting the base dev placeholders.
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required in prod}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required in prod}
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  ml-serving:
+    build:
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "${ML_SERVING_PORT:-8000}:8000"
+
+  front:
+    build:
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "${FRONT_PORT:-3000}:3000"

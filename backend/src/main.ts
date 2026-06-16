@@ -3,7 +3,10 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 3000);
+  if (process.env.FRONT_ORIGIN) {
+    app.enableCors({ origin: process.env.FRONT_ORIGIN, credentials: true });
+  }
+  await app.listen(process.env.PORT ?? 8080);
 }
 bootstrap().catch((error: unknown) => {
   console.error('Bootstrap failed', error);
