@@ -217,7 +217,7 @@ model ResidentStatus {
 // AlertEvent/DeliveryAttempt are NOT tenant-domain RLS tables. They are keyed
 // by source_id (ingest source) + external_event_id for idempotency, owned by the
 // backend alert pipeline, and intentionally excluded from PrismaService's
-// TENANT_MODELS guard (no org context required). See ADR-024..027.
+// TENANT_MODELS guard (no org context required). See backend/ADR-035..038.
 
 enum AlertEventType {
   FALL
