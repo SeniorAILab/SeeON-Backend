@@ -1,14 +1,15 @@
 name: PR Check
 
-# PR 위생 게이트 — 사이즈 라벨링(size/L부터 hard gate) + base 브랜치 가드 + draft 표시.
+# PR 위생 게이트 — 로직 churn 라벨링(로직>500 hard gate) + base 브랜치 가드 + draft 표시.
 # 설계 출처: Yeachan-Heo/oh-my-claudecode .github/workflows/pr-check.yml 패턴을 본 repo
 # 컨벤션(base=main, ubuntu-latest, worktree <type>/<issue#>-<slug>)에 맞게 이식.
-# 사이즈 임계는 docs/research/bulk-pr-splitting-strategy.md 및
-# git-workflow-and-versioning 스킬의 "~100줄 목표" 정책과 정렬. size/L 이상은 머지 차단.
+# 사이즈 게이트는 "리뷰 가능한 로직 churn"만으로 판정한다. 테스트/Prisma 마이그레이션/
+# docs·markdown/pnpm-lock.yaml 은 비-로직으로 제외하며, `size/override` 라벨이 있으면
+# 로직>500 이어도 size 체크는 통과(escape hatch). base=main 은 별도 job 에서 hard 유지.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   workflow_dispatch:
 
 permissions:
@@ -20,84 +21,127 @@ jobs:
     name: Size Check
     runs-on: ubuntu-latest
     steps:
-      - name: Check PR size
+      - name: Check PR logic churn
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: files } = await github.rest.pulls.listFiles({
+            // === SIZE-CHECK-LOGIC-START ===
+            // (이 블록은 .github/scripts 없이 단일 워크플로 파일로 유지되며,
+            //  governance 픽스처 검증 하네스가 START/END 마커로 추출해 그대로 실행한다.)
+
+            // 1) 모든 파일을 페이지네이션으로 읽는다 (한 페이지 per_page:100 에서 멈추지 않음).
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
               per_page: 100,
             });
 
-            const additions = files.reduce((acc, f) => acc + f.additions, 0);
-            const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
-            const changedFiles = files.length;
-            const churn = additions + deletions;
+            // 2) 파일명 분류. 비-로직(게이트 제외) 규칙:
+            //    - path 에 `/test/` 포함 또는 `test/` 로 시작
+            //    - basename 이 `*.spec.*` 또는 `*.test.*`
+            //    - path 에 `/prisma/migrations/` 포함
+            //    - path 가 `docs/` 로 시작
+            //    - path 가 `.md` 로 끝남
+            //    - path 가 정확히 `pnpm-lock.yaml`
+            //    그 외 전부 로직.
+            function classify(filename) {
+              const base = filename.split('/').pop();
+              if (filename.includes('/test/') || filename.startsWith('test/')) return 'non-logic:test';
+              if (/\.spec\./.test(base)) return 'non-logic:test';
+              if (/\.test\./.test(base)) return 'non-logic:test';
+              if (filename.includes('/prisma/migrations/')) return 'non-logic:migration';
+              if (filename.startsWith('docs/')) return 'non-logic:docs';
+              if (filename.endsWith('.md')) return 'non-logic:docs';
+              if (filename === 'pnpm-lock.yaml') return 'non-logic:lock';
+              return 'logic';
+            }
 
-            // 임계: S ≤100 / M ≤500 / L ≤1000 / XL >1000. L 이상은 hard reject.
-            let sizeLabel = 'size/S';
-            if (churn > 1000) sizeLabel = 'size/XL';
-            else if (churn > 500) sizeLabel = 'size/L';
-            else if (churn > 100) sizeLabel = 'size/M';
+            // 3) totalChurn / logicChurn 계산 (+ per-file 사유 로깅).
+            let totalChurn = 0;
+            let logicChurn = 0;
+            let nonLogicChurn = 0;
+            for (const f of files) {
+              const churn = f.additions + f.deletions;
+              const cls = classify(f.filename);
+              totalChurn += churn;
+              if (cls === 'logic') logicChurn += churn;
+              else nonLogicChurn += churn;
+              console.log(`  ${cls === 'logic' ? 'LOGIC    ' : 'non-logic'} ${churn.toString().padStart(5)}  ${f.filename}  (${cls})`);
+            }
+
+            // 4) 로직 churn 기준 버킷: S<=100 / M<=500 / L<=1000 / XL>1000.
+            let bucket = 'size/S';
+            if (logicChurn > 1000) bucket = 'size/XL';
+            else if (logicChurn > 500) bucket = 'size/L';
+            else if (logicChurn > 100) bucket = 'size/M';
+
+            // 5) 라벨 읽기 → override 여부.
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const labelNames = currentLabels.map((l) => l.name);
+            const hasOverride = labelNames.includes('size/override');
 
             const isFork =
               context.payload.pull_request.head.repo.full_name !==
               context.payload.repository.full_name;
 
             if (isFork) {
-              core.notice(`Fork PR — 라벨/코멘트 건너뜀 (write 권한 없음). Size: ${sizeLabel}`);
+              core.notice(`Fork PR — 라벨/코멘트 건너뜀 (write 권한 없음). Bucket: ${bucket}, logicChurn ${logicChurn}`);
             } else {
-              // 기존 size/* 라벨 제거 후 재부여 (synchronize 때 갱신)
-              const { data: current } = await github.rest.issues.listLabelsOnIssue({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-              });
-              for (const l of current) {
-                if (l.name.startsWith('size/') && l.name !== sizeLabel) {
+              // 6) 버킷 라벨만 정리한다. `size/override` 는 절대 제거하지 않는다.
+              const bucketLabels = new Set(['size/S', 'size/M', 'size/L', 'size/XL']);
+              for (const name of labelNames) {
+                if (bucketLabels.has(name) && name !== bucket) {
                   await github.rest.issues.removeLabel({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: context.issue.number,
-                    name: l.name,
+                    name,
                   });
                 }
               }
+              // 7) 계산된 버킷 라벨 부여.
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                labels: [sizeLabel],
+                labels: [bucket],
               });
 
-              // size/L 이상이면 분할 요구 코멘트 (hard gate).
-              if (churn > 500) {
+              if (logicChurn > 500) {
+                const overrideNote = hasOverride
+                  ? `\n\n✅ \`size/override\` 라벨이 있어 size 체크는 통과합니다 (거버넌스 예외).`
+                  : `\n\n이 repo는 로직 churn > 500 PR 을 머지하지 않습니다. 리뷰 가능한 기능 단위로 더 작은 PR 로 쪼개세요. ` +
+                    `한 이슈를 여러 PR 로 fan-out 하는 패턴은 \`docs/research/bulk-pr-splitting-strategy.md\` 참고.`;
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
                   body:
-                    `⛔ **PR Size Gate** — \`${sizeLabel}\`\n\n` +
-                    `이 PR은 **+${additions} / -${deletions}** (총 ${churn}줄), ` +
-                    `**${changedFiles}개 파일**을 변경합니다.\n\n` +
-                    `이 repo는 \`size/L\` 이상 PR을 머지하지 않습니다. ` +
-                    `리뷰 가능한 기능 단위로 더 작은 PR로 쪼개세요. ` +
-                    `한 이슈를 여러 PR로 fan-out 하는 패턴은 ` +
-                    `\`docs/research/bulk-pr-splitting-strategy.md\` 참고.`,
+                    `⛔ **PR Logic-Churn Gate** — \`${bucket}\`\n\n` +
+                    `로직 churn **${logicChurn}** / 총 churn ${totalChurn} (비-로직 ${nonLogicChurn}), ` +
+                    `${files.length}개 파일.` +
+                    overrideNote,
                 });
               }
             }
 
-            console.log(`PR Stats: +${additions} -${deletions} (${changedFiles} files) → ${sizeLabel}`);
+            console.log(`PR churn: total ${totalChurn}, logic ${logicChurn}, non-logic ${nonLogicChurn} (${files.length} files) → ${bucket}; override=${hasOverride}`);
 
-            if (churn > 500) {
+            // 8) hard gate 는 로직 churn 으로만 판정. override 면 size 만 통과.
+            if (logicChurn > 500 && !hasOverride) {
               core.setFailed(
-                `PR size ${sizeLabel} is too large (+${additions} / -${deletions}, churn ${churn}). ` +
-                `Split into size/M or smaller PRs.`
+                `PR logic churn ${logicChurn} (${bucket}) exceeds 500 without \`size/override\`. ` +
+                `Split into reviewable logic<=500 PRs, or apply size/override for an audited governance exception.`
               );
+            } else if (logicChurn > 500 && hasOverride) {
+              core.notice(`logic churn ${logicChurn} > 500 but \`size/override\` present — size check passes (governance exception).`);
             }
+            // === SIZE-CHECK-LOGIC-END ===
 
   base-branch-check:
     name: Base Branch Check
@@ -107,6 +151,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // === BASE-BRANCH-LOGIC-START ===
+            // base 게이트는 size/override 와 무관하게 항상 hard 다(별도 job).
+            // 본 repo 정책상 허용 base: main + release/* + hotfix/* (기존 정책 보존).
             const pr = context.payload.pull_request;
             if (!pr) {
               core.notice('No pull_request payload; skipping base branch check');
@@ -122,6 +169,7 @@ jobs:
                 `수정: gh pr edit ${context.issue.number} --base main`
               );
             }
+            // === BASE-BRANCH-LOGIC-END ===
 
   draft-check:
     name: Draft PR Check
