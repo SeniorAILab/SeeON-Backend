@@ -35,6 +35,21 @@
 └── .mcp.json                # MCP server definitions (project scope)
 ```
 
+## Development Flow
+
+> Issue-driven 루프. AGENTS.md는 라우팅만 담고, 실제 메커니즘은 링크된 rules에 위임한다(SSOT).
+
+```
+plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가능·필요시 fan-out) → 리뷰 + CI → merge → plan archive + ADR distill
+```
+
+1. **Plan** — 먼저 spec/plan 작성 (아래 [Lifecycle](#lifecycle) · [Conventions](#conventions) › plan-first mandate).
+2. **Issue** — GitHub 이슈에 정확히 하나의 `type:` 라벨 부여(branch `<type>`를 결정). → [`docs/rules/github-labels.md`](docs/rules/github-labels.md)
+3. **Worktree** — `git wt <issue#>`로 worktree/브랜치 생성 (절대 `main`에서 직접 분기 금지). → [`docs/rules/worktree-workflow.md`](docs/rules/worktree-workflow.md) · ADR-008
+4. **PR** — 하나의 리뷰 가능한 변경; 큰 작업은 한 이슈 → fan-out PR로 분해. → [`docs/rules/pr-decomposition-and-review.md`](docs/rules/pr-decomposition-and-review.md)
+5. **Review + CI** — 모든 PR은 리뷰를 거치고, size/base/draft 게이트가 CI에서 돈다. → [`.github/workflows/pr-check.yml`](.github/workflows/pr-check.yml)
+6. **Merge → archive → ADR** — merge 후 plan archive, expensive-to-reverse 결정은 ADR로 distill. → [`docs/decisions/README.md`](docs/decisions/README.md)
+
 ## Artifact Ontology
 
 Four artifact types with non-overlapping responsibilities:
