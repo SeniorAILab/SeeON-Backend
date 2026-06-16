@@ -210,6 +210,14 @@ symlink in both `.claude/skills/` and `.codex/skills/`. Never create a real skil
 under `.claude/skills/` or `.codex/skills/` — that reintroduces the duplicate-copy drift this
 layout exists to prevent.
 
+**Enabling GJC skill discovery (per checkout).** Discovery is off by default. To call
+repo skills (e.g. `/skill:documentation-and-adrs`) from a GJC session, enable it locally
+in `.gjc/settings.json` (gitignored — per checkout, not committed):
+`{"skills":{"enabled":true,"enableClaudeProject":true}}`. `.claude/skills` symlinks resolve
+to `.agents/skills`, so the single source is exposed without duplication. Invoke skills
+manually on-demand (e.g. distill ADRs with `/skill:documentation-and-adrs` when work lands);
+no automatic hooks or cron.
+
 ### Worktree workflow
 Every task must be developed on a dedicated worktree off a `<type>/<issue#>-<slug>` branch.
 Use `git wt <issue#>` — never branch directly from `main` or hand-roll `git worktree add`.
