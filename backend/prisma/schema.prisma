@@ -212,3 +212,86 @@ model ResidentStatus {
 
   @@unique([orgId, residentId])
 }
+
+// ─── Backend-owned alert outbox (issue #29) ─────────────────────────────────
+// AlertEvent/DeliveryAttempt are NOT tenant-domain RLS tables. They are keyed
+// by source_id (ingest source) + external_event_id for idempotency, owned by the
+// backend alert pipeline, and intentionally excluded from PrismaService's
+// TENANT_MODELS guard (no org context required). See ADR-024..027.
+
+enum AlertEventType {
+  FALL
+  DETECTION_LOST
+}
+
+enum AlertDecision {
+  DISPATCH
+  SUPPRESS
+}
+
+enum AlertSuppressedReason {
+  COOLDOWN
+  HOURLY_CAP
+  BELOW_THRESHOLD
+}
+
+enum DeliveryChannel {
+  KAKAO_SEND_TO_ME
+}
+
+enum DeliveryAttemptStatus {
+  PENDING
+  SENT
+  RETRY_SCHEDULED
+  TERMINAL_FAILED
+}
+
+enum DeliveryFailureClass {
+  TRANSIENT
+  TERMINAL_OPERATOR_ACTION
+}
+
+/// Backend alert outbox row. (source_id, external_event_id) is the idempotency
+/// key; P2002 on that unique constraint signals a duplicate ingress.
+model AlertEvent {
+  id                 String                 @id @default(cuid())
+  sourceId           String                 @map("source_id")
+  externalEventId    String                 @map("external_event_id")
+  type               AlertEventType
+  detectedAt         DateTime               @map("detected_at")
+  confidence         Float?
+  fallProbability    Float?                 @map("fall_probability")
+  operatingThreshold Float?                 @map("operating_threshold")
+  decision           AlertDecision
+  suppressedReason   AlertSuppressedReason? @map("suppressed_reason")
+  deliveryAttempts   DeliveryAttempt[]
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+
+  @@unique([sourceId, externalEventId], name: "alert_events_source_external_event_id_key")
+  @@index([detectedAt], name: "alert_events_detected_at_idx")
+  @@map("alert_events")
+}
+
+/// Per-channel delivery attempt with retry/terminal classification.
+model DeliveryAttempt {
+  id                String                @id @default(cuid())
+  alertEventId      String                @map("alert_event_id")
+  alertEvent        AlertEvent            @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+  channel           DeliveryChannel
+  status            DeliveryAttemptStatus @default(PENDING)
+  attemptCount      Int                   @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime?             @map("next_attempt_at")
+  providerReference String?               @map("provider_reference")
+  failureClass      DeliveryFailureClass? @map("failure_class")
+  terminalReason    String?               @map("terminal_reason")
+  operatorAction    String?               @map("operator_action")
+  lastError         String?               @map("last_error")
+  sentAt            DateTime?             @map("sent_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  @@index([status, nextAttemptAt], name: "delivery_attempts_status_next_attempt_at_idx")
+  @@index([alertEventId], name: "delivery_attempts_alert_event_id_idx")
+  @@map("delivery_attempts")
+}
