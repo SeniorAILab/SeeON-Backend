@@ -50,6 +50,9 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 |---|---|---|---|---|
 | [ADR-002](./backend/ADR-002-postgres-everywhere.md) | PostgreSQL everywhere | Accepted | 2026-06-07 | Prisma provider is not runtime-swappable; dev and prod both use PostgreSQL with environment-specific URLs. |
 | [ADR-031](./backend/ADR-031-prisma-domain-model.md) | Prisma domain model (org, auth, resident, camera, alert, status) + RLS foundation | Accepted | 2026-06-16 | #105-1 fan-out: multi-tenant Prisma schema with org-scoped RLS as the data foundation (PR #105 split, issue #102). |
+| [ADR-032](./backend/ADR-032-b2b-facility-multitenancy-rls.md) | B2B facility multitenancy — Postgres RLS default-deny + orgId scoping | Accepted | 2026-06-13 | Default-deny row-level security with org-scoped tenant isolation enforced at the DB via the `fall_app` role (PR #105 split, issue #102). |
+| [ADR-033](./backend/ADR-033-kakao-oauth-auth-boundary.md) | Kakao OAuth authentication boundary — backend-owned callback, single httpOnly session JWT | Accepted | 2026-06-13 | Backend owns the OAuth callback and issues one httpOnly session JWT; no tokens reach the browser (PR #105 split, issue #102). |
+| [ADR-034](./backend/ADR-034-sse-realtime-transport.md) | SSE realtime transport — read-only cookie-auth push with alertSeq replay | Accepted | 2026-06-13 | Read-only SSE push authenticated by the `app_session` cookie with `alertSeq` replay (PR #105 split, issue #102). |
 
 ### Frontend
 
