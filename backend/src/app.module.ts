@@ -10,10 +10,11 @@ import { GuardiansModule } from './guardians/guardians.module.js';
 import { CamerasModule } from './cameras/cameras.module.js';
 import { StatusModule } from './status/status.module.js';
 import { IngestModule } from './ingest/ingest.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 
-// Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API)
-// serialize in JSON responses. Nest uses JSON.stringify, which throws on BigInt
-// without this prototype shim.
+// Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
+// and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
+// which throws on BigInt without this prototype shim.
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
   this: bigint,
 ): string {
@@ -34,6 +35,7 @@ import { IngestModule } from './ingest/ingest.module.js';
     StatusModule,
     AlertsModule,
     IngestModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
