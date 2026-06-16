@@ -30,6 +30,7 @@
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
 ├── .omo/                    # omo scratch (plans/) — not git canonical
 ├── .omx/                    # omx scratch (plans/) — not git canonical
+├── .gjc/                    # gjc (gajae-code) scratch (specs/, plans/, state/) — not git canonical
 ├── AGENTS.md                # <- this file (single source of truth)
 ├── README.md                # Project overview / team setup
 └── .mcp.json                # MCP server definitions (project scope)
@@ -152,6 +153,8 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 | `.omc/plans/` | omc tool scratch / drafts | No — scratch only |
 | `.omo/plans/` | omo tool scratch / drafts | No — scratch only |
 | `.omx/plans/` | omx tool scratch / drafts | No — scratch only |
+| `.gjc/specs/` | deep-interview scratch output (gjc) | No — scratch only |
+| `.gjc/plans/` | ralplan / gjc tool scratch / drafts | No — scratch only |
 
 ## Conventions
 
