@@ -1,0 +1,131 @@
+name: CI
+
+# Build + test gate for PRs. Path-filtered per package (monorepo: backend, front)
+# so a frontend-only PR never spins up Postgres / runs backend jest, and vice
+# versa. The always-run `ci-gate` job is the single required status check:
+# skipped package jobs count as passing, which avoids the classic
+# path-filter + required-check deadlock (skipped != success for required checks).
+
+on:
+  pull_request:
+    branches: [main]
+
+# One in-flight run per PR; cancel superseded pushes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    name: Detect changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'front/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - '.github/workflows/ci.yml'
+
+  backend:
+    name: Backend (build + test)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://fall_app:fall_app@localhost:5432/fall_dev?schema=public
+      DIRECT_URL: postgresql://fall:fall@localhost:5432/fall_dev?schema=public
+      SESSION_JWT_SECRET: ci-session-secret-minimum-32-characters
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: fall
+          POSTGRES_PASSWORD: fall
+          POSTGRES_DB: fall_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fall -d fall_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Prisma generate
+        run: pnpm --filter backend exec prisma generate
+      - name: Create app role (fall_app)
+        run: pnpm --filter backend exec prisma db execute --file prisma/init/01-create-app-role.sql --url "$DIRECT_URL"
+      - name: Apply migrations
+        run: pnpm --filter backend exec prisma migrate deploy
+      - name: Typecheck
+        run: pnpm --filter backend exec tsc --noEmit
+      - name: Build
+        run: pnpm --filter backend build
+      - name: Test
+        run: pnpm --filter backend test
+
+  frontend:
+    name: Frontend (build + lint)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter front exec tsc --noEmit
+      - name: Build
+        run: pnpm --filter front build
+      - name: Lint
+        run: pnpm --filter front lint
+
+  ci-gate:
+    name: CI gate
+    needs: [backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require package jobs to pass (skipped is allowed)
+        run: |
+          be='${{ needs.backend.result }}'
+          fe='${{ needs.frontend.result }}'
+          echo "backend=$be frontend=$fe"
+          for r in "$be" "$fe"; do
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
+              echo "::error::a required package job did not pass"
+              exit 1
+            fi
+          done
+          echo "CI gate passed"
