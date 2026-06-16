@@ -1,10 +1,10 @@
 name: PR Check
 
-# PR 위생 게이트 — 사이즈 라벨링(소프트 넛지) + base 브랜치 가드 + draft 표시.
+# PR 위생 게이트 — 사이즈 라벨링(size/L부터 hard gate) + base 브랜치 가드 + draft 표시.
 # 설계 출처: Yeachan-Heo/oh-my-claudecode .github/workflows/pr-check.yml 패턴을 본 repo
 # 컨벤션(base=main, ubuntu-latest, worktree <type>/<issue#>-<slug>)에 맞게 이식.
 # 사이즈 임계는 docs/research/bulk-pr-splitting-strategy.md 및
-# git-workflow-and-versioning 스킬의 "~100줄 목표 / >1000줄 분할" 정책과 정렬.
+# git-workflow-and-versioning 스킬의 "~100줄 목표" 정책과 정렬. size/L 이상은 머지 차단.
 
 on:
   pull_request:
@@ -36,7 +36,7 @@ jobs:
             const changedFiles = files.length;
             const churn = additions + deletions;
 
-            // 임계: S ≤100 / M ≤500 / L ≤1000 / XL >1000 (Google eng-practices 기준 정렬)
+            // 임계: S ≤100 / M ≤500 / L ≤1000 / XL >1000. L 이상은 hard reject.
             let sizeLabel = 'size/S';
             if (churn > 1000) sizeLabel = 'size/XL';
             else if (churn > 500) sizeLabel = 'size/L';
@@ -72,17 +72,18 @@ jobs:
                 labels: [sizeLabel],
               });
 
-              // >1000줄 churn이면 분할 권고 코멘트 (소프트 게이트 — 머지는 막지 않음)
-              if (churn > 1000) {
+              // size/L 이상이면 분할 요구 코멘트 (hard gate).
+              if (churn > 500) {
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
                   body:
-                    `⚠️ **Large PR Alert** — \`${sizeLabel}\`\n\n` +
+                    `⛔ **PR Size Gate** — \`${sizeLabel}\`\n\n` +
                     `이 PR은 **+${additions} / -${deletions}** (총 ${churn}줄), ` +
                     `**${changedFiles}개 파일**을 변경합니다.\n\n` +
-                    `리뷰 품질·결함 검출을 위해 더 작은 PR로 쪼개는 것을 고려하세요. ` +
+                    `이 repo는 \`size/L\` 이상 PR을 머지하지 않습니다. ` +
+                    `리뷰 가능한 기능 단위로 더 작은 PR로 쪼개세요. ` +
                     `한 이슈를 여러 PR로 fan-out 하는 패턴은 ` +
                     `\`docs/research/bulk-pr-splitting-strategy.md\` 참고.`,
                 });
@@ -90,6 +91,13 @@ jobs:
             }
 
             console.log(`PR Stats: +${additions} -${deletions} (${changedFiles} files) → ${sizeLabel}`);
+
+            if (churn > 500) {
+              core.setFailed(
+                `PR size ${sizeLabel} is too large (+${additions} / -${deletions}, churn ${churn}). ` +
+                `Split into size/M or smaller PRs.`
+              );
+            }
 
   base-branch-check:
     name: Base Branch Check
