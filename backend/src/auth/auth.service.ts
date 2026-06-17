@@ -6,8 +6,13 @@ import {
 import type { User } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { KakaoClient, type KakaoProfile } from './kakao.client';
+import {
+  KakaoClient,
+  type KakaoProfile,
+  type KakaoTokenResponse,
+} from './kakao.client';
 import { SessionService } from './session.service';
+import { encryptToken } from './token-crypto';
 
 @Injectable()
 export class AuthService {
@@ -30,9 +35,9 @@ export class AuthService {
   ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
     if (!code)
       throw new BadRequestException('Missing Kakao authorization code');
-    const token = await this.kakao.exchangeCode(code);
-    const profile = await this.kakao.getProfile(token.access_token);
-    const user = await this.upsertUser(profile);
+    const kakaoToken = await this.kakao.exchangeCode(code);
+    const profile = await this.kakao.getProfile(kakaoToken.access_token);
+    const user = await this.upsertUser(profile, kakaoToken);
     const session = await this.sessions.createSession(user);
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
@@ -79,19 +84,51 @@ export class AuthService {
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
 
-  private async upsertUser(profile: KakaoProfile): Promise<User> {
-    return this.prisma.db.user.upsert({
-      where: { kakaoId: profile.kakaoId },
-      update: {
-        email: profile.email,
-        nickname: profile.nickname,
-      },
-      create: {
-        kakaoId: profile.kakaoId,
-        email: profile.email,
-        nickname: profile.nickname,
-        role: 'OWNER',
-      },
+  private async upsertUser(
+    profile: KakaoProfile,
+    kakaoToken: KakaoTokenResponse,
+  ): Promise<User> {
+    const accessTokenCipher = encryptToken(kakaoToken.access_token);
+    const tokenScope = kakaoToken.scope ?? 'talk_message profile_nickname';
+    const tokenExpiresAt = kakaoToken.expires_in
+      ? new Date(Date.now() + kakaoToken.expires_in * 1000)
+      : null;
+
+    return this.prisma.db.$transaction(async (tx) => {
+      const user = await tx.user.upsert({
+        where: { kakaoId: profile.kakaoId },
+        update: {
+          email: profile.email,
+          nickname: profile.nickname,
+        },
+        create: {
+          kakaoId: profile.kakaoId,
+          email: profile.email,
+          nickname: profile.nickname,
+          role: 'OWNER',
+        },
+      });
+
+      await tx.kakaoIdentity.upsert({
+        where: { userId: user.id },
+        update: {
+          orgId: user.orgId,
+          kakaoId: profile.kakaoId,
+          accessTokenCipher,
+          tokenScope,
+          tokenExpiresAt,
+        },
+        create: {
+          userId: user.id,
+          orgId: user.orgId,
+          kakaoId: profile.kakaoId,
+          accessTokenCipher,
+          tokenScope,
+          tokenExpiresAt,
+        },
+      });
+
+      return user;
     });
   }
 }

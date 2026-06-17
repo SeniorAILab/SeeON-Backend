@@ -12,7 +12,7 @@ Proposed  →  Accepted  →  Superseded
 
 ADRs are the visible current decision corpus, not a landfill for superseded bundles. If a decision changes, write successor ADRs and mark/source-map the old decision. Fully superseded non-MECE source ADR files may be retired from the visible corpus only after this README maps every active clause to successors, live-referenced content is preserved in successor ADRs, and the exact original body remains recoverable from git history.
 
-Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. Pending serving-predict ADRs are ADR-029 and ADR-030. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039; PR #167 issue auto-label automation lands common ADR-040. ADR-041 (common) is the port-standardization & Compose dev/prod strategy.
+Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. Pending serving-predict ADRs are ADR-029 and ADR-030. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039; PR #167 issue auto-label automation lands common ADR-040. ADR-041 (common) is the port-standardization & Compose dev/prod strategy. ADR-042 through ADR-044 are backend successors for #211 MVP Kakao fan-out.
 ## Category ontology
 
 Active/current-effective ADRs live in exactly one of four top-level categories:
@@ -60,6 +60,9 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 | [ADR-036](./backend/ADR-036-nest-domain-bounded-alerts-layering.md) | Nest domain-bounded layering for alerts | Accepted | 2026-06-13 | `AlertsModule` with thin controller, policy service, repository, ports, and adapters — layering justified by domain/side-effect seams, not global folders (PR #103 split, issue #29). |
 | [ADR-037](./backend/ADR-037-alert-event-delivery-outbox-model.md) | Postgres alert event + delivery outbox model | Accepted | 2026-06-13 | `AlertEvent`/`DeliveryAttempt` outbox keyed by `(source_id, external_event_id)` for idempotency + transactional dispatch state; non-tenant tables outside the RLS guard (PR #103 split, issue #29). |
 | [ADR-038](./backend/ADR-038-channel-port-kakao-send-to-me-pilot.md) | ChannelPort with Kakao send-to-me pilot, AlimTalk-ready | Accepted | 2026-06-13 | Provider-neutral `ChannelPort` with transient vs terminal_operator_action result semantics; Kakao send-to-me as a pilot adapter reading `KAKAO_TOKEN_PATH` (PR #103 split, issue #29). |
+| [ADR-042](./backend/ADR-042-kakao-per-user-token-encrypted-storage.md) | Kakao per-user token encrypted storage | Accepted | 2026-06-17 | Extends ADR-033 by keeping Kakao tokens out of the browser while storing per-user send-to-me access tokens encrypted with AES-256-GCM for backend fan-out. |
+| [ADR-043](./backend/ADR-043-canonical-ingest-single-ingress.md) | Canonical ingest single ingress for alert read-model and outbox | Accepted | 2026-06-17 | Extends ADR-035/037 by making `/ingest/alerts` create both the RLS Alert/SSE read-model and the AlertEvent/per-recipient DeliveryAttempt outbox for one idempotent event. |
+| [ADR-044](./backend/ADR-044-send-to-me-multi-recipient-fanout.md) | Kakao send-to-me multi-recipient fan-out | Accepted | 2026-06-17 | Extends ADR-038 by defining fan-out as token-bearing OAuth'd Users in the camera org, with independent per-recipient DeliveryAttempt rows. |
 
 ### Frontend
 

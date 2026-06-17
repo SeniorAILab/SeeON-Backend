@@ -36,6 +36,25 @@
 └── .mcp.json                # MCP server definitions (project scope)
 ```
 
+## Run / Boot
+
+> 멀티에이전트/신규 클론 30초 구동 웨이포인트. 상세는 [README.md](README.md) Quick Start (중복 금지·여기는 라우팅).
+
+| Service | URL | Start (native) |
+|---|---|---|
+| db (Postgres) | `localhost:5432` | `pnpm db:up` |
+| backend (NestJS) | `http://localhost:8080` | `pnpm dev:backend` |
+| ml-serving (FastAPI) | `http://localhost:8000` | `pnpm dev:ml` |
+| front (Next.js) | `http://localhost:3000` | `pnpm dev:front` |
+| ml demo (Streamlit) | — | `FALL_DEMO_MODE=operator pnpm dev:demo` |
+
+First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example backend/.env.development` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
+
+- **Env 위치**: 네이티브 dev(`pnpm dev:*`)는 `backend/.env.development`를 읽는다. 루트 `.env`는 Docker Compose `${VAR}` 전용. 비밀키 커밋 금지(`.env*` gitignored).
+- **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
+- **Compose 패리티**: dev `pnpm compose:dev:full` / prod `pnpm compose:prod:up`.
+- **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
+
 ## Development Flow
 
 > Issue-driven 루프. AGENTS.md는 라우팅만 담고, 실제 메커니즘은 링크된 rules에 위임한다(SSOT).

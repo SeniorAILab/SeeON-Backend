@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import {
   OAUTH_STATE_COOKIE_NAME,
@@ -35,6 +36,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('/auth/kakao/login')
@@ -61,7 +63,13 @@ export class AuthController {
     const session = await this.auth.completeKakaoCallback(code ?? '');
     clearOAuthStateCookie(response);
     setSessionCookie(response, session.token, session.maxAgeSeconds);
-    response.redirect(session.user.orgId ? '/dashboard' : '/onboarding');
+    const frontOrigin = (
+      this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
+    ).replace(/\/+$/, '');
+    // Backend OAuth callbacks run on :8080; relative redirects would land on missing :8080 frontend routes.
+    response.redirect(
+      `${frontOrigin}${session.user.orgId ? '/dashboard' : '/onboarding'}`,
+    );
   }
 
   @Get('/auth/me')

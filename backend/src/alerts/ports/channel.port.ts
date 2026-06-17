@@ -6,6 +6,7 @@ export type AlertDeliveryMessage = AlertEventIngressDto & {
   readonly event_id: string;
   readonly delivery_attempt_id: string;
   readonly created_at: Date;
+  readonly recipient_access_token?: string;
 };
 
 export type DeliveryResult =

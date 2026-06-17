@@ -117,6 +117,9 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
     process.env.KAKAO_REDIRECT_URI =
       'http://localhost:3001/auth/kakao/callback';
+    process.env.KAKAO_TOKEN_ENC_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.FRONT_ORIGIN = 'http://localhost:3000';
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },
@@ -185,7 +188,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const firstSessionCookie = extractSessionCookie(
       callback.headers['set-cookie'],
     );
-    expect(callback.headers.location).toBe('/onboarding');
+    expect(callback.headers.location).toBe('http://localhost:3000/onboarding');
     expect(firstSessionCookie).toContain('HttpOnly');
     expect(firstSessionCookie).toContain('SameSite=Lax');
 

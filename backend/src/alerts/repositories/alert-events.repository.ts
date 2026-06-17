@@ -42,6 +42,16 @@ export type CreateAlertEventInput = {
   readonly operatingThreshold?: number;
 };
 
+export type IngestOutboxInput = CreateAlertEventInput & {
+  readonly recipientUserIds: readonly string[];
+};
+
+export type IngestOutboxAggregate = {
+  readonly event: AlertEvent;
+  readonly deliveryAttempts: readonly DeliveryAttempt[];
+  readonly duplicate: boolean;
+};
+
 @Injectable()
 export class AlertEventsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -91,17 +101,7 @@ export class AlertEventsRepository {
     try {
       return await this.prisma.db.$transaction(async (tx) => {
         const event = await tx.alertEvent.create({
-          data: {
-            sourceId: input.event.source_id,
-            externalEventId: input.event.external_event_id,
-            type: toPrismaEventType(input.event.type),
-            detectedAt: new Date(input.event.detected_at),
-            confidence: input.event.confidence,
-            fallProbability: input.fallProbability,
-            operatingThreshold: input.operatingThreshold,
-            decision: toPrismaDecision(input.decision),
-            suppressedReason: toPrismaSuppressedReason(input.decision),
-          },
+          data: alertEventCreateData(input),
         });
 
         if (input.decision.kind === 'suppress') {
@@ -130,6 +130,66 @@ export class AlertEventsRepository {
       }
       throw error;
     }
+  }
+
+  async ensureIngestOutbox(
+    input: IngestOutboxInput,
+  ): Promise<IngestOutboxAggregate> {
+    return this.prisma.db.$transaction(async (tx) => {
+      const existing = await tx.alertEvent.findUnique({
+        where: {
+          alert_events_source_external_event_id_key: {
+            sourceId: input.event.source_id,
+            externalEventId: input.event.external_event_id,
+          },
+        },
+      });
+
+      const event =
+        existing ??
+        (await tx.alertEvent.create({
+          data: alertEventCreateData(input),
+        }));
+
+      if (
+        input.decision.kind === 'suppress' ||
+        input.recipientUserIds.length === 0
+      ) {
+        return { event, deliveryAttempts: [], duplicate: existing !== null };
+      }
+
+      for (const recipientUserId of input.recipientUserIds) {
+        await tx.deliveryAttempt.upsert({
+          where: {
+            delivery_attempts_alert_event_id_recipient_user_id_key: {
+              alertEventId: event.id,
+              recipientUserId,
+            },
+          },
+          create: {
+            alertEventId: event.id,
+            recipientUserId,
+            channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+            status: PrismaDeliveryAttemptStatus.PENDING,
+          },
+          update: {},
+        });
+      }
+
+      const deliveryAttempts = await tx.deliveryAttempt.findMany({
+        where: {
+          alertEventId: event.id,
+          recipientUserId: { in: [...input.recipientUserIds] },
+        },
+        orderBy: { recipientUserId: 'asc' },
+      });
+
+      return {
+        event,
+        deliveryAttempts,
+        duplicate: existing !== null,
+      };
+    });
   }
 
   async recordDeliveryResult(
@@ -178,6 +238,20 @@ export class AlertEventsRepository {
       },
     });
   }
+}
+
+function alertEventCreateData(input: CreateAlertEventInput) {
+  return {
+    sourceId: input.event.source_id,
+    externalEventId: input.event.external_event_id,
+    type: toPrismaEventType(input.event.type),
+    detectedAt: new Date(input.event.detected_at),
+    confidence: input.event.confidence,
+    fallProbability: input.fallProbability,
+    operatingThreshold: input.operatingThreshold,
+    decision: toPrismaDecision(input.decision),
+    suppressedReason: toPrismaSuppressedReason(input.decision),
+  };
 }
 
 function toPrismaEventType(

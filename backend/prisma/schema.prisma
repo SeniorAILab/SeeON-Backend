@@ -69,14 +69,17 @@ model User {
   org           Organization?  @relation(fields: [orgId], references: [id])
   kakaoIdentity KakaoIdentity?
   sessions      ServerSession[]
+  deliveryAttempts DeliveryAttempt[]
 }
 
-/// Kakao OAuth identity. Access/refresh tokens are NOT stored (this build).
+/// Kakao OAuth identity. Access token encrypted at rest (AES-256-GCM); refresh token not stored (this build).
 model KakaoIdentity {
   id             String    @id @default(cuid())
   userId         String    @unique
   orgId          String?
   kakaoId        String
+  accessTokenCipher String?
+  tokenScope        String?
   tokenExpiresAt DateTime?
   createdAt      DateTime  @default(now())
 
@@ -278,6 +281,8 @@ model DeliveryAttempt {
   id                String                @id @default(cuid())
   alertEventId      String                @map("alert_event_id")
   alertEvent        AlertEvent            @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+  recipientUserId   String?               @map("recipient_user_id")
+  recipientUser     User?                 @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
   channel           DeliveryChannel
   status            DeliveryAttemptStatus @default(PENDING)
   attemptCount      Int                   @default(0) @map("attempt_count")
@@ -293,5 +298,7 @@ model DeliveryAttempt {
 
   @@index([status, nextAttemptAt], name: "delivery_attempts_status_next_attempt_at_idx")
   @@index([alertEventId], name: "delivery_attempts_alert_event_id_idx")
+  @@unique([alertEventId, recipientUserId], name: "delivery_attempts_alert_event_id_recipient_user_id_key")
+  @@index([recipientUserId], name: "delivery_attempts_recipient_user_id_idx")
   @@map("delivery_attempts")
 }

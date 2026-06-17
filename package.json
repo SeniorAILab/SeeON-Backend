@@ -25,7 +25,9 @@
     "compose:prod:up": "docker compose -f compose.yaml -f compose.prod.yaml up -d --build",
     "compose:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
-    "prisma:migrate": "pnpm --filter backend run prisma:migrate"
+    "prisma:migrate": "pnpm --filter backend run prisma:migrate",
+    "prisma:seed": "pnpm --filter backend run prisma:seed",
+    "demo:bind": "pnpm --filter backend run demo:bind"
   },
   "devDependencies": {
     "jscpd": "^5.0.5"

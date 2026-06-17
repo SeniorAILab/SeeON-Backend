@@ -49,6 +49,9 @@ services:
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:8080/auth/kakao/callback}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
+      # KAKAO_TOKEN_ENC_KEY encrypts per-user Kakao access tokens at rest (AES-256-GCM).
+      # Dev placeholder is a fixed 32-byte hex key; override with a real random key in prod.
+      KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
