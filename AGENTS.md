@@ -46,7 +46,7 @@
 | backend (NestJS) | `http://localhost:8080` | `pnpm dev:backend` |
 | ml-serving (FastAPI) | `http://localhost:8000` | `pnpm dev:ml` |
 | front (Next.js) | `http://localhost:3000` | `pnpm dev:front` |
-| ml demo (Streamlit) | — | `FALL_DEMO_MODE=operator pnpm dev:demo` |
+| ml demo (Streamlit) | — | `pnpm dev:demo` |
 
 First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example backend/.env.development` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
 
