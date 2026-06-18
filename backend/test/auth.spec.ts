@@ -165,7 +165,6 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
   });
 
   it('rejects unauthenticated protected requests with 401', async () => {
-    await request(app.getHttpServer()).get('/auth/me').expect(401);
     await request(app.getHttpServer()).get('/auth/session').expect(401);
     await request(app.getHttpServer()).get('/api/protected-probe').expect(401);
   });
@@ -192,12 +191,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     expect(firstSessionCookie).toContain('HttpOnly');
     expect(firstSessionCookie).toContain('SameSite=Lax');
 
-    const meBeforeOrg = await request(app.getHttpServer())
-      .get('/auth/me')
+    const sessionBeforeOrg = await request(app.getHttpServer())
+      .get('/auth/session')
       .set('cookie', firstSessionCookie)
       .expect(200);
     expect(
-      (meBeforeOrg.body as unknown as AuthResponseBody).user.orgId,
+      (sessionBeforeOrg.body as unknown as AuthResponseBody).user.orgId,
     ).toBeNull();
 
     await request(app.getHttpServer())
@@ -205,13 +204,8 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .set('cookie', firstSessionCookie)
       .expect(403);
 
-    await request(app.getHttpServer())
-      .get('/sse')
-      .set('cookie', firstSessionCookie)
-      .expect(403);
-
     const orgCreate = await request(app.getHttpServer())
-      .post('/orgs')
+      .post('/api/orgs')
       .set('cookie', firstSessionCookie)
       .send({
         facilityName: 'E2E Facility',
@@ -278,32 +272,20 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const tamperedToken = `${oldToken.slice(0, -1)}${oldToken.endsWith('a') ? 'b' : 'a'}`;
 
     await request(app.getHttpServer())
-      .get('/auth/me')
+      .get('/auth/session')
       .set('cookie', `app_session=${tamperedToken}`)
       .expect(401);
     await request(app.getHttpServer())
-      .get('/auth/me')
+      .get('/auth/session')
       .set('cookie', `app_session=${expiredToken}`)
       .expect(401);
     await request(app.getHttpServer())
-      .get('/auth/me')
+      .get('/auth/session')
       .set('cookie', `app_session=${staleVersionToken}`)
       .expect(401);
 
-    const serverRenderSession = await request(app.getHttpServer())
-      .get('/auth/session')
-      .set('cookie', `app_session=${oldToken}`)
-      .expect(200);
-    expect(
-      extractSessionCookieOptional(serverRenderSession.headers['set-cookie']),
-    ).toBeNull();
-    await expect(
-      direct.serverSession.findUniqueOrThrow({
-        where: { id: activeSession.id },
-      }),
-    ).resolves.toMatchObject({ revokedAt: null });
     const rotated = await request(app.getHttpServer())
-      .get('/sse')
+      .get('/auth/session')
       .set('cookie', `app_session=${oldToken}`)
       .expect(200);
     const rotatedCookie = extractSessionCookie(rotated.headers['set-cookie']);
@@ -314,12 +296,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       }),
     ).resolves.toMatchObject({ revokedAt: expect.any(Date) as Date });
     await request(app.getHttpServer())
-      .get('/auth/me')
+      .get('/auth/session')
       .set('cookie', `app_session=${oldToken}`)
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/sse')
+      .get('/auth/session')
       .set('cookie', rotatedCookie)
       .expect(200);
 
@@ -329,7 +311,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(204);
 
     await request(app.getHttpServer())
-      .get('/auth/me')
+      .get('/auth/session')
       .set('cookie', rotatedCookie)
       .expect(401);
 
@@ -339,7 +321,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/sse')
+      .get('/api/org-protected-probe')
       .set('cookie', rotatedCookie)
       .expect(401);
   });

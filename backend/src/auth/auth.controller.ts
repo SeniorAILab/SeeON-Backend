@@ -72,21 +72,17 @@ export class AuthController {
     );
   }
 
-  @Get('/auth/me')
-  @UseGuards(SessionGuard)
-  me(
+  @Get('/auth/session')
+  @Header('cache-control', 'no-store')
+  async sessionForServerRender(
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ) {
-    this.refreshRotatedCookie(request, response);
-    return { user: request.user };
-  }
-
-  @Get('/auth/session')
-  @Header('cache-control', 'no-store')
-  async sessionForServerRender(@Req() request: RequestWithAuth) {
     const token = readCookie(request.headers.cookie, SESSION_COOKIE_NAME);
-    const valid = await this.sessions.validateToken(token, { rotate: false });
+    const valid = await this.sessions.validateToken(token);
+    if (valid.rotatedToken) {
+      setSessionCookie(response, valid.rotatedToken, valid.maxAgeSeconds);
+    }
     return { user: valid.user };
   }
 
@@ -101,7 +97,7 @@ export class AuthController {
     clearSessionCookie(response);
   }
 
-  @Post('/orgs')
+  @Post('/api/orgs')
   @UseGuards(SessionGuard)
   async createOrg(
     @Body() body: CreateOrganizationBody,
@@ -145,18 +141,6 @@ export class AuthController {
   ) {
     this.refreshRotatedCookie(request, response);
     return { orgId: request.user?.orgId };
-  }
-
-  @Get('/sse')
-  @UseGuards(SessionGuard, RequireOrgGuard)
-  @Header('content-type', 'text/event-stream')
-  @Header('cache-control', 'no-store')
-  sseAuthProbe(
-    @Req() request: RequestWithAuth,
-    @Res({ passthrough: true }) response: Response,
-  ): string {
-    this.refreshRotatedCookie(request, response);
-    return ': auth-ok\n\n';
   }
 
   private refreshRotatedCookie(

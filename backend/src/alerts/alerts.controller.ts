@@ -72,10 +72,10 @@ export class AlertsController {
   }
 
   /**
-   * PUT /api/snapshots/:alertId — authenticated snapshot upload.
+   * PUT /api/alerts/:alertId/snapshot — authenticated snapshot upload.
    * Stores bytes locally under a server-derived key; payload URLs are never fetched.
    */
-  @Put('api/snapshots/:alertId')
+  @Put('api/alerts/:alertId/snapshot')
   @HttpCode(201)
   async uploadSnapshot(
     @Req() req: RequestWithAuth,
@@ -106,11 +106,11 @@ export class AlertsController {
   }
 
   /**
-   * GET /api/snapshots/:alertId — Snapshot proxy (F5).
+   * GET /api/alerts/:alertId/snapshot — Snapshot proxy (F5).
    * Verifies alert.orgId == req.user.orgId, then streams file from local disk.
    * Backend never dereferences edge URLs (SSRF-safe).
    */
-  @Get('api/snapshots/:alertId')
+  @Get('api/alerts/:alertId/snapshot')
   async snapshot(
     @Req() req: RequestWithAuth,
     @Param('alertId') alertId: string,
