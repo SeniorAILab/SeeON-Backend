@@ -89,7 +89,7 @@ export class AuthService {
     kakaoToken: KakaoTokenResponse,
   ): Promise<User> {
     const accessTokenCipher = encryptToken(kakaoToken.access_token);
-    const tokenScope = kakaoToken.scope ?? 'talk_message profile_nickname';
+    const tokenScope = kakaoToken.scope ?? this.kakao.resolveScopes();
     const tokenExpiresAt = kakaoToken.expires_in
       ? new Date(Date.now() + kakaoToken.expires_in * 1000)
       : null;
