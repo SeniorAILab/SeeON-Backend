@@ -149,6 +149,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
           email: 'owner@example.test',
           nickname: '시설 원장',
         }),
+        resolveScopes: () => 'talk_message',
       })
       .compile();
 

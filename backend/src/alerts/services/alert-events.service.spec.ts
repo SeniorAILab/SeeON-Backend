@@ -270,6 +270,115 @@ describe('AlertEventsService', () => {
       }),
     );
   });
+
+  it('records a token-decrypt failure as terminal without calling the channel', async () => {
+    process.env.KAKAO_TOKEN_ENC_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const repository = repositoryDouble();
+    repository.ensureIngestOutbox.mockResolvedValue({
+      event: eventRecord(),
+      duplicate: false,
+      deliveryAttempts: [
+        deliveryRecord({
+          id: 'delivery-attempt-1',
+          recipientUserId: 'user-1',
+          status: DeliveryAttemptStatus.PENDING,
+        }),
+      ],
+    });
+    repository.recordDeliveryResult.mockResolvedValue(
+      deliveryRecord({ status: DeliveryAttemptStatus.TERMINAL_FAILED }),
+    );
+    const channel = channelDouble();
+    // Non-decryptable cipher (not the v1:iv:tag:ct format) -> decryptToken throws.
+    const prisma = prismaDouble([
+      recipientRecord('user-1', 'not-a-valid-cipher'),
+    ]);
+    const service = createService(
+      repository,
+      channel,
+      predictionDouble(),
+      prisma,
+    );
+
+    await service.ensureOutboxForIngest({
+      orgId: 'org-1',
+      sourceId: 'cam-1',
+      externalEventId: 'idem-1',
+      type: AlertEventTypes.fall,
+      detectedAt: new Date('2026-06-13T10:00:00.000Z'),
+      confidence: 0.9,
+    });
+
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(repository.recordDeliveryResult).toHaveBeenCalledWith(
+      'delivery-attempt-1',
+      expect.objectContaining({
+        kind: 'failed',
+        failure_class: 'terminal_operator_action',
+      }),
+    );
+  });
+
+  it('skips RETRY_SCHEDULED and TERMINAL_FAILED attempts on duplicate repair (no double send)', async () => {
+    process.env.KAKAO_TOKEN_ENC_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const repository = repositoryDouble();
+    repository.ensureIngestOutbox.mockResolvedValue({
+      event: eventRecord(),
+      duplicate: true,
+      deliveryAttempts: [
+        deliveryRecord({
+          id: 'attempt-retry',
+          recipientUserId: 'user-1',
+          status: DeliveryAttemptStatus.RETRY_SCHEDULED,
+        }),
+        deliveryRecord({
+          id: 'attempt-terminal',
+          recipientUserId: 'user-2',
+          status: DeliveryAttemptStatus.TERMINAL_FAILED,
+        }),
+        deliveryRecord({
+          id: 'attempt-pending',
+          recipientUserId: 'user-3',
+          status: DeliveryAttemptStatus.PENDING,
+        }),
+      ],
+    });
+    repository.recordDeliveryResult.mockResolvedValue(
+      deliveryRecord({ status: DeliveryAttemptStatus.SENT }),
+    );
+    const channel = channelDouble();
+    channel.send.mockResolvedValue({ kind: 'sent' });
+    const prisma = prismaDouble([
+      recipientRecord('user-1', encryptToken('token-1')),
+      recipientRecord('user-2', encryptToken('token-2')),
+      recipientRecord('user-3', encryptToken('token-3')),
+    ]);
+    const service = createService(
+      repository,
+      channel,
+      predictionDouble(),
+      prisma,
+    );
+
+    await service.ensureOutboxForIngest({
+      orgId: 'org-1',
+      sourceId: 'cam-1',
+      externalEventId: 'idem-1',
+      type: AlertEventTypes.fall,
+      detectedAt: new Date('2026-06-13T10:00:00.000Z'),
+      confidence: 0.9,
+    });
+
+    expect(channel.send).toHaveBeenCalledTimes(1);
+    expect(channel.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        delivery_attempt_id: 'attempt-pending',
+        recipient_access_token: 'token-3',
+      }),
+    );
+  });
 });
 
 function createService(
