@@ -4,16 +4,21 @@ import { Test } from '@nestjs/testing';
 import { AlertsModule } from '../src/alerts/alerts.module';
 import { AlertsController } from '../src/alerts/alerts.controller';
 import { AlertsService } from '../src/alerts/alerts.service';
-import { AlertEventsController } from '../src/alerts/controllers/alert-events.controller';
+import { AlertEventsService } from '../src/alerts/services/alert-events.service';
 
 /**
  * Provider-graph closure gate (Standing Build-Closure Rule). Compiling the
  * reconciled AlertsModule without init() opens no DB connection; a successful
- * compile() proves both the #103 ingestion pipeline AND the #105 read-model
- * providers/controllers co-resolve in one module with no dangling tokens.
+ * compile() proves the #105 read-model providers/controllers AND the retained
+ * outbox/prediction seam co-resolve in one module with no dangling tokens.
+ *
+ * The legacy /api.alerts/events AlertEventsController was removed (ADR-047
+ * single-ingress cleanup); /ingest/alerts is the only live alert ingress.
+ * AlertEventsService is retained for ensureOutboxForIngest + the D2-O1 future
+ * prediction seam (ADR-048), so it must still resolve with its prediction port.
  */
-describe('provider graph — alerts module (pipeline + read-model)', () => {
-  it('resolves both AlertEventsController and the read AlertsController/Service', async () => {
+describe('provider graph — alerts module (read-model + outbox/prediction seam)', () => {
+  it('resolves the read AlertsController/Service and the retained AlertEventsService seam', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AlertsModule],
     }).compile();
@@ -24,9 +29,11 @@ describe('provider graph — alerts module (pipeline + read-model)', () => {
     expect(moduleRef.get(AlertsController, { strict: false })).toBeInstanceOf(
       AlertsController,
     );
-    expect(
-      moduleRef.get(AlertEventsController, { strict: false }),
-    ).toBeInstanceOf(AlertEventsController);
+
+    const alertEvents = moduleRef.get(AlertEventsService, { strict: false });
+    expect(alertEvents).toBeInstanceOf(AlertEventsService);
+    // D2-O1: the prediction seam stays wired even though no live route consumes it.
+    expect(alertEvents.predictionSeam()).toBeDefined();
 
     await moduleRef.close();
   });

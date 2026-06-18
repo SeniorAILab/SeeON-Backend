@@ -8,32 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import { encryptToken } from '../../auth/token-crypto.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 
-import {
-  AlertEventTypes,
-  type PredictionAlertInputDto,
-} from '../dto/alert-events.dto.js';
+import { AlertEventTypes } from '../dto/alert-events.dto.js';
 import type { ChannelPort } from '../ports/channel.port.js';
 import type { PredictionPort } from '../ports/prediction.port.js';
 import { AlertEventsRepository } from '../repositories/alert-events.repository.js';
-import {
-  AlertPolicyClock,
-  AlertPolicyService,
-} from './alert-policy.service.js';
 import { AlertEventsService } from './alert-events.service.js';
 
-class FixedAlertPolicyClock extends AlertPolicyClock {
-  nowMs(): number {
-    return Date.parse('2026-06-13T00:00:00.000Z');
-  }
-}
-
 type AlertEventsRepositoryMock = {
-  readonly findExistingByExternalKey: jest.MockedFunction<
-    AlertEventsRepository['findExistingByExternalKey']
-  >;
-  readonly createEventWithInitialDelivery: jest.MockedFunction<
-    AlertEventsRepository['createEventWithInitialDelivery']
-  >;
   readonly recordDeliveryResult: jest.MockedFunction<
     AlertEventsRepository['recordDeliveryResult']
   >;
@@ -51,132 +32,15 @@ type PredictionPortMock = {
 };
 
 describe('AlertEventsService', () => {
-  it('returns existing delivery state for duplicate external events before mutating policy or sending', async () => {
-    const repository = repositoryDouble();
-    repository.findExistingByExternalKey.mockResolvedValue({
-      event: eventRecord(),
-      deliveryAttempt: deliveryRecord({ status: DeliveryAttemptStatus.SENT }),
-    });
-    const channel = channelDouble();
-    const service = createService(repository, channel, predictionDouble());
-
-    const response = await service.ingest(validIngress());
-
-    expect(response).toEqual({
-      event_id: 'alert-event-1',
-      duplicate: true,
-      delivery_attempt_id: 'delivery-attempt-1',
-      delivery_status: 'sent',
-    });
-    expect(repository.createEventWithInitialDelivery).not.toHaveBeenCalled();
-    expect(channel.send).not.toHaveBeenCalled();
-  });
-
-  it('persists event and delivery before sending through ChannelPort', async () => {
-    const repository = repositoryDouble();
-    repository.findExistingByExternalKey.mockResolvedValue(null);
-    repository.createEventWithInitialDelivery.mockResolvedValue({
-      event: eventRecord(),
-      deliveryAttempt: deliveryRecord({
-        status: DeliveryAttemptStatus.PENDING,
-      }),
-      duplicate: false,
-    });
-    repository.recordDeliveryResult.mockResolvedValue(
-      deliveryRecord({ status: DeliveryAttemptStatus.SENT }),
-    );
-    const channel = channelDouble();
-    channel.send.mockResolvedValue({ kind: 'sent' });
-    const service = createService(repository, channel, predictionDouble());
-
-    const response = await service.ingest(validIngress());
-
-    expect(channel.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event_id: 'alert-event-1',
-        delivery_attempt_id: 'delivery-attempt-1',
-        external_event_id: 'edge-event-1',
-      }),
-    );
-    expect(repository.recordDeliveryResult).toHaveBeenCalledWith(
-      'delivery-attempt-1',
-      { kind: 'sent' },
-    );
-    expect(response.delivery_status).toBe('sent');
-  });
-
-  it('consumes the /predict contract and suppresses below-threshold predictions', async () => {
-    const repository = repositoryDouble();
-    repository.findExistingByExternalKey.mockResolvedValue(null);
-    repository.createEventWithInitialDelivery.mockResolvedValue({
-      event: eventRecord(),
-      duplicate: false,
-    });
-    const channel = channelDouble();
-    const service = createService(repository, channel, predictionDouble());
-
-    const predictionInput: PredictionAlertInputDto = {
-      source_id: 'backend-orchestrated-camera-1',
-      external_event_id: 'predict-window-1',
-      detected_at: '2026-06-13T10:00:00.000Z',
-      prediction: {
-        fall_probability: 0.42,
-        operating_threshold: 0.8,
-        is_fall: false,
-      },
-    };
-
-    await service.ingestPrediction(predictionInput);
-
-    const [createInput] =
-      repository.createEventWithInitialDelivery.mock.calls[0] ?? [];
-    if (createInput === undefined) {
-      throw new Error('Expected createEventWithInitialDelivery to be called');
-    }
-    expect(createInput.event.type).toBe(AlertEventTypes.fall);
-    expect(createInput.event.confidence).toBe(0.42);
-    expect(createInput.fallProbability).toBe(0.42);
-    expect(createInput.operatingThreshold).toBe(0.8);
-    expect(createInput.decision).toEqual({
-      kind: 'suppress',
-      suppressed_reason: 'below_threshold',
-    });
-    expect(channel.send).not.toHaveBeenCalled();
-  });
-
-  it('calls ML serving through PredictionPort before applying backend alert policy', async () => {
-    const repository = repositoryDouble();
-    repository.findExistingByExternalKey.mockResolvedValue(null);
-    repository.createEventWithInitialDelivery.mockResolvedValue({
-      event: eventRecord(),
-      duplicate: false,
-    });
+  it('retains the ALERT_PREDICTION_PORT seam for future backend-owned prediction policy wiring', () => {
     const prediction = predictionDouble();
-    prediction.predict.mockResolvedValue({
-      fall_probability: 0.91,
-      operating_threshold: 0.8,
-      is_fall: true,
-    });
-    const service = createService(repository, channelDouble(), prediction);
-    const request = { window: [[0, 0, 0.9]] };
+    const service = createService(
+      repositoryDouble(),
+      channelDouble(),
+      prediction,
+    );
 
-    await service.predictAndIngest({
-      source_id: 'backend-orchestrated-camera-1',
-      external_event_id: 'predict-window-2',
-      detected_at: '2026-06-13T10:00:00.000Z',
-      request,
-    });
-
-    expect(prediction.predict).toHaveBeenCalledWith(request);
-    const [createInput] =
-      repository.createEventWithInitialDelivery.mock.calls[0] ?? [];
-    if (createInput === undefined) {
-      throw new Error('Expected createEventWithInitialDelivery to be called');
-    }
-    expect(createInput.event.confidence).toBe(0.91);
-    expect(createInput.fallProbability).toBe(0.91);
-    expect(createInput.operatingThreshold).toBe(0.8);
-    expect(createInput.decision).toEqual({ kind: 'dispatch' });
+    expect(service.predictionSeam()).toBe(prediction);
   });
 
   it('ensures ingest outbox once and fans out independently per recipient', async () => {
@@ -379,9 +243,7 @@ function createService(
       return undefined;
     }),
   } as unknown as ConfigService;
-  const policy = new AlertPolicyService(config, new FixedAlertPolicyClock());
   return new AlertEventsService(
-    policy,
     repository as unknown as AlertEventsRepository,
     channel,
     prediction,
@@ -390,20 +252,8 @@ function createService(
   );
 }
 
-function validIngress() {
-  return {
-    type: AlertEventTypes.fall,
-    source_id: 'edge-camera-1',
-    external_event_id: 'edge-event-1',
-    detected_at: '2026-06-13T10:00:00.000Z',
-    confidence: 0.87,
-  };
-}
-
 function repositoryDouble(): AlertEventsRepositoryMock {
   return {
-    findExistingByExternalKey: jest.fn(),
-    createEventWithInitialDelivery: jest.fn(),
     recordDeliveryResult: jest.fn(),
     ensureIngestOutbox: jest.fn(),
   };
