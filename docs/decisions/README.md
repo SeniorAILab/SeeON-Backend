@@ -94,6 +94,7 @@ No active frontend-local ADRs yet. Product frontend decisions for `front/` shoul
 | [ADR-026](./ml/ADR-026-frame-model-seam-architecture.md) | Frame and model seam architecture | Superseded by ADR-050 (terminology: seam→contract) | 2026-06-13 | Historical seam terminology record; active contract architecture vocabulary is ADR-050. |
 | [ADR-027](./ml/ADR-027-inference-output-baseline-policy.md) | Inference output axis and comparison baseline policy | Accepted | 2026-06-13 | Extracted output-axis semantics, real baseline retention, and fake-adapter rejection from retired source ADR-005. |
 | [ADR-050](./ml/ADR-050-frame-model-contract-architecture.md) | Frame and model contract architecture | Accepted | 2026-06-18 | Supersedes ADR-026 terminology: `FrameSource` is the stream contract and `ModelModule.predict(frame) -> DetectionResult` is the model contract. |
+| [ADR-051](./ml/ADR-051-bed-localization-instance-segmentation.md) | Bed localization via COCO instance segmentation | Accepted | 2026-06-18 | Replaces bbox-only bed detection with `yolo26m-seg` masks (class 59); `BoundingBox.polygon` carries the silhouette for shape-accurate rendering, bbox derived for bed-exit; no hard cap (issue #243/#244). |
 
 ### Retired source ADRs
 
