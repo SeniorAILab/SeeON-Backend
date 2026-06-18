@@ -68,6 +68,9 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 | [ADR-046](./backend/ADR-046-rest-api-and-layering-convention.md) | REST API and layering convention | Accepted | 2026-06-18 | Establishes slash-separated REST paths plus controller/service/repository/DTO/adapter/presenter responsibilities, with docs/rules carrying mechanical details. |
 | [ADR-047](./backend/ADR-047-canonical-ingest-single-ingress-cleanup.md) | Canonical ingest single ingress cleanup | Accepted | 2026-06-18 | Supersedes ADR-035's separate ingress and ADR-043's pilot clause: `/ingest/alerts` is the only live alert ingress, and `/api.alerts/events` is removed from the live contract. |
 | [ADR-049](./backend/ADR-049-prisma-column-naming-convention.md) | Prisma column naming convention | Accepted | 2026-06-18 | Prisma model fields stay camelCase while database tables/columns stay snake_case via `@map` and `@@map` across backend tables. |
+| [ADR-051](./backend/ADR-051-kakao-oauth-scope-env-minimal-permission.md) | Kakao OAuth scope env-driven, minimal `talk_message` default | Accepted | 2026-06-18 | Extends ADR-033: `KAKAO_SCOPES` env (default `talk_message`); `profile_nickname` becomes opt-in, removing `invalid_scope` from missing nickname consent (issue #226). |
+| [ADR-052](./backend/ADR-052-kakao-alert-message-dto-korean-rich-text.md) | Kakao fall-alert message built from a DTO into Korean rich text | Accepted | 2026-06-18 | Extends ADR-038: the alert message is assembled from a typed DTO (resident/room/time) into Korean rich text for Kakao send-to-me (issue #226). |
+| [ADR-053](./backend/ADR-053-kakao-registered-user-recipient-model.md) | Kakao alerts deliver to registered-user send-to-me recipients | Accepted | 2026-06-18 | Extends ADR-044: recipients are token-bearing registered Users in the camera org via per-user send-to-me (issue #226). |
 
 ### Frontend
 
@@ -94,7 +97,7 @@ No active frontend-local ADRs yet. Product frontend decisions for `front/` shoul
 | [ADR-026](./ml/ADR-026-frame-model-seam-architecture.md) | Frame and model seam architecture | Superseded by ADR-050 (terminology: seam→contract) | 2026-06-13 | Historical seam terminology record; active contract architecture vocabulary is ADR-050. |
 | [ADR-027](./ml/ADR-027-inference-output-baseline-policy.md) | Inference output axis and comparison baseline policy | Accepted | 2026-06-13 | Extracted output-axis semantics, real baseline retention, and fake-adapter rejection from retired source ADR-005. |
 | [ADR-050](./ml/ADR-050-frame-model-contract-architecture.md) | Frame and model contract architecture | Accepted | 2026-06-18 | Supersedes ADR-026 terminology: `FrameSource` is the stream contract and `ModelModule.predict(frame) -> DetectionResult` is the model contract. |
-| [ADR-051](./ml/ADR-051-bed-localization-instance-segmentation.md) | Bed localization via COCO instance segmentation | Accepted | 2026-06-18 | Replaces bbox-only bed detection with `yolo26m-seg` masks (class 59); `BoundingBox.polygon` carries the silhouette for shape-accurate rendering, bbox derived for bed-exit; no hard cap (issue #243/#244). |
+| [ADR-054](./ml/ADR-054-bed-localization-instance-segmentation.md) | Bed localization via COCO instance segmentation | Accepted | 2026-06-18 | Replaces bbox-only bed detection with `yolo26m-seg` masks (class 59); `BoundingBox.polygon` carries the silhouette for shape-accurate rendering, bbox derived for bed-exit; no hard cap (issue #243/#244). |
 
 ### Retired source ADRs
 
