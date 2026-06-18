@@ -1,5 +1,6 @@
 export const AlertEventTypes = {
   detectionLost: 'detection-lost',
+  bedExit: 'bed-exit',
   fall: 'fall',
 } as const;
 

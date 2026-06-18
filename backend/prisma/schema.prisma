@@ -234,6 +234,7 @@ model ResidentStatus {
 enum AlertEventType {
   FALL
   DETECTION_LOST
+  BED_EXIT
 }
 
 enum AlertDecision {

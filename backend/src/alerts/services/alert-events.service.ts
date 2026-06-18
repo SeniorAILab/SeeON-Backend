@@ -9,7 +9,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { decryptToken } from '../../auth/token-crypto.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { AlertEventIngressDto } from '../dto/alert-events.dto.js';
+import {
+  AlertEventTypes,
+  type AlertEventIngressDto,
+} from '../dto/alert-events.dto.js';
 import {
   ALERT_CHANNEL_PORT,
   type ChannelPort,
@@ -63,7 +66,10 @@ export class AlertEventsService {
       detected_at: input.detectedAt.toISOString(),
       confidence: input.confidence,
     };
-    const recipients = await this.findKakaoRecipients(input.orgId);
+    const recipients =
+      input.type === AlertEventTypes.bedExit
+        ? []
+        : await this.findKakaoRecipients(input.orgId);
     const aggregate = await this.alertEventsRepository.ensureIngestOutbox({
       event,
       decision: { kind: 'dispatch' },

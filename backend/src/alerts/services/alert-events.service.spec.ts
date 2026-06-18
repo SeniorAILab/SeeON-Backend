@@ -123,6 +123,49 @@ describe('AlertEventsService', () => {
     );
   });
 
+  it('records bed-exit ingest events without delivery attempts or Kakao sends', async () => {
+    const repository = repositoryDouble();
+    repository.ensureIngestOutbox.mockResolvedValue({
+      event: {
+        ...eventRecord(),
+        type: AlertEventType.BED_EXIT,
+      },
+      duplicate: false,
+      deliveryAttempts: [],
+    });
+    const channel = channelDouble();
+    const prisma = prismaDouble([
+      recipientRecord('user-1', encryptToken('token-1')),
+    ]);
+    const service = createService(
+      repository,
+      channel,
+      predictionDouble(),
+      prisma,
+    );
+
+    await service.ensureOutboxForIngest({
+      orgId: 'org-1',
+      sourceId: 'cam-1',
+      externalEventId: 'idem-bed-exit-1',
+      type: AlertEventTypes.bedExit,
+      detectedAt: new Date('2026-06-13T10:00:00.000Z'),
+      confidence: 0.1,
+    });
+
+    expect(repository.ensureIngestOutbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          type: AlertEventTypes.bedExit,
+          confidence: 0.1,
+        }),
+        recipientUserIds: [],
+      }),
+    );
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(repository.recordDeliveryResult).not.toHaveBeenCalled();
+  });
+
   it('skips already-SENT attempts on duplicate repair (no double Kakao send)', async () => {
     process.env.KAKAO_TOKEN_ENC_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
