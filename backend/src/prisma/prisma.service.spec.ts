@@ -211,11 +211,11 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     >`
       SELECT table_name, count::int
       FROM (
-        SELECT 'Resident' AS table_name, COUNT(*) AS count FROM "Resident"
-        UNION ALL SELECT 'Guardian', COUNT(*) FROM "Guardian"
-        UNION ALL SELECT 'Camera', COUNT(*) FROM "Camera"
-        UNION ALL SELECT 'Alert', COUNT(*) FROM "Alert"
-        UNION ALL SELECT 'ResidentStatus', COUNT(*) FROM "ResidentStatus"
+        SELECT 'Resident' AS table_name, COUNT(*) AS count FROM residents
+        UNION ALL SELECT 'Guardian', COUNT(*) FROM guardians
+        UNION ALL SELECT 'Camera', COUNT(*) FROM cameras
+        UNION ALL SELECT 'Alert', COUNT(*) FROM alerts
+        UNION ALL SELECT 'ResidentStatus', COUNT(*) FROM resident_statuses
       ) denied_counts
       ORDER BY table_name
     `;
@@ -231,7 +231,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
 
     await expect(
       prisma.db.$executeRaw`
-        INSERT INTO "Resident" (id, "orgId", name) VALUES ('raw-unscoped', 'org-a', 'Raw Unscoped')
+        INSERT INTO residents (id, org_id, name) VALUES ('raw-unscoped', 'org-a', 'Raw Unscoped')
       `,
     ).rejects.toThrow();
   });
@@ -240,13 +240,13 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     const result = await prisma.withOrgContext('org-a', async (tx) => {
       const residents = await tx.resident.findMany({ orderBy: { id: 'asc' } });
       const rawResidents = await tx.$queryRaw<IdRow[]>`
-        SELECT id FROM "Resident" ORDER BY id
+        SELECT id FROM residents ORDER BY id
       `;
       const rawCrossOrgResidents = await tx.$queryRaw<IdRow[]>`
-        SELECT id FROM "Resident" WHERE "orgId" = 'org-b'
+        SELECT id FROM residents WHERE org_id = 'org-b'
       `;
       const rawCrossOrgUpdate = await tx.$executeRaw`
-        UPDATE "Resident" SET room = 'hacked' WHERE "orgId" = 'org-b'
+        UPDATE residents SET room = 'hacked' WHERE org_id = 'org-b'
       `;
 
       return {
@@ -281,7 +281,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     expect(result.crossStatus).toBeNull();
 
     const afterTransaction = await prisma.db.$queryRaw<CountRow[]>`
-      SELECT COUNT(*)::int AS count FROM "Resident"
+      SELECT COUNT(*)::int AS count FROM residents
     `;
     expect(afterTransaction[0]?.count).toBe(0);
   });
@@ -292,7 +292,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
         'org-a',
         async (tx) =>
           tx.$executeRaw`
-          INSERT INTO "Resident" (id, "orgId", name) VALUES ('raw-wrong-org', 'org-b', 'Raw Wrong Org')
+          INSERT INTO residents (id, org_id, name) VALUES ('raw-wrong-org', 'org-b', 'Raw Wrong Org')
         `,
       ),
     ).rejects.toThrow();
