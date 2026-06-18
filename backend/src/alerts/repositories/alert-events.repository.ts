@@ -254,13 +254,21 @@ function alertEventCreateData(input: CreateAlertEventInput) {
   };
 }
 
-function toPrismaEventType(
+export function toPrismaEventType(
   type: AlertEventIngressDto['type'],
 ): PrismaAlertEventType {
-  if (type === AlertEventTypes.fall) {
-    return PrismaAlertEventType.FALL;
+  switch (type) {
+    case AlertEventTypes.fall:
+      return PrismaAlertEventType.FALL;
+    case AlertEventTypes.detectionLost:
+      return PrismaAlertEventType.DETECTION_LOST;
+    case AlertEventTypes.bedExit:
+      return PrismaAlertEventType.BED_EXIT;
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unsupported alert event type: ${String(exhaustive)}`);
+    }
   }
-  return PrismaAlertEventType.DETECTION_LOST;
 }
 
 function toPrismaDecision(decision: AlertPolicyDecision): PrismaAlertDecision {

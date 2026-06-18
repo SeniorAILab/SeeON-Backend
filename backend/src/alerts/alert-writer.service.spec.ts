@@ -1,4 +1,5 @@
 import { ResidentState } from '@prisma/client';
+import { AlertEventTypes } from './dto/alert-events.dto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -35,7 +36,7 @@ function input(probability: number) {
     orgId: 'org-1',
     residentId: 'r1',
     cameraId: 'c1',
-    type: 'fall',
+    type: AlertEventTypes.fall,
     probability,
     snapshotKey: null,
     detectedAt: new Date(),
@@ -66,6 +67,29 @@ describe('AlertWriterService', () => {
     service.subscribeStatus('org-1', (e) => statuses.push(e));
     await service.writeAlert(input(p));
     expect(statuses[0].state).toBe(state);
+  });
+
+  it('maps bed-exit alerts to WARNING regardless of probability', async () => {
+    const { service } = setup();
+    const statuses: StatusEvent[] = [];
+    service.subscribeStatus('org-1', (e) => statuses.push(e));
+
+    await service.writeAlert({
+      ...input(0.1),
+      type: AlertEventTypes.bedExit,
+    });
+
+    expect(statuses[0].state).toBe(ResidentState.WARNING);
+  });
+
+  it('keeps high-probability fall alerts mapped to FALL', async () => {
+    const { service } = setup();
+    const statuses: StatusEvent[] = [];
+    service.subscribeStatus('org-1', (e) => statuses.push(e));
+
+    await service.writeAlert(input(0.9));
+
+    expect(statuses[0].state).toBe(ResidentState.FALL);
   });
 
   it('stops delivering after unsubscribe', async () => {

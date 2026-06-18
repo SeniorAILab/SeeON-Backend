@@ -9,7 +9,10 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
-import { AlertEventsRepository } from './alert-events.repository.js';
+import {
+  AlertEventsRepository,
+  toPrismaEventType,
+} from './alert-events.repository.js';
 
 type PrismaMocks = {
   readonly alertEvent: {
@@ -137,6 +140,19 @@ describe('AlertEventsRepository', () => {
         status: DeliveryAttemptStatus.PENDING,
       },
     });
+  });
+
+  it('maps all supported ingress event types to Prisma enum values', () => {
+    expect(toPrismaEventType(AlertEventTypes.bedExit)).toBe(
+      AlertEventType.BED_EXIT,
+    );
+    expect(toPrismaEventType(AlertEventTypes.fall)).toBe(AlertEventType.FALL);
+    expect(toPrismaEventType(AlertEventTypes.detectionLost)).toBe(
+      AlertEventType.DETECTION_LOST,
+    );
+    expect(() =>
+      toPrismaEventType('foo' as Parameters<typeof toPrismaEventType>[0]),
+    ).toThrow('Unsupported alert event type: foo');
   });
 
   it('records transient failures as retry scheduled with next attempt time', async () => {

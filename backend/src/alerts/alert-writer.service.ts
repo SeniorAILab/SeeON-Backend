@@ -16,6 +16,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AlertEventTypes } from './dto/alert-events.dto.js';
 
 export interface AlertEvent {
   alertSeq: bigint;
@@ -117,13 +118,15 @@ export class AlertWriterService {
       idempotencyKey,
     } = input;
 
-    // Determine new resident state from probability.
+    // Determine new resident state from backend-owned alert policy.
     const newState: ResidentState =
-      probability >= 0.8
-        ? ResidentState.FALL
-        : probability >= 0.5
-          ? ResidentState.WARNING
-          : ResidentState.NORMAL;
+      type === AlertEventTypes.bedExit
+        ? ResidentState.WARNING
+        : probability >= 0.8
+          ? ResidentState.FALL
+          : probability >= 0.5
+            ? ResidentState.WARNING
+            : ResidentState.NORMAL;
 
     const now = new Date();
     const cameraOnline =
