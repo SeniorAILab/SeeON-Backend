@@ -92,3 +92,9 @@ ml/.scratch/
 # Autoresearch-loop runtime heartbeat (rewritten every experiment)
 ml/experiments/loop_status.json
 .gstack/
+
+# gjc workflow runtime (specs/plans/state/ultragoal) — local, not source
+.gjc/
+# local verification artifacts (screenshots, transcripts, captures, reports)
+/artifacts/
+front/artifacts/
