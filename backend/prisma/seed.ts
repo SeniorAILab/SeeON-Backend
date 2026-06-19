@@ -30,9 +30,16 @@ function sha256(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function makeCameraSecret(label: string): { keyId: string; secret: string; hash: string } {
+// ponytail: env override, random fallback. A fixed `DEMO_INGEST_SECRET` (set only
+// in gitignored .env files, never committed) pins the demo camera secret so every
+// reseed reproduces the same hash — the live Streamlit→Kakao demo keeps matching
+// ml/.env's INGEST_SECRET. Unset → random per seed (the original behaviour).
+function makeCameraSecret(
+  label: string,
+  fixed?: string,
+): { keyId: string; secret: string; hash: string } {
   const keyId = `demo-${label.toLowerCase().replace(/\s+/g, '-')}-keyid`;
-  const secret = crypto.randomBytes(24).toString('hex');
+  const secret = fixed && fixed.length > 0 ? fixed : crypto.randomBytes(24).toString('hex');
   return { keyId, secret, hash: sha256(secret) };
 }
 
@@ -67,7 +74,7 @@ async function main() {
   console.log(`Residents: ${resA.name}, ${resB.name}`);
 
   // ── Cameras ─────────────────────────────────────────────────────────────────
-  const cam1Keys = makeCameraSecret('Cam 01');
+  const cam1Keys = makeCameraSecret('Cam 01', process.env.DEMO_INGEST_SECRET);
   const cam2Keys = makeCameraSecret('Cam 02');
 
   const [cam1, cam2] = await Promise.all([
