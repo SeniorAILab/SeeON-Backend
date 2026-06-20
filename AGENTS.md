@@ -26,7 +26,7 @@
 │   ├── serving/             # FastAPI inference lifecycle / ML-backend boundary (ADR-022/023)
 │   └── training/            # training pipeline (ADR-013, lifecycle boundary ADR-022)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
-├── front/                   # Next.js dashboard (ADR-001)
+├── front/                   # Vite + React dashboard (SSOT; new ADR supersedes ADR-001 frontend choice)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
 ├── .omo/                    # omo scratch (plans/) — not git canonical
 ├── .omx/                    # omx scratch (plans/) — not git canonical

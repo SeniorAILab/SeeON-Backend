@@ -14,7 +14,7 @@
     "dev:demo": "uv run --directory ml --group demo streamlit run demo/app.py",
     "build:front": "pnpm --filter front build",
     "build:backend": "pnpm --filter backend build",
-    "typecheck": "pnpm --filter front exec tsc --noEmit && pnpm --filter backend exec tsc --noEmit",
+    "typecheck": "pnpm --filter front exec tsc -b && pnpm --filter backend exec tsc --noEmit",
     "lint": "pnpm -r lint && uv run --directory ml ruff check .",
     "dupcheck": "jscpd ml backend/src front/src",
     "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
