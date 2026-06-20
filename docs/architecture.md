@@ -36,14 +36,17 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── ml/                             ← independent uv project (training + serving + demo)
 │   ├── pyproject.toml              ← uv project; dep groups: serving (default), demo, training
 │   ├── uv.lock
-│   ├── serving/
-│   │   ├── main.py                 ← FastAPI app: GET /health, POST /predict
-│   │   └── model.py                ← FallDetector loader (placeholder → real weights later)
-│   ├── training/                   ← batch lifecycle; scaffolded; pipeline operational
-│   ├── demo/
-│   │   └── app.py                  ← Streamlit ML-demo (not the product UI)
-│   ├── util/                       ← shared, demo-agnostic helpers (ADR-006)
-│   │   └── frame_source.py         ← Frame / FrameSource / VideoFileSource / CameraSource (stream intake)
+│   ├── contracts/                 ← L0 contracts, dataclasses, protocols
+│   ├── features/                  ← L0 pure feature transforms
+│   ├── sources/                   ← L1 frame intake, camera probe, source registry
+│   ├── runners/                   ← L1 model/runtime adapters and warmup
+│   ├── perception/                ← L2 observation building, tracking, bed detection
+│   ├── domains/                   ← L3 fall/bed-exit/long-lie/risk domain logic
+│   ├── runtime/                   ← L3 edge runtime orchestration and status
+│   ├── events/                    ← L4 alert/event schemas, signing, publishing
+│   ├── serving/                   ← L5 FastAPI: /health, /status, /models, /debug/predict/*
+│   ├── training/                  ← batch lifecycle; pipeline operational
+│   ├── demo/                      ← Streamlit ML-demo (not the product UI)
 │   ├── models/                     ← single model root (ADR-015; gitignored in entirety)
 │   │   ├── pose/                   ← YOLO26-pose weight cache (re-downloadable)
 │   │   │   └── yolo26{n,s,m,l,x}-pose.pt
@@ -101,7 +104,12 @@ Independent uv project. Two distinct lifecycles share one project:
 | **Training** (batch) | `training/` (scaffolded; pipeline operational) | minutes–hours | manual / scheduled job |
 | **Demo** (dev tool) | `demo/app.py` (Streamlit) | interactive | developer |
 
-Serving exposes `GET /health` and `POST /predict`. The `FallDetector` class in `serving/model.py` loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
+Serving exposes `GET /health`, `GET /status`, `GET /models`, `POST /debug/predict/window`, and `POST /debug/predict/source`. The temporary `POST /predict` alias is removed. Lifespan boot order is detector model → pose warmup → source registry/pipeline → routes. The `FallDetector` class in `serving/model.py` loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
+
+Dependency ladder: `contracts/features` (L0) → `sources/runners` (L1) →
+`perception` (L2) → `domains/runtime` (L3) → `events` (L4) →
+`serving/demo` (L5). Lower layers never import higher layers; `ml/core/` and
+`ml/util/` are removed.
 
 Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --reload --host 0.0.0.0 --port 8000`
 
@@ -109,25 +117,30 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --re
 
 ## PoC end-to-end data path
 
-```
-[video file]
+```text
+[video/camera/source window]
      │
-     ▼  windowing (per-frame feature vectors, e.g. pose keypoints)
-[POST /predict]  ──►  ml/serving/main.py
-     │                   │
-     │                   ▼  FallDetector.predict(window) → fall_probability ∈ [0, 1]
-     │               PredictResponse { model, version, fall_probability }
+     ▼  sources → runners → perception (FrameObservation)
+[POST /debug/predict/{window,source}] ──► ml/serving/main.py
+     │                                      │
+     │                                      ▼
+     │                                  FallDetector.predict(features)
+     │                                  PredictResponse { model, version, fall_probability }
      │
-     ▼  backend receives response
-[backend webhook handler]  ──►  alert policy (threshold, dedup)
+     ▼  backend receives ML signal
+[backend policy layer] ──► threshold, dedup, rate-limit, persistence, dispatch
      │
      ▼
 [PostgreSQL]  +  [outbound webhook / Kakao alert]
 ```
 
-The PoC placeholder (`serving/model.py`) returns `min(1.0, len(window) / 100.0)` so the full path is exercisable without trained weights. Replace `FallDetector.predict` with real YOLO26-pose keypoint inference when weights are ready (framework choice per [ADR-025](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md)).
+The serving path keeps ML thin and edge-local: source decoding, pose inference,
+window feature extraction, and fall probability happen in `ml/`; product policy
+and side effects happen in the backend.
 
-The Streamlit demo (`ml/demo/app.py`) exercises this same path locally (uploads video → constructs a dummy window → calls `model.predict` → displays probability) without going through the backend. It is a **developer tool**, not the product frontend.
+The Streamlit demo (`ml/demo/app.py`) exercises the same serving decision seam for
+temporal classifiers through `serving.client.ServingFallClassifier` and
+`/debug/predict/window`. It is a **developer tool**, not the product frontend.
 
 ---
 
@@ -135,13 +148,13 @@ The Streamlit demo (`ml/demo/app.py`) exercises this same path locally (uploads 
 
 | Concern | Owner | Rationale |
 |---------|-------|-----------|
-| Fall probability score | **ML** (`/predict`) | Model-level signal, stateless per window |
+| Fall probability score | **ML** (`/debug/predict/window`, `/debug/predict/source`) | Model-level signal, stateless per window/source request |
 | Alert threshold policy | **Backend** | Product decision, tuneable without redeploying ML |
 | Deduplication | **Backend** | Requires state (recent events in Postgres) |
 | Webhook dispatch | **Backend** | Credential management, retry logic |
 | Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR-015); backend passes model_type in request if needed |
 
-ML is intentionally thin: it predicts, backend decides. This boundary is explicit in `ml/serving/main.py`'s module docstring and `ml/demo/app.py`'s info callout.
+ML is intentionally thin: it predicts and emits signed event/alert payloads through the `events` seam when configured; backend decides product policy, persistence, deduplication, rate limits, and user-facing side effects.
 
 ---
 
@@ -226,7 +239,7 @@ ADRs are organized by active MECE category under `docs/decisions/{ml,backend,fro
 | ML demo vs product frontend boundary | [ADR-024 — ML demo surface is not the product frontend](decisions/common/ADR-024-ml-demo-product-surface-boundary.md) | `ml/demo/` is an ML observation harness; `front/` is the product UI. |
 | ML data layout and access | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md), [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) (superseded), and [ADR-045 — Streamlit demo is local-only](decisions/common/ADR-045-streamlit-demo-local-only.md) | ADR-012 owns domain-first ML data layout. ADR-028's deploy-time demo-access boundary is superseded by ADR-045: the demo is local-only, so the `FALL_DEMO_MODE` public/operator branching is removed. Retired source ADR-004 is mapped in the README coverage matrix. |
 | Pose framework | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md) | Active framework authority extracted from retired source ADR-005. |
-| Frame and model contracts | [ADR-050 — Frame and model contract architecture](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026 — Frame and model seam architecture](decisions/ml/ADR-026-frame-model-seam-architecture.md) (terminology superseded), and [ADR-006 — Frame-source intake in `ml/util/`](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) | `FrameSource` intake is shared from `ml/util/`; stream/model contracts keep demo, serving, and models pluggable without reversing dependencies. |
+| Frame, source, and model contracts | [ADR-050 — Frame and model contract architecture](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026 — Frame and model seam architecture](decisions/ml/ADR-026-frame-model-seam-architecture.md) (terminology superseded), and [ADR-006 — Frame-source intake](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) | `FrameSource` intake now lives under `ml/sources/`; contracts keep demo, serving, and models pluggable without reversing dependencies. |
 | Inference output and baselines | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md) | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from retired source ADR-005. |
 | ML local generated/model paths | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md) | Current model and data roots supersede retired source ADR-007. |
 | Issue/worktree enforcement | [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/common/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch/worktree through `git wt`; guard scripts are shared enforcement source. |
