@@ -26,7 +26,7 @@
 │   ├── serving/             # FastAPI inference lifecycle / ML-backend boundary (ADR-022/023)
 │   └── training/            # training pipeline (ADR-013, lifecycle boundary ADR-022)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
-├── front/                   # Next.js dashboard (ADR-001)
+├── front/                   # Vite + React dashboard (SSOT; new ADR supersedes ADR-001 frontend choice)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
 ├── .omo/                    # omo scratch (plans/) — not git canonical
 ├── .omx/                    # omx scratch (plans/) — not git canonical
@@ -45,7 +45,7 @@
 | db (Postgres) | `localhost:5432` | `pnpm db:up` |
 | backend (NestJS) | `http://localhost:8080` | `pnpm dev:backend` |
 | ml-serving (FastAPI) | `http://localhost:8000` | `pnpm dev:ml` |
-| front (Next.js) | `http://localhost:3000` | `pnpm dev:front` |
+| front (Vite + React) | `http://localhost:3000` | `pnpm dev:front` |
 | ml demo (Streamlit) | — | `pnpm dev:demo` |
 
 First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example backend/.env.development` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.

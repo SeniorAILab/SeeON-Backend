@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Next.js** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python **FastAPI** serving layer (managed by uv) that classifies video frames and returns fall-probability predictions. Product-level decisions — alert policy, deduplication, and Kakao webhook dispatch — belong exclusively to the backend; the ML layer returns predictions only. The repo is at PoC stage: front and backend are runnable skeletons with realtime transport and full feature implementation deliberately deferred.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python **FastAPI** serving layer (managed by uv) that classifies video frames and returns fall-probability predictions. Product-level decisions — alert policy, deduplication, and Kakao webhook dispatch — belong exclusively to the backend; the ML layer returns predictions only. The repo is at PoC stage: front and backend are runnable skeletons with realtime transport and full feature implementation deliberately deferred.
 
 ## Prerequisites
 
@@ -69,7 +69,7 @@ On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefe
 
 | Script | What it does |
 |--------|-------------|
-| `pnpm dev:front` | Next.js dev server (`front/`) on `:3000` |
+| `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
 | `pnpm dev:ml` | FastAPI serving on `:8000` via uvicorn (`ml/serving/`) |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
@@ -87,7 +87,7 @@ On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefe
 
 ```
 eldercare-fall-ai/
-├── front/          # Next.js + TypeScript  (PoC skeleton)
+├── front/          # Vite + React + TypeScript (frontend SSOT)
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
 ├── ml/
 │   ├── serving/    # FastAPI: /health, /predict
