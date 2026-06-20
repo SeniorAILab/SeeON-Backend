@@ -12,7 +12,7 @@ Proposed  →  Accepted  →  Superseded
 
 ADRs are the visible current decision corpus, not a landfill for superseded bundles. If a decision changes, write successor ADRs and mark/source-map the old decision. Fully superseded non-MECE source ADR files may be retired from the visible corpus only after this README maps every active clause to successors, live-referenced content is preserved in successor ADRs, and the exact original body remains recoverable from git history.
 
-Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. ADR-029 (ml) is the per-site edge-inference deployment topology (signal-only egress); ADR-030 remains reserved for a future serving-predict decision. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039; PR #167 issue auto-label automation lands common ADR-040. ADR-041 (common) is the port-standardization & Compose dev/prod strategy. ADR-042 through ADR-044 are backend successors for #211 MVP Kakao fan-out. ADR-045 (common) supersedes ADR-028: the Streamlit demo is local-only and the demo access-mode branching is removed. Issue #216 assigns ADR-046 through ADR-049 for API/event contract cleanup: backend REST/layering, canonical ingest cleanup, ML/backend window predict contract, and Prisma naming convention. ADR-050 (ml) supersedes ADR-026 terminology from seam to contract.
+Numbering memo: PR #104 freezes ADR-022 through ADR-028 for the MECE split. ADR-029 (ml) is the per-site edge-inference deployment topology (signal-only egress); ADR-030 remains reserved for a future serving-predict decision. PR #105 split candidates are ADR-031 through ADR-034. PR #103 alert-pipeline split lands backend ADR-035 through ADR-038. PR #167 size-gate governance lands common ADR-039; PR #167 issue auto-label automation lands common ADR-040. ADR-041 (common) is the port-standardization & Compose dev/prod strategy. ADR-042 through ADR-044 are backend successors for #211 MVP Kakao fan-out. ADR-045 (common) supersedes ADR-028: the Streamlit demo is local-only and the demo access-mode branching is removed. Issue #216 assigns ADR-046 through ADR-049 for API/event contract cleanup: backend REST/layering, canonical ingest cleanup, ML/backend window predict contract, and Prisma naming convention. ADR-050 (ml) supersedes ADR-026 terminology from seam to contract. ADR-055 (frontend) records the Vite React `front/` SSOT migration and partially supersedes ADR-001's frontend-stack choice.
 ## Category ontology
 
 Active/current-effective ADRs live in exactly one of four top-level categories:
@@ -21,7 +21,7 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 |---|---|
 | [`ml/`](./ml/) | ML project decisions: data, models, training, demo, serving, ML experimentation, and ML-local deployment constraints. |
 | [`backend/`](./backend/) | NestJS/backend decisions: API, persistence, alerting, webhook, backend policy, and database integration. |
-| [`frontend/`](./frontend/) | Product frontend/dashboard decisions for repository path `front/`. Currently no active ADRs. |
+| [`frontend/`](./frontend/) | Product frontend/dashboard decisions for repository path `front/`. |
 | [`common/`](./common/) | Strict common decisions that still constrain at least two of `ml`, `backend`, and `frontend` after attempted split, or repo-wide process/tooling decisions. Not a dumping ground for unclear ownership. |
 
 ### Active vs historical semantics
@@ -74,7 +74,9 @@ Active/current-effective ADRs live in exactly one of four top-level categories:
 
 ### Frontend
 
-No active frontend-local ADRs yet. Product frontend decisions for `front/` should be placed here when they are expensive to reverse and not already covered by `common/`.
+| # | Title | Status | Date | Summary |
+|---|---|---|---|---|
+| [ADR-055](./frontend/ADR-055-vite-react-front-stack.md) | Vite React front stack as `front/` SSOT | Proposed | 2026-06-20 | Makes the migrated Vite 5 + React 18 dashboard the canonical `front/` implementation, keeps port 3000, and partially supersedes ADR-001's Next.js frontend-stack choice while deferring backend matching to Phase 2. |
 
 ### ML
 
