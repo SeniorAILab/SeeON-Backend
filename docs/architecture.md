@@ -13,10 +13,12 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
 ├── docker-compose.yml              ← postgres:17-alpine service (db)
 │
-├── front/                          ← Next.js 16 / React 19 / Tailwind v4 (product UI)
-│   ├── src/app/
-│   │   ├── layout.tsx
-│   │   └── page.tsx
+├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── router.tsx
+│   │   ├── pages/ components/ services/ store/
+│   │   └── ...
 │   └── package.json
 │
 ├── backend/                        ← NestJS 11 / Prisma 6 / PostgreSQL (product logic)
@@ -71,7 +73,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Next.js 16.2.7 (App Router), React 19, Tailwind CSS v4. Currently a `create-next-app` skeleton (`src/app/page.tsx`, `layout.tsx`). Future work: upload UI, caregiver dashboard, alert feed. Realtime transport strategy (SSE / WebSocket / polling) is not yet decided.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. Dashboard UI (monitoring, alerts, residents, admin) currently driven by mock services (`USE_MOCK=true`) behind an apiClient seam; Phase 2 wires these to the backend. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 

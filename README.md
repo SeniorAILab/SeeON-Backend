@@ -54,7 +54,7 @@ bash scripts/git-guard/setup-hooks.sh
 | `ml-serving` | `http://localhost:8000` | `8000` |
 | `db` | `localhost:5432` | `5432` |
 
-Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, backend uses `http://ml-serving:8000` inside Compose, and a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `NEXT_PUBLIC_*` variables.
+Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, backend uses `http://ml-serving:8000` inside Compose, and a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables.
 
 For container parity and production-shaped runs:
 
