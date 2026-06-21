@@ -89,12 +89,20 @@ On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefe
 eldercare-fall-ai/
 ├── front/          # Vite + React + TypeScript (frontend SSOT)
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
-├── ml/
-│   ├── serving/    # FastAPI: /health, /predict
-│   ├── training/   # Batch training pipeline (deferred)
-│   ├── demo/       # Streamlit demo UI
-│   ├── artifacts/  # Versioned model weights: <model>/<version>/
-│   └── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
+├── ml/             # 9-package layered edge runtime (ADR-056/057); see ml/README.md
+│   ├── contracts/  # L0 pure contracts (frame/observation/model/artifacts/event)
+│   ├── features/   # L0 pure feature math
+│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp)
+│   ├── runners/    # L1 model runners + ModelRegistry
+│   ├── perception/ # L2 observation assembly
+│   ├── domains/    # L3 domain interpreters (fall, bed_exit)
+│   ├── runtime/    # L3 edge orchestration (camera manager/worker)
+│   ├── events/     # L4 alert signing/outbox/publisher (→ POST /ingest/alerts)
+│   ├── serving/    # FastAPI: /health, /debug/predict/window
+│   ├── demo/       # Streamlit demo UI (fall classification via serving)
+│   ├── training/   # Batch training pipeline
+│   ├── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
+│   └── models/     # Model single root (gitignored; ADR-015)
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
 │   └── decisions/        # Architecture Decision Records (ADRs)

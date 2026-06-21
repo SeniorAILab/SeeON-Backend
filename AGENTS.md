@@ -19,12 +19,20 @@
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/
 │   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
-├── ml/                      # ML uv project (ADR-001, ADR-022)
+├── ml/                      # ML uv project — 9-package layered edge runtime (ADR-001, ADR-022, ADR-056/057)
+│   ├── contracts/           # L0 pure contracts: frame, observation, model, artifacts, event (ADR-057)
+│   ├── features/            # L0 pure feature math: pose_normalization, window_features, geometry (ADR-057)
+│   ├── sources/             # L1 FrameSource intake: video_file, webcam, rtsp, registry, camera_probe (ADR-056)
+│   ├── runners/             # L1 model runners + ModelRegistry: yolo_pose, yolo_bed_seg, sklearn_fall, device (ADR-057)
+│   ├── perception/          # L2 observation assembly: tracker, observation_builder, window_buffer, scene_state (ADR-057)
+│   ├── domains/             # L3 domain interpreters: fall, bed_exit (+ DomainRegistry) (ADR-057)
+│   ├── runtime/             # L3 edge orchestration: camera_manager/worker, scheduler, incident_manager, edge_runtime (ADR-057)
+│   ├── events/              # L4 alert signing/outbox/publisher; AlertClient → POST /ingest/alerts HMAC (ADR-029/035)
+│   ├── serving/             # FastAPI app factory/lifespan/routes; /debug/predict/window (ADR-022/023/048)
+│   ├── demo/                # Streamlit demo (overlay render; fall classification via serving only) — rules/streamlit-demo.md (ADR-010/011)
+│   ├── training/            # training pipeline; imports only contracts/features/sources/runners (ADR-013/022)
 │   ├── data/                # domain-first {nursing-home,le2i,…}/{raw,processed,poses} — rules/ml-filesystem-layout.md (ADR-012) · gitignored
-│   ├── models/              # model single root {pose,fall} + metadata.json contract — rules/ml-models.md (ADR-015) · gitignored
-│   ├── demo/                # Streamlit demo — rules/streamlit-demo.md (ADR-010/011)
-│   ├── serving/             # FastAPI inference lifecycle / ML-backend boundary (ADR-022/023)
-│   └── training/            # training pipeline (ADR-013, lifecycle boundary ADR-022)
+│   └── models/              # model single root {pose,fall} + metadata.json contract — rules/ml-models.md (ADR-015) · gitignored
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks (ADR-001)
 ├── front/                   # Vite + React dashboard (SSOT; new ADR supersedes ADR-001 frontend choice)
 ├── .omc/                    # omc scratch (specs/, plans/) — not git canonical
