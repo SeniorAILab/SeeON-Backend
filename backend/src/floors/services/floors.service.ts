@@ -65,9 +65,22 @@ export class FloorsService {
         error: 'conflict',
         message: 'Floor cannot be deleted while active spaces reference it',
       });
-    await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.floor.delete({ where: { id } }),
-    );
+    // No active spaces remain. Any leftover spaces are soft-deleted
+    // (isActive=false) rows still held by the ON DELETE RESTRICT composite FK,
+    // so remove their zones and the inactive spaces inside one transaction
+    // before deleting the floor to avoid a dangling FK error.
+    await this.prisma.withFacilityContext(facilityId, async (tx) => {
+      const spaces = await tx.space.findMany({
+        where: { floorId: id },
+        select: { id: true },
+      });
+      const spaceIds = spaces.map((s) => s.id);
+      if (spaceIds.length > 0) {
+        await tx.zone.deleteMany({ where: { spaceId: { in: spaceIds } } });
+        await tx.space.deleteMany({ where: { floorId: id } });
+      }
+      await tx.floor.delete({ where: { id } });
+    });
   }
   private async ensureExists(facilityId: string, id: string) {
     const floor = await this.prisma.withFacilityContext(facilityId, (tx) =>

@@ -55,4 +55,28 @@ describe('FloorsService', () => {
       service.remove('facility-session', 'floor-1'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('cascade-removes soft-deleted child spaces and their zones before deleting the floor', async () => {
+    const tx = {
+      floor: {
+        findUnique: jest.fn().mockResolvedValue(floor),
+        delete: jest.fn().mockResolvedValue(floor),
+      },
+      space: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([{ id: 'space-inactive-1' }]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      zone: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    };
+    const { service } = serviceWith(tx);
+    await service.remove('facility-session', 'floor-1');
+    expect(tx.zone.deleteMany).toHaveBeenCalledWith({
+      where: { spaceId: { in: ['space-inactive-1'] } },
+    });
+    expect(tx.space.deleteMany).toHaveBeenCalledWith({
+      where: { floorId: 'floor-1' },
+    });
+    expect(tx.floor.delete).toHaveBeenCalledWith({ where: { id: 'floor-1' } });
+  });
 });
