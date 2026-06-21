@@ -83,6 +83,9 @@ describe('ML skeleton controllers (e2e)', () => {
     ['PATCH', '/api/alert-rules/rule-1'],
     ['DELETE', '/api/alert-rules/rule-1'],
     ['GET', '/api/space-statuses'],
+    ['GET', '/api/detection-events'],
+    ['PATCH', '/api/detection-events/det-1'],
+    ['GET', '/api/resident-risk-summaries'],
   ] as const)(
     'requires auth before returning skeleton 501 for %s %s',
     async (method, path) => {
@@ -96,6 +99,17 @@ describe('ML skeleton controllers (e2e)', () => {
     ['PATCH', '/api/alert-rules/rule-1', 'alert-rules is not implemented yet'],
     ['DELETE', '/api/alert-rules/rule-1', 'alert-rules is not implemented yet'],
     ['GET', '/api/space-statuses', 'space-statuses is not implemented yet'],
+    ['GET', '/api/detection-events', 'detection-events is not implemented yet'],
+    [
+      'PATCH',
+      '/api/detection-events/det-1',
+      'detection-events is not implemented yet',
+    ],
+    [
+      'GET',
+      '/api/resident-risk-summaries',
+      'resident-risk-summaries is not implemented yet',
+    ],
   ] as const)(
     'returns guarded 501 for facility-scoped %s %s',
     async (method, path, message) => {
