@@ -12,36 +12,30 @@ describe('FacilitiesService', () => {
   };
 
   it('reads the facility root directly by session facilityId', async () => {
-    const prisma = {
-      db: { facility: { findUnique: jest.fn().mockResolvedValue(facility) } },
+    const repository = {
+      getByFacilityId: jest.fn().mockResolvedValue(facility),
     };
-    const service = new FacilitiesService(prisma as never);
+    const service = new FacilitiesService(repository as never);
     await expect(service.current('facility-session')).resolves.toMatchObject({
       code: 'happy-home',
     });
-    expect(prisma.db.facility.findUnique).toHaveBeenCalledWith({
-      where: { id: 'facility-session' },
-    });
+    expect(repository.getByFacilityId).toHaveBeenCalledWith('facility-session');
   });
 
   it('ignores immutable code updates', async () => {
-    const prisma = {
-      db: {
-        facility: {
-          update: jest
-            .fn()
-            .mockResolvedValue({ ...facility, name: 'New Name' }),
-        },
-      },
+    const repository = {
+      updateByFacilityId: jest
+        .fn()
+        .mockResolvedValue({ ...facility, name: 'New Name' }),
     };
-    const service = new FacilitiesService(prisma as never);
+    const service = new FacilitiesService(repository as never);
     await service.update('facility-session', {
       name: 'New Name',
       code: 'evil',
     });
-    expect(prisma.db.facility.update).toHaveBeenCalledWith({
-      where: { id: 'facility-session' },
-      data: { name: 'New Name', address: undefined, phone: undefined },
-    });
+    expect(repository.updateByFacilityId).toHaveBeenCalledWith(
+      'facility-session',
+      { name: 'New Name', address: undefined, phone: undefined },
+    );
   });
 });

@@ -4,17 +4,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Facility } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service.js';
 import type { UpdateFacilityDto } from '../dto/facility.dto.js';
+import { FacilitiesRepository } from '../repositories/facilities.repository.js';
 
 @Injectable()
 export class FacilitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly facilitiesRepository: FacilitiesRepository) {}
 
   async current(facilityId: string) {
-    const facility = await this.prisma.db.facility.findUnique({
-      where: { id: facilityId },
-    });
+    const facility =
+      await this.facilitiesRepository.getByFacilityId(facilityId);
     if (!facility)
       throw new NotFoundException({
         error: 'not_found',
@@ -30,15 +29,15 @@ export class FacilitiesService {
         message: 'name is required',
       });
     }
-    const facility = await this.prisma.db.facility.update({
-      where: { id: facilityId },
-      data: {
+    const facility = await this.facilitiesRepository.updateByFacilityId(
+      facilityId,
+      {
         name: dto.name?.trim() ?? undefined,
         address:
           dto.address !== undefined ? dto.address?.trim() || null : undefined,
         phone: dto.phone !== undefined ? dto.phone?.trim() || null : undefined,
       },
-    });
+    );
     return presentFacility(facility);
   }
 }

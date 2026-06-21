@@ -5,33 +5,23 @@ import {
 } from '@nestjs/common';
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service.js';
 import type { CreateSpaceDto, UpdateSpaceDto } from '../dto/space.dto.js';
-
-interface SpaceFilters {
-  floorId?: string;
-  type?: SpaceType;
-  isActive?: boolean;
-}
+import {
+  SpacesRepository,
+  type SpaceFilters,
+} from '../repositories/spaces.repository.js';
 
 @Injectable()
 export class SpacesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly spacesRepository: SpacesRepository) {}
 
   async list(facilityId: string, filters: SpaceFilters = {}) {
-    const spaces = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.findMany({
-        where: filters,
-        orderBy: [{ floorId: 'asc' }, { name: 'asc' }],
-      }),
-    );
+    const spaces = await this.spacesRepository.list(facilityId, filters);
     return spaces.map(presentSpace);
   }
 
   async getOne(facilityId: string, id: string) {
-    const space = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.findUnique({ where: { id } }),
-    );
+    const space = await this.spacesRepository.findById(facilityId, id);
     if (!space)
       throw new NotFoundException({
         error: 'not_found',
@@ -65,48 +55,38 @@ export class SpacesService {
         error: 'conflict',
         message: 'capacity is required',
       });
-    const space = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.create({
-        data: {
-          facilityId,
-          floorId,
-          name,
-          type,
-          capacity,
-          cameraId:
-            dto.cameraId !== undefined ? dto.cameraId?.trim() || null : null,
-          isActive: dto.isActive,
-          assignedStaff:
-            dto.assignedStaff !== undefined
-              ? dto.assignedStaff?.trim() || null
-              : undefined,
-        },
-      }),
-    );
+    const space = await this.spacesRepository.create(facilityId, {
+      facilityId,
+      floorId,
+      name,
+      type,
+      capacity,
+      cameraId:
+        dto.cameraId !== undefined ? dto.cameraId?.trim() || null : null,
+      isActive: dto.isActive,
+      assignedStaff:
+        dto.assignedStaff !== undefined
+          ? dto.assignedStaff?.trim() || null
+          : undefined,
+    });
     return presentSpace(space);
   }
 
   async update(facilityId: string, id: string, dto: UpdateSpaceDto) {
     await this.ensureExists(facilityId, id);
     const data = normalizeSpaceUpdate(dto);
-    const space = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.update({ where: { id }, data }),
-    );
+    const space = await this.spacesRepository.update(facilityId, id, data);
     return presentSpace(space);
   }
 
   async remove(facilityId: string, id: string) {
     await this.ensureExists(facilityId, id);
-    const space = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.update({ where: { id }, data: { isActive: false } }),
-    );
+    const space = await this.spacesRepository.softDelete(facilityId, id);
     return presentSpace(space);
   }
 
   private async ensureExists(facilityId: string, id: string) {
-    const space = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.space.findUnique({ where: { id } }),
-    );
+    const space = await this.spacesRepository.findById(facilityId, id);
     if (!space)
       throw new NotFoundException({
         error: 'not_found',

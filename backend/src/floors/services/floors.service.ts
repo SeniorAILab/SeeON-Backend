@@ -4,16 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Floor } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service.js';
 import type { CreateFloorDto, UpdateFloorDto } from '../dto/floor.dto.js';
+import { FloorsRepository } from '../repositories/floors.repository.js';
 
 @Injectable()
 export class FloorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly floorsRepository: FloorsRepository) {}
   async list(facilityId: string) {
-    const floors = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.floor.findMany({ orderBy: { orderIndex: 'asc' } }),
-    );
+    const floors = await this.floorsRepository.list(facilityId);
     return floors.map(presentFloor);
   }
   async create(facilityId: string, dto: CreateFloorDto) {
@@ -23,16 +21,12 @@ export class FloorsService {
         error: 'conflict',
         message: 'name is required',
       });
-    const floor = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.floor.create({
-        data: {
-          facilityId,
-          name,
-          orderIndex: Number(dto.orderIndex ?? 0),
-          isActive: dto.isActive ?? true,
-        },
-      }),
-    );
+    const floor = await this.floorsRepository.create(facilityId, {
+      facilityId,
+      name,
+      orderIndex: Number(dto.orderIndex ?? 0),
+      isActive: dto.isActive ?? true,
+    });
     return presentFloor(floor);
   }
   async update(facilityId: string, id: string, dto: UpdateFloorDto) {
@@ -42,50 +36,28 @@ export class FloorsService {
         message: 'name is required',
       });
     await this.ensureExists(facilityId, id);
-    const floor = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.floor.update({
-        where: { id },
-        data: {
-          name: dto.name?.trim() ?? undefined,
-          orderIndex: dto.orderIndex,
-          isActive: dto.isActive,
-        },
-      }),
-    );
+    const floor = await this.floorsRepository.update(facilityId, id, {
+      name: dto.name?.trim() ?? undefined,
+      orderIndex: dto.orderIndex,
+      isActive: dto.isActive,
+    });
     return presentFloor(floor);
   }
   async remove(facilityId: string, id: string) {
     await this.ensureExists(facilityId, id);
-    const activeSpaces = await this.prisma.withFacilityContext(
+    const activeSpaces = await this.floorsRepository.countActiveSpaces(
       facilityId,
-      (tx) => tx.space.count({ where: { floorId: id, isActive: true } }),
+      id,
     );
     if (activeSpaces > 0)
       throw new ConflictException({
         error: 'conflict',
         message: 'Floor cannot be deleted while active spaces reference it',
       });
-    // No active spaces remain. Any leftover spaces are soft-deleted
-    // (isActive=false) rows still held by the ON DELETE RESTRICT composite FK,
-    // so remove their zones and the inactive spaces inside one transaction
-    // before deleting the floor to avoid a dangling FK error.
-    await this.prisma.withFacilityContext(facilityId, async (tx) => {
-      const spaces = await tx.space.findMany({
-        where: { floorId: id },
-        select: { id: true },
-      });
-      const spaceIds = spaces.map((s) => s.id);
-      if (spaceIds.length > 0) {
-        await tx.zone.deleteMany({ where: { spaceId: { in: spaceIds } } });
-        await tx.space.deleteMany({ where: { floorId: id } });
-      }
-      await tx.floor.delete({ where: { id } });
-    });
+    await this.floorsRepository.deleteWithDescendants(facilityId, id);
   }
   private async ensureExists(facilityId: string, id: string) {
-    const floor = await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.floor.findUnique({ where: { id } }),
-    );
+    const floor = await this.floorsRepository.findById(facilityId, id);
     if (!floor)
       throw new NotFoundException({
         error: 'not_found',
