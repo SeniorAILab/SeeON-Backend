@@ -84,7 +84,7 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 NestJS 11, `@nestjs/config` (env-file per `NODE_ENV`), Prisma 6 (PostgreSQL). Listens on `PORT` (default 3000, configured in `.env.development`).
 
-`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. The domain model (organization, auth/session, resident, guardian, camera, alert, residentStatus) is defined in the Prisma schema with org-scoped row-level security ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md)). Product logic over these models is deferred to later #105 slices.
+`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md), superseded for the facility rename + placement domain by [ADR-058](decisions/backend/ADR-058-facility-placement-domain-model.md)/[ADR-059](decisions/backend/ADR-059-facility-rls-guc-rename.md)). Placement/resident CRUD is implemented; camera/space-status/detection-event/alert-rule/resident-risk read models are guarded 501 skeletons pending the ML read-model.
 
 Key responsibilities (all deferred, ownership defined now):
 - Call ML serving (`ML_SERVING_URL=http://localhost:8000`) with a video window
@@ -166,7 +166,7 @@ Root package.json            ← orchestration scripts only; NO app dependencies
 ├── pnpm-workspace.yaml      ← declares [front, backend] as workspace packages
 ├── pnpm-lock.yaml           ← single lock covering front + backend
 │
-├── front/package.json       ← next@16.2.7, react@19, tailwindcss@4
+├── front/package.json       ← vite@5, react@18, react-router-dom@6, tailwindcss@3 (ADR-055)
 └── backend/package.json     ← @nestjs/core@11, @prisma/client@6, @nestjs/config@4
                                 dotenv-cli (used by prisma:migrate script)
 
