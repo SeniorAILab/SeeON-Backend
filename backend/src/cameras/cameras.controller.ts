@@ -11,25 +11,25 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { RequireOrgGuard, SessionGuard } from '../auth/session.guard.js';
-import { OrgContextInterceptor } from '../auth/org-context.interceptor.js';
+import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
+import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
 import { CamerasService } from './cameras.service.js';
 
 @Controller('api/cameras')
-@UseGuards(SessionGuard, RequireOrgGuard)
-@UseInterceptors(OrgContextInterceptor)
+@UseGuards(SessionGuard, RequireFacilityGuard)
+@UseInterceptors(FacilityContextInterceptor)
 export class CamerasController {
   constructor(private readonly service: CamerasService) {}
 
   @Get()
   list(@Req() req: RequestWithAuth) {
-    return this.service.list(requireOrgId(req));
+    return this.service.list(requireFacilityId(req));
   }
 
   @Get(':id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.getOne(requireOrgId(req), id);
+    return this.service.getOne(requireFacilityId(req), id);
   }
 
   @Post()
@@ -37,7 +37,7 @@ export class CamerasController {
     @Req() req: RequestWithAuth,
     @Body() body: { label?: string; residentId?: string },
   ) {
-    return this.service.create(requireOrgId(req), {
+    return this.service.create(requireFacilityId(req), {
       label: body.label ?? '',
       residentId: body.residentId,
     });
@@ -49,17 +49,17 @@ export class CamerasController {
     @Param('id') id: string,
     @Body() body: { label?: string; residentId?: string },
   ) {
-    return this.service.update(requireOrgId(req), id, body);
+    return this.service.update(requireFacilityId(req), id, body);
   }
 
   @Delete(':id')
   remove(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.remove(requireOrgId(req), id);
+    return this.service.remove(requireFacilityId(req), id);
   }
 }
 
-function requireOrgId(req: RequestWithAuth): string {
-  const orgId = req.user?.orgId;
-  if (!orgId) throw new ForbiddenException('Organization context required');
-  return orgId;
+function requireFacilityId(req: RequestWithAuth): string {
+  const facilityId = req.user?.facilityId;
+  if (!facilityId) throw new ForbiddenException('Facility context required');
+  return facilityId;
 }

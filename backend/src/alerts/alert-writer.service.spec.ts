@@ -24,8 +24,8 @@ function setup() {
     residentStatus: { upsert: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
-    withOrgContext: jest.fn((_orgId: string, cb: (t: typeof tx) => unknown) =>
-      cb(tx),
+    withFacilityContext: jest.fn(
+      (_facilityId: string, cb: (t: typeof tx) => unknown) => cb(tx),
     ),
   } as unknown as PrismaService;
   return { service: new AlertWriterService(prisma), tx };
@@ -33,7 +33,7 @@ function setup() {
 
 function input(probability: number) {
   return {
-    orgId: 'org-1',
+    facilityId: 'facility-1',
     residentId: 'r1',
     cameraId: 'c1',
     type: AlertEventTypes.fall,
@@ -48,7 +48,7 @@ describe('AlertWriterService', () => {
   it('persists, returns the mapped event, and notifies alert subscribers', async () => {
     const { service } = setup();
     const received: AlertEvent[] = [];
-    service.subscribe('org-1', (e) => received.push(e));
+    service.subscribe('facility-1', (e) => received.push(e));
 
     const event = await service.writeAlert(input(0.9));
     expect(event.id).toBe('a1');
@@ -64,7 +64,7 @@ describe('AlertWriterService', () => {
   ])('maps probability %s to resident state %s', async (p, state) => {
     const { service } = setup();
     const statuses: StatusEvent[] = [];
-    service.subscribeStatus('org-1', (e) => statuses.push(e));
+    service.subscribeStatus('facility-1', (e) => statuses.push(e));
     await service.writeAlert(input(p));
     expect(statuses[0].state).toBe(state);
   });
@@ -72,7 +72,7 @@ describe('AlertWriterService', () => {
   it('maps bed-exit alerts to WARNING regardless of probability', async () => {
     const { service } = setup();
     const statuses: StatusEvent[] = [];
-    service.subscribeStatus('org-1', (e) => statuses.push(e));
+    service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
     await service.writeAlert({
       ...input(0.1),
@@ -85,7 +85,7 @@ describe('AlertWriterService', () => {
   it('keeps high-probability fall alerts mapped to FALL', async () => {
     const { service } = setup();
     const statuses: StatusEvent[] = [];
-    service.subscribeStatus('org-1', (e) => statuses.push(e));
+    service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
     await service.writeAlert(input(0.9));
 
@@ -95,16 +95,16 @@ describe('AlertWriterService', () => {
   it('stops delivering after unsubscribe', async () => {
     const { service } = setup();
     const received: AlertEvent[] = [];
-    const off = service.subscribe('org-1', (e) => received.push(e));
+    const off = service.subscribe('facility-1', (e) => received.push(e));
     off();
     await service.writeAlert(input(0.9));
     expect(received).toHaveLength(0);
   });
 
-  it('only notifies subscribers of the same org', async () => {
+  it('only notifies subscribers of the same facility', async () => {
     const { service } = setup();
     const other: AlertEvent[] = [];
-    service.subscribe('org-2', (e) => other.push(e));
+    service.subscribe('facility-2', (e) => other.push(e));
     await service.writeAlert(input(0.9));
     expect(other).toHaveLength(0);
   });

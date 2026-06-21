@@ -1,9 +1,9 @@
 /**
  * GET /api/sse — SSE event stream (F3/F8/F10/F13).
  *
- * Auth: SessionGuard + RequireOrgGuard (same as data routes).
+ * Auth: SessionGuard + RequireFacilityGuard (same as data routes).
  * Last-Event-ID: parsed as bigint alertSeq. On reconnect:
- *   1. Replay org-scoped alerts WHERE alertSeq > lastEventId ORDER BY alertSeq.
+ *   1. Replay facility-scoped alerts WHERE alertSeq > lastEventId ORDER BY alertSeq.
  *   2. REST-snapshot ResidentStatus current state.
  *   3. Live events stream via AlertWriterService.subscribe (alerts) and
  *      AlertWriterService.subscribeStatus (status events — AC5/AC6).
@@ -35,7 +35,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { RequireOrgGuard, SessionGuard } from '../auth/session.guard.js';
+import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
 import { AlertWriterService } from '../alerts/alert-writer.service.js';
 import type {
@@ -52,7 +52,7 @@ export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
 const HEARTBEAT_MS = 20_000;
 
 @Controller()
-@UseGuards(SessionGuard, RequireOrgGuard)
+@UseGuards(SessionGuard, RequireFacilityGuard)
 export class SseController {
   constructor(
     private readonly writer: AlertWriterService,
@@ -69,7 +69,7 @@ export class SseController {
   @Header('connection', 'keep-alive')
   @Header('x-accel-buffering', 'no') // F10: disable Nginx/proxy buffering
   async sse(@Req() req: RequestWithAuth, @Res() res: Response): Promise<void> {
-    const orgId = requireOrgId(req);
+    const facilityId = requireFacilityId(req);
 
     // Capture session identity at connection time (set by SessionGuard).
     const sessionId = requireSessionId(req);
@@ -100,7 +100,7 @@ export class SseController {
     const liveBuffer: AlertEvent[] = [];
     const statusLiveBuffer: StatusEvent[] = [];
 
-    const unsub = this.writer.subscribe(orgId, (event: AlertEvent) => {
+    const unsub = this.writer.subscribe(facilityId, (event: AlertEvent) => {
       if (!liveReady) {
         liveBuffer.push(event);
         return;
@@ -110,7 +110,7 @@ export class SseController {
 
     // Subscribe to status events (AC5/AC6) — buffer during replay phase.
     const unsubStatus = this.writer.subscribeStatus(
-      orgId,
+      facilityId,
       (event: StatusEvent) => {
         if (!liveReady) {
           statusLiveBuffer.push(event);
@@ -144,7 +144,7 @@ export class SseController {
     if (lastSeq !== null) {
       replayHighWatermark = lastSeq;
       try {
-        const backlog = await this.alerts.replay(orgId, lastSeq);
+        const backlog = await this.alerts.replay(facilityId, lastSeq);
         for (const alert of backlog) {
           if (alert.alertSeq > replayHighWatermark) {
             replayHighWatermark = alert.alertSeq;
@@ -159,7 +159,7 @@ export class SseController {
 
     // F8: REST re-snapshot of current ResidentStatus on reconnect.
     try {
-      const statuses = await this.status.listByOrg(orgId);
+      const statuses = await this.status.listByFacility(facilityId);
       write(`event: status-snapshot\ndata: ${JSON.stringify(statuses)}\n\n`);
     } catch {
       failBeforeLive('status-snapshot-error');
@@ -231,7 +231,7 @@ type SseAlertLike = Pick<
   AlertEvent,
   | 'alertSeq'
   | 'id'
-  | 'orgId'
+  | 'facilityId'
   | 'residentId'
   | 'cameraId'
   | 'type'
@@ -246,7 +246,7 @@ function formatAlertEvent(event: SseAlertLike): string {
   return formatSseEvent(event.alertSeq, {
     alertSeq: event.alertSeq.toString(),
     id: event.id,
-    orgId: event.orgId,
+    facilityId: event.facilityId,
     residentId: event.residentId,
     cameraId: event.cameraId,
     type: event.type,
@@ -265,7 +265,7 @@ function formatStatusEvent(event: StatusEvent): string {
     `event: status\n` +
     `data: ${JSON.stringify({
       alertSeq: event.alertSeq.toString(),
-      orgId: event.orgId,
+      facilityId: event.facilityId,
       residentId: event.residentId,
       state: event.state,
       cameraOnline: event.cameraOnline,
@@ -281,10 +281,10 @@ function formatSseEvent(
   return `id: ${alertSeq}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-function requireOrgId(req: RequestWithAuth): string {
-  const orgId = req.user?.orgId;
-  if (!orgId) throw new ForbiddenException('Organization context required');
-  return orgId;
+function requireFacilityId(req: RequestWithAuth): string {
+  const facilityId = req.user?.facilityId;
+  if (!facilityId) throw new ForbiddenException('Facility context required');
+  return facilityId;
 }
 
 function requireSessionId(req: RequestWithAuth): string {

@@ -46,7 +46,7 @@ export class UnknownIngestKeyException extends UnauthorizedException {
   }
 }
 
-/** AC9: ingest payload facility_id or resident_id does not match camera's org. */
+/** AC9: ingest payload facility_id or resident_id does not match camera's facility. */
 export class TenantMismatchException extends ForbiddenException {
   constructor(reason: string) {
     super({ error: 'TENANT_MISMATCH', message: reason });
@@ -54,7 +54,7 @@ export class TenantMismatchException extends ForbiddenException {
 }
 
 /** F12: cross-tenant resource exists but not visible to caller. */
-export class OrgScopedNotFoundException extends NotFoundException {
+export class FacilityScopedNotFoundException extends NotFoundException {
   constructor(resource: string) {
     super({ error: 'NOT_FOUND', resource });
   }

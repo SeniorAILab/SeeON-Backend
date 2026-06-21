@@ -27,7 +27,7 @@ import { AlertEventsRepository } from '../repositories/alert-events.repository.j
 const DEFAULT_DELIVERY_TIMEOUT_MS = 5_000;
 
 export type EnsureOutboxForIngestInput = {
-  readonly orgId: string;
+  readonly facilityId: string;
   readonly sourceId: string;
   readonly externalEventId: string;
   readonly type: AlertEventIngressDto['type'];
@@ -71,7 +71,7 @@ export class AlertEventsService {
     const recipients =
       input.type === AlertEventTypes.bedExit
         ? []
-        : await this.findKakaoRecipients(input.orgId);
+        : await this.findKakaoRecipients(input.facilityId);
     const aggregate = await this.alertEventsRepository.ensureIngestOutbox({
       event,
       decision: { kind: 'dispatch' },
@@ -209,11 +209,11 @@ export class AlertEventsService {
   }
 
   private async findKakaoRecipients(
-    orgId: string,
+    facilityId: string,
   ): Promise<readonly KakaoRecipient[]> {
     const recipients = await this.prisma.db.user.findMany({
       where: {
-        orgId,
+        facilityId,
         kakaoIdentity: {
           accessTokenCipher: { not: null },
         },

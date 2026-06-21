@@ -1,5 +1,5 @@
 /**
- * Demo seed — creates one org with residents, cameras, guardians, and initial
+ * Demo seed — creates one facility with residents, cameras, guardians, and initial
  * ResidentStatus rows.
  *
  * Runs with the DIRECT_URL (fall superuser) to bypass RLS during setup.
@@ -46,29 +46,29 @@ function makeCameraSecret(
 async function main() {
   console.log('Seeding demo data…');
 
-  // ── Organization ────────────────────────────────────────────────────────────
-  const org = await prisma.organization.upsert({
-    where: { id: 'demo-org-01' },
+  // ── Facility ────────────────────────────────────────────────────────────
+  const facility = await prisma.facility.upsert({
+    where: { id: 'demo-facility-01' },
     update: { name: 'Demo Nursing Home' },
     create: {
-      id: 'demo-org-01',
+      id: 'demo-facility-01',
       name: 'Demo Nursing Home',
       businessRegistrationNumber: '123-45-67890',
     },
   });
-  console.log(`Org: ${org.name} (${org.id})`);
+  console.log(`Facility: ${facility.name} (${facility.id})`);
 
   // ── Residents ───────────────────────────────────────────────────────────────
   const [resA, resB] = await Promise.all([
     prisma.resident.upsert({
-      where: { orgId_id: { orgId: org.id, id: 'demo-res-01' } },
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-01' } },
       update: {},
-      create: { id: 'demo-res-01', orgId: org.id, name: '홍길동', room: '101호' },
+      create: { id: 'demo-res-01', facilityId: facility.id, name: '홍길동', room: '101호' },
     }),
     prisma.resident.upsert({
-      where: { orgId_id: { orgId: org.id, id: 'demo-res-02' } },
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-02' } },
       update: {},
-      create: { id: 'demo-res-02', orgId: org.id, name: '이순신', room: '202호' },
+      create: { id: 'demo-res-02', facilityId: facility.id, name: '이순신', room: '202호' },
     }),
   ]);
   console.log(`Residents: ${resA.name}, ${resB.name}`);
@@ -79,11 +79,11 @@ async function main() {
 
   const [cam1, cam2] = await Promise.all([
     prisma.camera.upsert({
-      where: { orgId_id: { orgId: org.id, id: 'demo-cam-01' } },
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-01' } },
       update: { ingestKeyId: cam1Keys.keyId, ingestSecretHash: cam1Keys.hash },
       create: {
         id: 'demo-cam-01',
-        orgId: org.id,
+        facilityId: facility.id,
         residentId: resA.id,
         label: 'Cam 01',
         ingestKeyId: cam1Keys.keyId,
@@ -91,11 +91,11 @@ async function main() {
       },
     }),
     prisma.camera.upsert({
-      where: { orgId_id: { orgId: org.id, id: 'demo-cam-02' } },
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-02' } },
       update: { ingestKeyId: cam2Keys.keyId, ingestSecretHash: cam2Keys.hash },
       create: {
         id: 'demo-cam-02',
-        orgId: org.id,
+        facilityId: facility.id,
         residentId: resB.id,
         label: 'Cam 02',
         ingestKeyId: cam2Keys.keyId,
@@ -112,7 +112,7 @@ async function main() {
       update: {},
       create: {
         id: 'demo-grd-01',
-        orgId: org.id,
+        facilityId: facility.id,
         residentId: resA.id,
         name: '홍보호자',
         phone: '010-****-1234',
@@ -124,7 +124,7 @@ async function main() {
       update: {},
       create: {
         id: 'demo-grd-02',
-        orgId: org.id,
+        facilityId: facility.id,
         residentId: resB.id,
         name: '이보호자',
         phone: '010-****-5678',
@@ -141,7 +141,7 @@ async function main() {
       update: {},
       create: {
         residentId: resA.id,
-        orgId: org.id,
+        facilityId: facility.id,
         state: ResidentState.NORMAL,
         cameraOnline: false,
         sourceId: cam1.id,
@@ -152,7 +152,7 @@ async function main() {
       update: {},
       create: {
         residentId: resB.id,
-        orgId: org.id,
+        facilityId: facility.id,
         state: ResidentState.NORMAL,
         cameraOnline: false,
         sourceId: cam2.id,

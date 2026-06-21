@@ -53,8 +53,14 @@ describe('toKakaoAlertMessageDto', () => {
   });
 
   it('rounds confidence (0-1) to a whole percent', () => {
-    expect(toKakaoAlertMessageDto(message({ confidence: 0.5 }), DASHBOARD).confidencePercent).toBe(50);
-    expect(toKakaoAlertMessageDto(message({ confidence: 0.876 }), DASHBOARD).confidencePercent).toBe(88);
+    expect(
+      toKakaoAlertMessageDto(message({ confidence: 0.5 }), DASHBOARD)
+        .confidencePercent,
+    ).toBe(50);
+    expect(
+      toKakaoAlertMessageDto(message({ confidence: 0.876 }), DASHBOARD)
+        .confidencePercent,
+    ).toBe(88);
   });
 
   it('uses a fallback resident name and null room when absent', () => {
@@ -74,14 +80,21 @@ describe('toKakaoAlertMessageDto', () => {
   });
 
   it('titles by alert type', () => {
-    expect(toKakaoAlertMessageDto(message({ type: 'bed-exit' }), DASHBOARD).title).toBe('🚨 침대 이탈 감지');
-    expect(toKakaoAlertMessageDto(message({ type: 'detection-lost' }), DASHBOARD).title).toBe('⚠️ 감지 신호 끊김');
+    expect(
+      toKakaoAlertMessageDto(message({ type: 'bed-exit' }), DASHBOARD).title,
+    ).toBe('🚨 침대 이탈 감지');
+    expect(
+      toKakaoAlertMessageDto(message({ type: 'detection-lost' }), DASHBOARD)
+        .title,
+    ).toBe('⚠️ 감지 신호 끊김');
   });
 });
 
 describe('buildKakaoAlertText', () => {
   it('renders Korean rich text with resident, room, KST time, confidence, and a dashboard prompt', () => {
-    const text = buildKakaoAlertText(toKakaoAlertMessageDto(message(), DASHBOARD));
+    const text = buildKakaoAlertText(
+      toKakaoAlertMessageDto(message(), DASHBOARD),
+    );
     expect(text).toContain('🚨 낙상 감지');
     expect(text).toContain('홍길동님');
     expect(text).toContain('302호');
@@ -92,7 +105,9 @@ describe('buildKakaoAlertText', () => {
   });
 
   it('never leaks debug/database identifiers', () => {
-    const text = buildKakaoAlertText(toKakaoAlertMessageDto(message(), DASHBOARD));
+    const text = buildKakaoAlertText(
+      toKakaoAlertMessageDto(message(), DASHBOARD),
+    );
     for (const leak of [
       'demo-cam-01',
       'evt-abc-123',

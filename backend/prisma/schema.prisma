@@ -36,7 +36,7 @@ enum ResidentState {
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
-model Organization {
+model Facility {
   id                         String   @id @default(cuid())
   name                       String
   businessRegistrationNumber String?  @map("business_registration_number")
@@ -50,15 +50,15 @@ model Organization {
   residentStatuses ResidentStatus[]
   kakaoIdentities  KakaoIdentity[]
   sessions         ServerSession[]
-  @@map("organizations")
+  @@map("facilities")
 }
 
-/// Platform identity root. orgId is nullable until onboarding completes; auth code
-/// must access users by authenticated user/session only, then bind orgId before
+/// Platform identity root. facilityId is nullable until onboarding completes; auth code
+/// must access users by authenticated user/session only, then bind facilityId before
 /// tenant-domain data queries. No tenant data list/detail route may query User.
 model User {
   id             String   @id @default(cuid())
-  orgId          String?  @map("org_id")
+  facilityId          String?  @map("facility_id")
   kakaoId        String   @unique @map("kakao_id")
   email          String?
   nickname       String
@@ -67,7 +67,7 @@ model User {
   sessionVersion Int      @default(0) @map("session_version")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  org           Organization?  @relation(fields: [orgId], references: [id])
+  facility           Facility?  @relation(fields: [facilityId], references: [id])
   kakaoIdentity KakaoIdentity?
   sessions      ServerSession[]
   deliveryAttempts DeliveryAttempt[]
@@ -78,7 +78,7 @@ model User {
 model KakaoIdentity {
   id             String    @id @default(cuid())
   userId         String    @unique @map("user_id")
-  orgId          String?   @map("org_id")
+  facilityId          String?   @map("facility_id")
   kakaoId        String    @map("kakao_id")
   accessTokenCipher String? @map("access_token_cipher")
   tokenScope        String? @map("token_scope")
@@ -86,51 +86,51 @@ model KakaoIdentity {
   createdAt      DateTime  @default(now()) @map("created_at")
 
   user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  org  Organization? @relation(fields: [orgId], references: [id])
+  facility  Facility? @relation(fields: [facilityId], references: [id])
   @@map("kakao_identities")
 }
 
 /// Server-side session root for JWT revocation and SSE re-auth. Session lookup is
-/// by opaque session id/user id only; tenant-domain access starts after org GUC binding.
+/// by opaque session id/user id only; tenant-domain access starts after facility GUC binding.
 model ServerSession {
   id        String    @id @default(cuid())
   userId    String    @map("user_id")
-  orgId     String?   @map("org_id")
+  facilityId     String?   @map("facility_id")
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
   user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  org  Organization? @relation(fields: [orgId], references: [id])
+  facility  Facility? @relation(fields: [facilityId], references: [id])
   @@map("server_sessions")
 }
 
-// ─── Tenant tables (orgId-scoped, RLS ENABLE + FORCE) ────────────────────────
+// ─── Tenant tables (facilityId-scoped, RLS ENABLE + FORCE) ────────────────────────
 
-/// Facility resident. RLS-protected. Composite unique (orgId, id) allows
+/// Facility resident. RLS-protected. Composite unique (facilityId, id) allows
 /// child tables to reference residents via composite FKs (F9).
 model Resident {
   id        String   @id @default(cuid())
-  orgId     String   @map("org_id")
+  facilityId     String   @map("facility_id")
   name      String
   room      String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  org            Organization   @relation(fields: [orgId], references: [id])
+  facility            Facility   @relation(fields: [facilityId], references: [id])
   guardians      Guardian[]
   cameras        Camera[]
   alerts         Alert[]
   residentStatus ResidentStatus?
 
-  @@unique([orgId, id])
+  @@unique([facilityId, id])
   @@map("residents")
 }
 
-/// Emergency contact. Composite FK (orgId, residentId) → Resident(orgId, id)
-/// prevents a guardian from being linked to a resident in a different org (F9).
+/// Emergency contact. Composite FK (facilityId, residentId) → Resident(facilityId, id)
+/// prevents a guardian from being linked to a resident in a different facility (F9).
 model Guardian {
   id         String   @id @default(cuid())
-  orgId      String   @map("org_id")
+  facilityId      String   @map("facility_id")
   residentId String   @map("resident_id")
   name       String
   /// Phone is stored in full; masked in UI layer.
@@ -138,16 +138,16 @@ model Guardian {
   relation   String?
   createdAt  DateTime @default(now()) @map("created_at")
 
-  org      Organization @relation(fields: [orgId], references: [id])
-  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
+  facility      Facility @relation(fields: [facilityId], references: [id])
+  resident Resident     @relation(fields: [facilityId, residentId], references: [facilityId, id])
   @@map("guardians")
 }
 
-/// Ingest-capable camera. Composite unique (orgId, id) to support composite FK
+/// Ingest-capable camera. Composite unique (facilityId, id) to support composite FK
 /// references from Alert. ingestKeyId is a selector (no auth value alone).
 model Camera {
   id               String    @id @default(cuid())
-  orgId            String    @map("org_id")
+  facilityId            String    @map("facility_id")
   /// Nullable: camera may not yet be assigned to a resident.
   residentId       String?   @map("resident_id")
   label            String
@@ -159,32 +159,32 @@ model Camera {
   online           Boolean   @default(false)
   createdAt        DateTime  @default(now()) @map("created_at")
 
-  org      Organization @relation(fields: [orgId], references: [id])
-  /// Composite FK (orgId, residentId) → Resident(orgId, id) prevents
-  /// a camera from being assigned to a resident in a different org (F9).
-  resident Resident?    @relation(fields: [orgId, residentId], references: [orgId, id])
+  facility      Facility @relation(fields: [facilityId], references: [id])
+  /// Composite FK (facilityId, residentId) → Resident(facilityId, id) prevents
+  /// a camera from being assigned to a resident in a different facility (F9).
+  resident Resident?    @relation(fields: [facilityId, residentId], references: [facilityId, id])
   alerts   Alert[]
   residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
 
-  @@unique([orgId, id])
-  @@unique([orgId, label])
-  @@unique([orgId, ingestKeyId])
+  @@unique([facilityId, id])
+  @@unique([facilityId, label])
+  @@unique([facilityId, ingestKeyId])
   @@map("cameras")
 }
 
 /// Alert event log. alertSeq (BIGSERIAL) is the SSE Last-Event-ID ordering key.
-/// Composite unique (orgId, idempotencyKey) prevents exact-duplicate ingestion.
+/// Composite unique (facilityId, idempotencyKey) prevents exact-duplicate ingestion.
 model Alert {
   id             String      @id @default(cuid())
   /// Monotonically increasing within the table; used as SSE Last-Event-ID.
   alertSeq       BigInt      @default(autoincrement()) @map("alert_seq")
-  orgId          String      @map("org_id")
+  facilityId          String      @map("facility_id")
   residentId     String      @map("resident_id")
   /// Nullable: alert may originate from an unconfigured camera path.
   cameraId       String?     @map("camera_id")
   type           String
   probability    Float
-  /// Internal org-scoped storage key for the snapshot image (never a raw URL).
+  /// Internal facility-scoped storage key for the snapshot image (never a raw URL).
   snapshotKey    String?     @map("snapshot_key")
   detectedAt     DateTime    @map("detected_at")
   status         AlertStatus @default(NEW)
@@ -192,36 +192,36 @@ model Alert {
   idempotencyKey String      @map("idempotency_key")
   createdAt      DateTime    @default(now()) @map("created_at")
 
-  org      Organization @relation(fields: [orgId], references: [id])
-  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
-  /// Composite FK (orgId, cameraId) → Camera(orgId, id) prevents
-  /// an alert from referencing a camera in a different org (F9).
-  camera   Camera?      @relation(fields: [orgId, cameraId], references: [orgId, id])
+  facility      Facility @relation(fields: [facilityId], references: [id])
+  resident Resident     @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
+  /// an alert from referencing a camera in a different facility (F9).
+  camera   Camera?      @relation(fields: [facilityId, cameraId], references: [facilityId, id])
 
-  @@unique([orgId, idempotencyKey])
-  @@index([orgId, alertSeq])
+  @@unique([facilityId, idempotencyKey])
+  @@index([facilityId, alertSeq])
   @@map("alerts")
 }
 
 /// Current status read model for each resident. One row per resident.
-/// Composite FK (orgId, residentId) → Resident(orgId, id) (F9).
+/// Composite FK (facilityId, residentId) → Resident(facilityId, id) (F9).
 model ResidentStatus {
   id           String        @id @default(cuid())
   residentId   String        @unique @map("resident_id")
-  orgId        String        @map("org_id")
+  facilityId        String        @map("facility_id")
   state        ResidentState @default(NORMAL)
   lastSeenAt   DateTime?     @map("last_seen_at")
   cameraOnline Boolean       @default(false) @map("camera_online")
-  /// Nullable cameraId. Composite FK (orgId, sourceId) → Camera(orgId, id)
-  /// prevents dangling or cross-org status source references.
+  /// Nullable cameraId. Composite FK (facilityId, sourceId) → Camera(facilityId, id)
+  /// prevents dangling or cross-facility status source references.
   sourceId     String?       @map("source_id")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
-  org      Organization @relation(fields: [orgId], references: [id])
-  resident Resident     @relation(fields: [orgId, residentId], references: [orgId, id])
-  source   Camera?      @relation("ResidentStatusSource", fields: [orgId, sourceId], references: [orgId, id])
+  facility      Facility @relation(fields: [facilityId], references: [id])
+  resident Resident     @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  source   Camera?      @relation("ResidentStatusSource", fields: [facilityId, sourceId], references: [facilityId, id])
 
-  @@unique([orgId, residentId])
+  @@unique([facilityId, residentId])
   @@map("resident_statuses")
 }
 
@@ -229,7 +229,7 @@ model ResidentStatus {
 // AlertEvent/DeliveryAttempt are NOT tenant-domain RLS tables. They are keyed
 // by source_id (ingest source) + external_event_id for idempotency, owned by the
 // backend alert pipeline, and intentionally excluded from PrismaService's
-// TENANT_MODELS guard (no org context required). See backend/ADR-035..038.
+// TENANT_MODELS guard (no facility context required). See backend/ADR-035..038.
 
 enum AlertEventType {
   FALL

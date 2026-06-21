@@ -28,12 +28,12 @@ describe('AuthController', () => {
     return { auth, controller };
   };
 
-  it('redirects users without orgId to absolute frontend onboarding URL', async () => {
+  it('redirects users without facilityId to absolute frontend onboarding URL', async () => {
     const { auth, controller } = makeController('http://front.test/');
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { orgId: null },
+      user: { facilityId: null },
     } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
     const response = makeResponse();
 
@@ -51,12 +51,12 @@ describe('AuthController', () => {
     );
   });
 
-  it('redirects users with orgId to absolute frontend dashboard URL', async () => {
+  it('redirects users with facilityId to absolute frontend dashboard URL', async () => {
     const { auth, controller } = makeController('https://app.example.com///');
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { orgId: 'demo-org-01' },
+      user: { facilityId: 'demo-facility-01' },
     } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
     const response = makeResponse();
 
@@ -79,7 +79,7 @@ describe('AuthController', () => {
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { orgId: null },
+      user: { facilityId: null },
     } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
     const response = makeResponse();
 

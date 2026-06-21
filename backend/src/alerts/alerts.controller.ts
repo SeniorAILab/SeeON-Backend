@@ -17,11 +17,11 @@ import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AlertStatus } from '@prisma/client';
-import { RequireOrgGuard, SessionGuard } from '../auth/session.guard.js';
-import { OrgContextInterceptor } from '../auth/org-context.interceptor.js';
+import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
+import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
 import { AlertsService } from './alerts.service.js';
-import { OrgScopedNotFoundException } from '../common/domain-errors.js';
+import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 
 const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 const SNAPSHOT_EXTENSIONS = new Map<string, string>([
@@ -32,8 +32,8 @@ const SNAPSHOT_EXTENSIONS = new Map<string, string>([
 ]);
 
 @Controller()
-@UseGuards(SessionGuard, RequireOrgGuard)
-@UseInterceptors(OrgContextInterceptor)
+@UseGuards(SessionGuard, RequireFacilityGuard)
+@UseInterceptors(FacilityContextInterceptor)
 export class AlertsController {
   constructor(private readonly service: AlertsService) {}
 
@@ -51,7 +51,7 @@ export class AlertsController {
     )
       ? (status as AlertStatus)
       : undefined;
-    return this.service.list(requireOrgId(req), {
+    return this.service.list(requireFacilityId(req), {
       residentId,
       status: validStatus,
       afterSeq: afterSeq ? BigInt(afterSeq) : undefined,
@@ -62,13 +62,13 @@ export class AlertsController {
 
   @Get('api/alerts/:id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.getOne(requireOrgId(req), id);
+    return this.service.getOne(requireFacilityId(req), id);
   }
 
   @Patch('api/alerts/:id/ack')
   @HttpCode(200)
   ack(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.ack(requireOrgId(req), id);
+    return this.service.ack(requireFacilityId(req), id);
   }
 
   /**
@@ -81,8 +81,8 @@ export class AlertsController {
     @Req() req: RequestWithAuth,
     @Param('alertId') alertId: string,
   ) {
-    const orgId = requireOrgId(req);
-    const alert = await this.service.getOne(orgId, alertId);
+    const facilityId = requireFacilityId(req);
+    const alert = await this.service.getOne(facilityId, alertId);
     const contentType = String(req.headers['content-type'] ?? '')
       .split(';')[0]
       .trim()
@@ -96,18 +96,18 @@ export class AlertsController {
     if (body.length === 0) throw new BadRequestException('Snapshot is empty');
 
     const snapshotDir = snapshotRoot();
-    const snapshotKey = path.posix.join(orgId, `${alert.id}.${extension}`);
+    const snapshotKey = path.posix.join(facilityId, `${alert.id}.${extension}`);
     const filePath = resolveSnapshotPath(snapshotDir, snapshotKey);
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
     await fs.promises.writeFile(filePath, body);
-    await this.service.setSnapshotKey(orgId, alert.id, snapshotKey);
+    await this.service.setSnapshotKey(facilityId, alert.id, snapshotKey);
 
     return { snapshotKey };
   }
 
   /**
    * GET /api/alerts/:alertId/snapshot — Snapshot proxy (F5).
-   * Verifies alert.orgId == req.user.orgId, then streams file from local disk.
+   * Verifies alert.facilityId == req.user.facilityId, then streams file from local disk.
    * Backend never dereferences edge URLs (SSRF-safe).
    */
   @Get('api/alerts/:alertId/snapshot')
@@ -116,15 +116,16 @@ export class AlertsController {
     @Param('alertId') alertId: string,
     @Res() res: Response,
   ) {
-    const alert = await this.service.getOne(requireOrgId(req), alertId);
-    if (!alert.snapshotKey) throw new OrgScopedNotFoundException('snapshot');
+    const alert = await this.service.getOne(requireFacilityId(req), alertId);
+    if (!alert.snapshotKey)
+      throw new FacilityScopedNotFoundException('snapshot');
 
     // snapshotKey is a relative server-owned key under SNAPSHOT_DIR.
     const snapshotDir = snapshotRoot();
     const filePath = resolveSnapshotPath(snapshotDir, alert.snapshotKey);
 
     if (!fs.existsSync(filePath))
-      throw new OrgScopedNotFoundException('snapshot');
+      throw new FacilityScopedNotFoundException('snapshot');
 
     res.setHeader('content-type', 'image/jpeg');
     res.setHeader('cache-control', 'private, max-age=300');
@@ -140,7 +141,7 @@ function resolveSnapshotPath(snapshotDir: string, snapshotKey: string): string {
   const root = path.resolve(snapshotDir);
   const resolved = path.resolve(root, snapshotKey);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new OrgScopedNotFoundException('snapshot');
+    throw new FacilityScopedNotFoundException('snapshot');
   }
   return resolved;
 }
@@ -163,8 +164,8 @@ async function readRequestBody(
   return Buffer.concat(chunks);
 }
 
-function requireOrgId(req: RequestWithAuth): string {
-  const orgId = req.user?.orgId;
-  if (!orgId) throw new ForbiddenException('Organization context required');
-  return orgId;
+function requireFacilityId(req: RequestWithAuth): string {
+  const facilityId = req.user?.facilityId;
+  if (!facilityId) throw new ForbiddenException('Facility context required');
+  return facilityId;
 }

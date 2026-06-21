@@ -11,27 +11,27 @@ import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import type { RequestWithAuth } from './session.guard';
 
-export type OrgBoundPrismaRunner = <T>(
+export type FacilityBoundPrismaRunner = <T>(
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
 ) => Promise<T>;
 
 @Injectable()
-export class OrgContextInterceptor implements NestInterceptor {
+export class FacilityContextInterceptor implements NestInterceptor {
   constructor(private readonly prisma: PrismaService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context
       .switchToHttp()
       .getRequest<
-        RequestWithAuth & { withOrgContext?: OrgBoundPrismaRunner }
+        RequestWithAuth & { withFacilityContext?: FacilityBoundPrismaRunner }
       >();
     if (!request.user) throw new UnauthorizedException('Missing session');
-    if (!request.user.orgId)
-      throw new ForbiddenException('Organization onboarding required');
-    const orgId = request.user.orgId;
-    request.withOrgContext = <T>(
+    if (!request.user.facilityId)
+      throw new ForbiddenException('Facility onboarding required');
+    const facilityId = request.user.facilityId;
+    request.withFacilityContext = <T>(
       fn: (tx: Prisma.TransactionClient) => Promise<T>,
-    ) => this.prisma.withOrgContext<T>(orgId, fn);
+    ) => this.prisma.withFacilityContext<T>(facilityId, fn);
     return next.handle();
   }
 }

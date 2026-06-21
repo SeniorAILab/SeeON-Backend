@@ -9,8 +9,14 @@ async function bootstrap() {
   }
   // ponytail: routes/methods auto-discovered from controllers; no per-route decorators.
   // Add @ApiProperty on a DTO only when its request/response shape needs to show in the schema.
-  const config = new DocumentBuilder().setTitle('Eldercare backend API').build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  const config = new DocumentBuilder()
+    .setTitle('Eldercare backend API')
+    .build();
+  SwaggerModule.setup(
+    'api/docs',
+    app,
+    SwaggerModule.createDocument(app, config),
+  );
   await app.listen(process.env.PORT ?? 8080);
 }
 bootstrap().catch((error: unknown) => {

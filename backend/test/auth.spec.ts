@@ -17,13 +17,13 @@ type AuthResponseBody = {
     id: string;
     kakaoId: string;
     sessionVersion: number;
-    orgId: string | null;
+    facilityId: string | null;
     role?: string;
   };
 };
 
-type OrgProbeBody = {
-  orgId: string | null;
+type FacilityProbeBody = {
+  facilityId: string | null;
 };
 
 describe('auth fail-fast config and cookie attributes', () => {
@@ -131,7 +131,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     await direct.kakaoIdentity.deleteMany();
     await direct.serverSession.deleteMany();
     await direct.user.deleteMany({ where: { kakaoId: 'kakao-e2e-user' } });
-    await direct.organization.deleteMany({ where: { name: 'E2E Facility' } });
+    await direct.facility.deleteMany({ where: { name: 'E2E Facility' } });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -170,7 +170,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     await request(app.getHttpServer()).get('/api/protected-probe').expect(401);
   });
 
-  it('round-trips Kakao login, creates owner org during onboarding, and revokes session on logout', async () => {
+  it('round-trips Kakao login, creates owner facility during onboarding, and revokes session on logout', async () => {
     const login = await request(app.getHttpServer())
       .get('/auth/kakao/login')
       .expect(302);
@@ -192,57 +192,59 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     expect(firstSessionCookie).toContain('HttpOnly');
     expect(firstSessionCookie).toContain('SameSite=Lax');
 
-    const sessionBeforeOrg = await request(app.getHttpServer())
+    const sessionBeforeFacility = await request(app.getHttpServer())
       .get('/auth/session')
       .set('cookie', firstSessionCookie)
       .expect(200);
     expect(
-      (sessionBeforeOrg.body as unknown as AuthResponseBody).user.orgId,
+      (sessionBeforeFacility.body as unknown as AuthResponseBody).user
+        .facilityId,
     ).toBeNull();
 
     await request(app.getHttpServer())
-      .get('/api/org-protected-probe')
+      .get('/api/facility-protected-probe')
       .set('cookie', firstSessionCookie)
       .expect(403);
 
-    const orgCreate = await request(app.getHttpServer())
-      .post('/api/orgs')
+    const facilityCreate = await request(app.getHttpServer())
+      .post('/api/facilities')
       .set('cookie', firstSessionCookie)
       .send({
         facilityName: 'E2E Facility',
         businessRegistrationNumber: '123-45-67890',
       })
       .expect(201);
-    const orgSessionCookie = extractSessionCookie(
-      orgCreate.headers['set-cookie'],
+    const facilitySessionCookie = extractSessionCookie(
+      facilityCreate.headers['set-cookie'],
     );
-    const orgCreateBody = orgCreate.body as unknown as AuthResponseBody;
-    expect(orgCreateBody.user.orgId).toBeTruthy();
-    expect(orgCreateBody.user.role).toBe('OWNER');
+    const facilityCreateBody =
+      facilityCreate.body as unknown as AuthResponseBody;
+    expect(facilityCreateBody.user.facilityId).toBeTruthy();
+    expect(facilityCreateBody.user.role).toBe('OWNER');
     const kakaoIdentity = await direct.kakaoIdentity.findUniqueOrThrow({
-      where: { userId: orgCreateBody.user.id },
+      where: { userId: facilityCreateBody.user.id },
     });
     expect(JSON.stringify(kakaoIdentity)).not.toContain('test-access-token');
 
-    const orgProbe = await request(app.getHttpServer())
-      .get('/api/org-protected-probe')
-      .set('cookie', orgSessionCookie)
+    const facilityProbe = await request(app.getHttpServer())
+      .get('/api/facility-protected-probe')
+      .set('cookie', facilitySessionCookie)
       .expect(200);
-    expect((orgProbe.body as unknown as OrgProbeBody).orgId).toBe(
-      orgCreateBody.user.orgId,
-    );
+    expect(
+      (facilityProbe.body as unknown as FacilityProbeBody).facilityId,
+    ).toBe(facilityCreateBody.user.facilityId);
 
     const activeSession = await direct.serverSession.findFirstOrThrow({
-      where: { userId: orgCreateBody.user.id, revokedAt: null },
+      where: { userId: facilityCreateBody.user.id, revokedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     const nowSeconds = Math.floor(Date.now() / 1000);
     const oldToken = createSignedSessionToken(
       {
         sessionId: activeSession.id,
-        userId: orgCreateBody.user.id,
-        orgId: orgCreateBody.user.orgId,
-        sessionVersion: orgCreateBody.user.sessionVersion,
+        userId: facilityCreateBody.user.id,
+        facilityId: facilityCreateBody.user.facilityId,
+        sessionVersion: facilityCreateBody.user.sessionVersion,
         iat: nowSeconds - 700,
         exp: nowSeconds + 1800,
       },
@@ -251,9 +253,9 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const expiredToken = createSignedSessionToken(
       {
         sessionId: activeSession.id,
-        userId: orgCreateBody.user.id,
-        orgId: orgCreateBody.user.orgId,
-        sessionVersion: orgCreateBody.user.sessionVersion,
+        userId: facilityCreateBody.user.id,
+        facilityId: facilityCreateBody.user.facilityId,
+        sessionVersion: facilityCreateBody.user.sessionVersion,
         iat: nowSeconds - 3600,
         exp: nowSeconds - 1,
       },
@@ -262,9 +264,9 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const staleVersionToken = createSignedSessionToken(
       {
         sessionId: activeSession.id,
-        userId: orgCreateBody.user.id,
-        orgId: orgCreateBody.user.orgId,
-        sessionVersion: orgCreateBody.user.sessionVersion + 1,
+        userId: facilityCreateBody.user.id,
+        facilityId: facilityCreateBody.user.facilityId,
+        sessionVersion: facilityCreateBody.user.sessionVersion + 1,
         iat: nowSeconds,
         exp: nowSeconds + 1800,
       },
@@ -322,7 +324,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/api/org-protected-probe')
+      .get('/api/facility-protected-probe')
       .set('cookie', rotatedCookie)
       .expect(401);
   });
