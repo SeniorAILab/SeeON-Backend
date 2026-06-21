@@ -18,6 +18,9 @@ const TENANT_MODELS = new Set([
   'Camera',
   'Alert',
   'ResidentStatus',
+  'Floor',
+  'Space',
+  'Zone',
 ]);
 
 // ─── PrismaService ────────────────────────────────────────────────────────────

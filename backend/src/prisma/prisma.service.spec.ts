@@ -38,12 +38,15 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.serverSession.deleteMany();
     await direct.user.deleteMany();
     await direct.resident.deleteMany();
+    await direct.zone.deleteMany();
+    await direct.space.deleteMany();
+    await direct.floor.deleteMany();
     await direct.facility.deleteMany();
 
     await direct.facility.createMany({
       data: [
-        { id: 'facility-a', name: 'Facility A' },
-        { id: 'facility-b', name: 'Facility B' },
+        { id: 'facility-a', name: 'Facility A', code: 'facility-a' },
+        { id: 'facility-b', name: 'Facility B', code: 'facility-b' },
       ],
     });
 
@@ -203,6 +206,15 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       MissingTenantContextError,
     );
     await expect(prisma.db.residentStatus.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
+    await expect(prisma.db.floor.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
+    await expect(prisma.db.space.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
+    await expect(prisma.db.zone.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
     // KakaoIdentity is NOT in TENANT_MODELS — app-layer gated, not RLS-gated.

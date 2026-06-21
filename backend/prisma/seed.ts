@@ -49,10 +49,11 @@ async function main() {
   // ── Facility ────────────────────────────────────────────────────────────
   const facility = await prisma.facility.upsert({
     where: { id: 'demo-facility-01' },
-    update: { name: 'Demo Nursing Home' },
+    update: { name: 'Demo Nursing Home', code: 'demo-nursing-home' },
     create: {
       id: 'demo-facility-01',
       name: 'Demo Nursing Home',
+      code: 'demo-nursing-home',
       businessRegistrationNumber: '123-45-67890',
     },
   });
