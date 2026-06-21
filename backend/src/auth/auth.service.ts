@@ -64,7 +64,11 @@ export class AuthService {
     }
 
     const facility = await this.prisma.db.facility.create({
-      data: { name, businessRegistrationNumber },
+      data: {
+        name,
+        code: await this.nextFacilityCode(name),
+        businessRegistrationNumber,
+      },
     });
 
     const user = await this.prisma.withFacilityContext(
@@ -134,4 +138,27 @@ export class AuthService {
       return user;
     });
   }
+
+  private async nextFacilityCode(name: string): Promise<string> {
+    const base = slugFacilityName(name);
+    const existing = await this.prisma.db.facility.findMany({
+      where: { code: { startsWith: base } },
+      select: { code: true },
+    });
+    const used = new Set(existing.map((facility) => facility.code));
+    if (!used.has(base)) return base;
+    for (let suffix = 2; ; suffix += 1) {
+      const candidate = `${base}-${suffix}`;
+      if (!used.has(candidate)) return candidate;
+    }
+  }
+}
+
+function slugFacilityName(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'facility'
+  );
 }

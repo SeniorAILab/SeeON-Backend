@@ -11,6 +11,10 @@ import { CamerasModule } from './cameras/cameras.module.js';
 import { StatusModule } from './status/status.module.js';
 import { IngestModule } from './ingest/ingest.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { FacilitiesModule } from './facilities/facilities.module.js';
+import { FloorsModule } from './floors/floors.module.js';
+import { SpacesModule } from './spaces/spaces.module.js';
+import { ZonesModule } from './zones/zones.module.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
@@ -36,6 +40,10 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     AlertsModule,
     IngestModule,
     DashboardModule,
+    FacilitiesModule,
+    FloorsModule,
+    SpacesModule,
+    ZonesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
