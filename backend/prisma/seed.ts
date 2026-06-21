@@ -59,6 +59,24 @@ async function main() {
   });
   console.log(`Facility: ${facility.name} (${facility.id})`);
 
+  const floor = await prisma.floor.upsert({
+    where: { facilityId_name: { facilityId: facility.id, name: 'Demo Floor' } },
+    update: {},
+    create: { id: 'demo-floor-01', facilityId: facility.id, name: 'Demo Floor', orderIndex: 1 },
+  });
+  const [spaceA, spaceB] = await Promise.all([
+    prisma.space.upsert({
+      where: { facilityId_floorId_name: { facilityId: facility.id, floorId: floor.id, name: '101호' } },
+      update: {},
+      create: { id: 'demo-space-101', facilityId: facility.id, floorId: floor.id, name: '101호', type: 'ROOM', capacity: 1 },
+    }),
+    prisma.space.upsert({
+      where: { facilityId_floorId_name: { facilityId: facility.id, floorId: floor.id, name: '202호' } },
+      update: {},
+      create: { id: 'demo-space-202', facilityId: facility.id, floorId: floor.id, name: '202호', type: 'ROOM', capacity: 1 },
+    }),
+  ]);
+
   // ── Residents ───────────────────────────────────────────────────────────────
   const [resA, resB] = await Promise.all([
     prisma.resident.upsert({
@@ -73,6 +91,19 @@ async function main() {
     }),
   ]);
   console.log(`Residents: ${resA.name}, ${resB.name}`);
+
+  await Promise.all([
+    prisma.residentAssignment.upsert({
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-assignment-01' } },
+      update: {},
+      create: { id: 'demo-assignment-01', facilityId: facility.id, residentId: resA.id, spaceId: spaceA.id },
+    }),
+    prisma.residentAssignment.upsert({
+      where: { facilityId_id: { facilityId: facility.id, id: 'demo-assignment-02' } },
+      update: {},
+      create: { id: 'demo-assignment-02', facilityId: facility.id, residentId: resB.id, spaceId: spaceB.id },
+    }),
+  ]);
 
   // ── Cameras ─────────────────────────────────────────────────────────────────
   const cam1Keys = makeCameraSecret('Cam 01', process.env.DEMO_INGEST_SECRET);

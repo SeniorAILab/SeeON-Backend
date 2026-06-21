@@ -53,6 +53,12 @@ enum ZoneType {
   AREA
 }
 
+enum Level {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
@@ -74,6 +80,7 @@ model Facility {
   floors           Floor[]
   spaces           Space[]
   zones            Zone[]
+  assignments      ResidentAssignment[]
   kakaoIdentities  KakaoIdentity[]
   sessions         ServerSession[]
   @@map("facilities")
@@ -140,6 +147,12 @@ model Resident {
   facilityId     String   @map("facility_id")
   name      String
   room      String?
+  isActive Boolean @default(true) @map("is_active")
+  gender    String?
+  age       Int?
+  diagnosisTags String[] @default([]) @map("diagnosis_tags")
+  fallRiskBaseline Level? @map("fall_risk_baseline")
+  isFocusResident Boolean @default(false) @map("is_focus_resident")
   createdAt DateTime @default(now()) @map("created_at")
 
   facility            Facility   @relation(fields: [facilityId], references: [id])
@@ -147,9 +160,31 @@ model Resident {
   cameras        Camera[]
   alerts         Alert[]
   residentStatus ResidentStatus?
+  assignments ResidentAssignment[]
 
   @@unique([facilityId, id])
   @@map("residents")
+}
+
+
+model ResidentAssignment {
+  id         String    @id @default(cuid())
+  facilityId String    @map("facility_id")
+  residentId String    @map("resident_id")
+  spaceId    String    @map("space_id")
+  zoneId     String?   @map("zone_id")
+  startedAt  DateTime  @default(now()) @map("started_at")
+  endedAt    DateTime? @map("ended_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  facility Facility @relation(fields: [facilityId], references: [id])
+  resident Resident @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  zone     Zone?    @relation(fields: [facilityId, zoneId], references: [facilityId, id])
+
+  @@unique([facilityId, id])
+  @@index([facilityId, residentId])
+  @@map("resident_assignments")
 }
 
 /// Emergency contact. Composite FK (facilityId, residentId) → Resident(facilityId, id)
@@ -287,6 +322,7 @@ model Space {
   facility Facility @relation(fields: [facilityId], references: [id])
   floor    Floor    @relation(fields: [facilityId, floorId], references: [facilityId, id])
   zones    Zone[]
+  assignments ResidentAssignment[]
 
   @@unique([facilityId, floorId, name])
   @@unique([facilityId, id])
@@ -305,6 +341,7 @@ model Zone {
 
   facility Facility @relation(fields: [facilityId], references: [id])
   space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  assignments ResidentAssignment[]
 
   @@unique([facilityId, spaceId, name])
   @@unique([facilityId, id])

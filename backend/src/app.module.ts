@@ -15,6 +15,7 @@ import { FacilitiesModule } from './facilities/facilities.module.js';
 import { FloorsModule } from './floors/floors.module.js';
 import { SpacesModule } from './spaces/spaces.module.js';
 import { ZonesModule } from './zones/zones.module.js';
+import { ResidentAssignmentsModule } from './resident-assignments/resident-assignments.module.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
@@ -44,6 +45,7 @@ import { ZonesModule } from './zones/zones.module.js';
     FloorsModule,
     SpacesModule,
     ZonesModule,
+    ResidentAssignmentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
