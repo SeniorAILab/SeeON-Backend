@@ -166,7 +166,7 @@ Root package.json            ← orchestration scripts only; NO app dependencies
 ├── pnpm-workspace.yaml      ← declares [front, backend] as workspace packages
 ├── pnpm-lock.yaml           ← single lock covering front + backend
 │
-├── front/package.json       ← next@16.2.7, react@19, tailwindcss@4
+├── front/package.json       ← vite@5, react@18, react-router-dom@6, tailwindcss@3 (ADR-055)
 └── backend/package.json     ← @nestjs/core@11, @prisma/client@6, @nestjs/config@4
                                 dotenv-cli (used by prisma:migrate script)
 
