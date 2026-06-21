@@ -22,35 +22,35 @@ export interface UpdateCameraDto {
 export class CamerasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(orgId: string) {
-    const cameras = await this.prisma.withOrgContext(
-      orgId,
+  async list(facilityId: string) {
+    const cameras = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) =>
         tx.camera.findMany({ orderBy: { createdAt: 'asc' } }),
     );
     return cameras.map(toCameraDto);
   }
 
-  async getOne(orgId: string, id: string) {
-    const cam = await this.prisma.withOrgContext(
-      orgId,
+  async getOne(facilityId: string, id: string) {
+    const cam = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
     );
     if (!cam) throw new NotFoundException('Camera not found');
     return toCameraDto(cam);
   }
 
-  async create(orgId: string, dto: CreateCameraDto) {
+  async create(facilityId: string, dto: CreateCameraDto) {
     if (!dto.label.trim()) throw new ConflictException('label is required');
     const ingestKeyId = `cam-${crypto.randomBytes(8).toString('hex')}`;
     // The HMAC secret is not returned from this service; Camera DTOs expose only the selector key id.
     const ingestSecretHash = crypto.randomBytes(32).toString('hex');
-    const camera = await this.prisma.withOrgContext(
-      orgId,
+    const camera = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) =>
         tx.camera.create({
           data: {
-            orgId,
+            facilityId,
             label: dto.label.trim(),
             residentId: dto.residentId ?? null,
             ingestKeyId,
@@ -61,17 +61,17 @@ export class CamerasService {
     return toCameraDto(camera);
   }
 
-  async update(orgId: string, id: string, dto: UpdateCameraDto) {
-    const existing = await this.prisma.withOrgContext(
-      orgId,
+  async update(facilityId: string, id: string, dto: UpdateCameraDto) {
+    const existing = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
     );
     if (!existing) throw new NotFoundException('Camera not found');
     if (dto.label !== undefined && !dto.label.trim()) {
       throw new ConflictException('label is required');
     }
-    const camera = await this.prisma.withOrgContext(
-      orgId,
+    const camera = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) =>
         tx.camera.update({
           where: { id },
@@ -85,15 +85,15 @@ export class CamerasService {
     return toCameraDto(camera);
   }
 
-  async remove(orgId: string, id: string) {
-    const existing = await this.prisma.withOrgContext(
-      orgId,
+  async remove(facilityId: string, id: string) {
+    const existing = await this.prisma.withFacilityContext(
+      facilityId,
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
     );
     if (!existing) throw new NotFoundException('Camera not found');
     try {
-      const camera = await this.prisma.withOrgContext(
-        orgId,
+      const camera = await this.prisma.withFacilityContext(
+        facilityId,
         (tx: Prisma.TransactionClient) => tx.camera.delete({ where: { id } }),
       );
       return toCameraDto(camera);
@@ -107,13 +107,15 @@ export class CamerasService {
     }
   }
 
-  async recordHeartbeat(orgId: string, cameraId: string) {
+  async recordHeartbeat(facilityId: string, cameraId: string) {
     const now = new Date();
-    await this.prisma.withOrgContext(orgId, (tx: Prisma.TransactionClient) =>
-      tx.camera.update({
-        where: { id: cameraId },
-        data: { lastSeenAt: now, online: true },
-      }),
+    await this.prisma.withFacilityContext(
+      facilityId,
+      (tx: Prisma.TransactionClient) =>
+        tx.camera.update({
+          where: { id: cameraId },
+          data: { lastSeenAt: now, online: true },
+        }),
     );
   }
 }
@@ -121,7 +123,7 @@ export class CamerasService {
 function toCameraDto(camera: Camera) {
   return {
     id: camera.id,
-    orgId: camera.orgId,
+    facilityId: camera.facilityId,
     residentId: camera.residentId,
     label: camera.label,
     ingestKeyId: camera.ingestKeyId,

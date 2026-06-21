@@ -1,6 +1,6 @@
 /**
  * Thrown when a Prisma tenant model operation is attempted without an active
- * org context in TenantContext (AsyncLocalStorage).
+ * facility context in TenantContext (AsyncLocalStorage).
  *
  * Belt-and-suspenders: RLS is the DB-level authority; this error surfaces
  * misuse at the application layer before the query reaches the DB.
@@ -11,8 +11,8 @@ export class MissingTenantContextError extends Error {
 
   constructor(model: string, operation: string) {
     super(
-      `Tenant model "${model}.${operation}" invoked without an org context. ` +
-        `Wrap all tenant model access in PrismaService.withOrgContext(orgId, fn).`,
+      `Tenant model "${model}.${operation}" invoked without a facility context. ` +
+        `Wrap all tenant model access in PrismaService.withFacilityContext(facilityId, fn).`,
     );
     this.name = 'MissingTenantContextError';
     this.model = model;

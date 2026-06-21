@@ -2,7 +2,7 @@ import type { Role } from '@prisma/client';
 
 export interface AuthenticatedUser {
   id: string;
-  orgId: string | null;
+  facilityId: string | null;
   role: Role;
   kakaoId: string;
   nickname: string;
@@ -15,7 +15,7 @@ export interface AuthenticatedRequest {
   sessionId?: string;
 }
 
-export interface CreateOrganizationBody {
+export interface CreateFacilityBody {
   facilityName?: unknown;
   businessRegistrationNumber?: unknown;
 }

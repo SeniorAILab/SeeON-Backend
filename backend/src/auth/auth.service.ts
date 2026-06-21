@@ -42,7 +42,7 @@ export class AuthService {
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
 
-  async createOrganizationForUser(
+  async createFacilityForUser(
     userId: string,
     facilityName: string,
     businessRegistrationNumber: string | null,
@@ -54,7 +54,7 @@ export class AuthService {
       where: { id: userId },
     });
     if (!existing) throw new UnauthorizedException('Unknown user');
-    if (existing.orgId) {
+    if (existing.facilityId) {
       const session = await this.sessions.createSession(existing);
       return {
         user: existing,
@@ -63,22 +63,25 @@ export class AuthService {
       };
     }
 
-    const org = await this.prisma.db.organization.create({
+    const facility = await this.prisma.db.facility.create({
       data: { name, businessRegistrationNumber },
     });
 
-    const user = await this.prisma.withOrgContext(org.id, async (tx) => {
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: { orgId: org.id, role: 'OWNER' },
-      });
-      await tx.kakaoIdentity.upsert({
-        where: { userId },
-        update: { orgId: org.id, kakaoId: updated.kakaoId },
-        create: { userId, orgId: org.id, kakaoId: updated.kakaoId },
-      });
-      return updated;
-    });
+    const user = await this.prisma.withFacilityContext(
+      facility.id,
+      async (tx) => {
+        const updated = await tx.user.update({
+          where: { id: userId },
+          data: { facilityId: facility.id, role: 'OWNER' },
+        });
+        await tx.kakaoIdentity.upsert({
+          where: { userId },
+          update: { facilityId: facility.id, kakaoId: updated.kakaoId },
+          create: { userId, facilityId: facility.id, kakaoId: updated.kakaoId },
+        });
+        return updated;
+      },
+    );
 
     const session = await this.sessions.createSession(user);
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
@@ -112,7 +115,7 @@ export class AuthService {
       await tx.kakaoIdentity.upsert({
         where: { userId: user.id },
         update: {
-          orgId: user.orgId,
+          facilityId: user.facilityId,
           kakaoId: profile.kakaoId,
           accessTokenCipher,
           tokenScope,
@@ -120,7 +123,7 @@ export class AuthService {
         },
         create: {
           userId: user.id,
-          orgId: user.orgId,
+          facilityId: user.facilityId,
           kakaoId: profile.kakaoId,
           accessTokenCipher,
           tokenScope,

@@ -12,7 +12,7 @@ type RoleRow = {
 type CountRow = { count: number };
 type IdRow = { id: string };
 
-describe('Prisma tenant boundary (RLS + org GUC)', () => {
+describe('Prisma tenant boundary (RLS + facility GUC)', () => {
   let direct: PrismaClient;
   let prisma: PrismaService;
 
@@ -38,12 +38,12 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     await direct.serverSession.deleteMany();
     await direct.user.deleteMany();
     await direct.resident.deleteMany();
-    await direct.organization.deleteMany();
+    await direct.facility.deleteMany();
 
-    await direct.organization.createMany({
+    await direct.facility.createMany({
       data: [
-        { id: 'org-a', name: 'Org A' },
-        { id: 'org-b', name: 'Org B' },
+        { id: 'facility-a', name: 'Facility A' },
+        { id: 'facility-b', name: 'Facility B' },
       ],
     });
 
@@ -51,13 +51,13 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       data: [
         {
           id: 'user-a',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           kakaoId: 'kakao-a',
           nickname: 'Owner A',
         },
         {
           id: 'user-b',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           kakaoId: 'kakao-b',
           nickname: 'Owner B',
         },
@@ -66,16 +66,26 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
 
     await direct.kakaoIdentity.createMany({
       data: [
-        { id: 'kid-a', userId: 'user-a', orgId: 'org-a', kakaoId: 'kakao-a' },
-        { id: 'kid-b', userId: 'user-b', orgId: 'org-b', kakaoId: 'kakao-b' },
+        {
+          id: 'kid-a',
+          userId: 'user-a',
+          facilityId: 'facility-a',
+          kakaoId: 'kakao-a',
+        },
+        {
+          id: 'kid-b',
+          userId: 'user-b',
+          facilityId: 'facility-b',
+          kakaoId: 'kakao-b',
+        },
       ],
     });
 
     await direct.resident.createMany({
       data: [
-        { id: 'res-a', orgId: 'org-a', name: 'Resident A' },
-        { id: 'res-b', orgId: 'org-b', name: 'Resident B' },
-        { id: 'res-c', orgId: 'org-a', name: 'Resident C' },
+        { id: 'res-a', facilityId: 'facility-a', name: 'Resident A' },
+        { id: 'res-b', facilityId: 'facility-b', name: 'Resident B' },
+        { id: 'res-c', facilityId: 'facility-a', name: 'Resident C' },
       ],
     });
 
@@ -83,14 +93,14 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       data: [
         {
           id: 'guard-a',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           residentId: 'res-a',
           name: 'Guardian A',
           phone: '010-0000-0001',
         },
         {
           id: 'guard-b',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-b',
           name: 'Guardian B',
           phone: '010-0000-0002',
@@ -102,7 +112,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       data: [
         {
           id: 'cam-a',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           residentId: 'res-a',
           label: 'Camera A',
           ingestKeyId: 'key-a',
@@ -110,7 +120,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
         },
         {
           id: 'cam-b',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-b',
           label: 'Camera B',
           ingestKeyId: 'key-b',
@@ -123,7 +133,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       data: [
         {
           id: 'alert-a',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           residentId: 'res-a',
           cameraId: 'cam-a',
           type: 'fall',
@@ -133,7 +143,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
         },
         {
           id: 'alert-b',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-b',
           cameraId: 'cam-b',
           type: 'fall',
@@ -148,13 +158,13 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       data: [
         {
           id: 'status-a',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           residentId: 'res-a',
           sourceId: 'cam-a',
         },
         {
           id: 'status-b',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-b',
           sourceId: 'cam-b',
         },
@@ -179,7 +189,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     ]);
   });
 
-  it('fails closed for tenant model access without an application org context', async () => {
+  it('fails closed for tenant model access without an application facility context', async () => {
     await expect(prisma.db.resident.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
@@ -201,7 +211,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
 
   it('does not treat an unbound request TenantContext as a set_config-bound database context', async () => {
     await expect(
-      TenantContext.run('org-a', () => prisma.db.resident.findMany()),
+      TenantContext.run('facility-a', () => prisma.db.resident.findMany()),
     ).rejects.toBeInstanceOf(MissingTenantContextError);
   });
 
@@ -231,49 +241,56 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
 
     await expect(
       prisma.db.$executeRaw`
-        INSERT INTO residents (id, org_id, name) VALUES ('raw-unscoped', 'org-a', 'Raw Unscoped')
+        INSERT INTO residents (id, facility_id, name) VALUES ('raw-unscoped', 'facility-a', 'Raw Unscoped')
       `,
     ).rejects.toThrow();
   });
 
-  it('binds app.org_id with set_config(app.org_id) and scopes model plus raw queries to that org', async () => {
-    const result = await prisma.withOrgContext('org-a', async (tx) => {
-      const residents = await tx.resident.findMany({ orderBy: { id: 'asc' } });
-      const rawResidents = await tx.$queryRaw<IdRow[]>`
+  it('binds app.facility_id with set_config(app.facility_id) and scopes model plus raw queries to that facility', async () => {
+    const result = await prisma.withFacilityContext(
+      'facility-a',
+      async (tx) => {
+        const residents = await tx.resident.findMany({
+          orderBy: { id: 'asc' },
+        });
+        const rawResidents = await tx.$queryRaw<IdRow[]>`
         SELECT id FROM residents ORDER BY id
       `;
-      const rawCrossOrgResidents = await tx.$queryRaw<IdRow[]>`
-        SELECT id FROM residents WHERE org_id = 'org-b'
+        const rawCrossFacilityResidents = await tx.$queryRaw<IdRow[]>`
+        SELECT id FROM residents WHERE facility_id = 'facility-b'
       `;
-      const rawCrossOrgUpdate = await tx.$executeRaw`
-        UPDATE residents SET room = 'hacked' WHERE org_id = 'org-b'
+        const rawCrossFacilityUpdate = await tx.$executeRaw`
+        UPDATE residents SET room = 'hacked' WHERE facility_id = 'facility-b'
       `;
 
-      return {
-        residentIds: residents.map((resident) => resident.id),
-        rawResidentIds: rawResidents.map((resident) => resident.id),
-        rawCrossOrgResidentIds: rawCrossOrgResidents.map(
-          (resident) => resident.id,
-        ),
-        rawCrossOrgUpdate,
-        crossResident: await tx.resident.findUnique({ where: { id: 'res-b' } }),
-        crossGuardian: await tx.guardian.findUnique({
-          where: { id: 'guard-b' },
-        }),
-        crossCamera: await tx.camera.findUnique({ where: { id: 'cam-b' } }),
-        crossAlert: await tx.alert.findUnique({ where: { id: 'alert-b' } }),
-        crossStatus: await tx.residentStatus.findUnique({
-          where: { id: 'status-b' },
-        }),
-        // KakaoIdentity is NOT RLS-protected — excluded from TENANT_MODELS and RLS.
-        // crossKakaoIdentity is intentionally omitted here.
-      };
-    });
+        return {
+          residentIds: residents.map((resident) => resident.id),
+          rawResidentIds: rawResidents.map((resident) => resident.id),
+          rawCrossFacilityResidentIds: rawCrossFacilityResidents.map(
+            (resident) => resident.id,
+          ),
+          rawCrossFacilityUpdate,
+          crossResident: await tx.resident.findUnique({
+            where: { id: 'res-b' },
+          }),
+          crossGuardian: await tx.guardian.findUnique({
+            where: { id: 'guard-b' },
+          }),
+          crossCamera: await tx.camera.findUnique({ where: { id: 'cam-b' } }),
+          crossAlert: await tx.alert.findUnique({ where: { id: 'alert-b' } }),
+          crossStatus: await tx.residentStatus.findUnique({
+            where: { id: 'status-b' },
+          }),
+          // KakaoIdentity is NOT RLS-protected — excluded from TENANT_MODELS and RLS.
+          // crossKakaoIdentity is intentionally omitted here.
+        };
+      },
+    );
 
     expect(result.residentIds).toEqual(['res-a', 'res-c']);
     expect(result.rawResidentIds).toEqual(['res-a', 'res-c']);
-    expect(result.rawCrossOrgResidentIds).toEqual([]);
-    expect(result.rawCrossOrgUpdate).toBe(0);
+    expect(result.rawCrossFacilityResidentIds).toEqual([]);
+    expect(result.rawCrossFacilityUpdate).toBe(0);
     expect(result.crossResident).toBeNull();
     expect(result.crossGuardian).toBeNull();
     expect(result.crossCamera).toBeNull();
@@ -286,47 +303,47 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
     expect(afterTransaction[0]?.count).toBe(0);
   });
 
-  it('lets Postgres RLS reject scoped raw writes that target a different org', async () => {
+  it('lets Postgres RLS reject scoped raw writes that target a different facility', async () => {
     await expect(
-      prisma.withOrgContext(
-        'org-a',
+      prisma.withFacilityContext(
+        'facility-a',
         async (tx) =>
           tx.$executeRaw`
-          INSERT INTO residents (id, org_id, name) VALUES ('raw-wrong-org', 'org-b', 'Raw Wrong Org')
+          INSERT INTO residents (id, facility_id, name) VALUES ('raw-wrong-facility', 'facility-b', 'Raw Wrong Facility')
         `,
       ),
     ).rejects.toThrow();
 
     const rows = await direct.resident.findMany({
-      where: { id: 'raw-wrong-org' },
+      where: { id: 'raw-wrong-facility' },
     });
     expect(rows).toEqual([]);
   });
 
-  it('keeps concurrent org-bound transactions isolated', async () => {
-    const [orgAIds, orgBIds] = await Promise.all([
-      prisma.withOrgContext('org-a', async (tx) =>
+  it('keeps concurrent facility-bound transactions isolated', async () => {
+    const [facilityAIds, facilityBIds] = await Promise.all([
+      prisma.withFacilityContext('facility-a', async (tx) =>
         (await tx.resident.findMany({ orderBy: { id: 'asc' } })).map(
           (resident) => resident.id,
         ),
       ),
-      prisma.withOrgContext('org-b', async (tx) =>
+      prisma.withFacilityContext('facility-b', async (tx) =>
         (await tx.resident.findMany({ orderBy: { id: 'asc' } })).map(
           (resident) => resident.id,
         ),
       ),
     ]);
 
-    expect(orgAIds).toEqual(['res-a', 'res-c']);
-    expect(orgBIds).toEqual(['res-b']);
+    expect(facilityAIds).toEqual(['res-a', 'res-c']);
+    expect(facilityBIds).toEqual(['res-b']);
   });
 
-  it('rejects cross-org composite foreign keys at the database layer', async () => {
+  it('rejects cross-facility composite foreign keys at the database layer', async () => {
     await expectPrismaCode(
       direct.guardian.create({
         data: {
           id: 'bad-guardian',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-a',
           name: 'Bad Guardian',
           phone: '010-9999-0001',
@@ -339,7 +356,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       direct.camera.create({
         data: {
           id: 'bad-camera',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-a',
           label: 'Bad Camera',
           ingestKeyId: 'bad-camera-key',
@@ -353,7 +370,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       direct.alert.create({
         data: {
           id: 'bad-alert',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-b',
           cameraId: 'cam-a',
           type: 'fall',
@@ -369,7 +386,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       direct.residentStatus.create({
         data: {
           id: 'bad-status',
-          orgId: 'org-b',
+          facilityId: 'facility-b',
           residentId: 'res-c',
         },
       }),
@@ -380,7 +397,7 @@ describe('Prisma tenant boundary (RLS + org GUC)', () => {
       direct.residentStatus.create({
         data: {
           id: 'bad-status-source',
-          orgId: 'org-a',
+          facilityId: 'facility-a',
           residentId: 'res-c',
           sourceId: 'cam-b',
         },

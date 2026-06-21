@@ -19,7 +19,7 @@ import {
   SESSION_COOKIE_NAME,
 } from './auth.constants';
 import { AuthService } from './auth.service';
-import type { CreateOrganizationBody } from './auth.types';
+import type { CreateFacilityBody } from './auth.types';
 import {
   clearOAuthStateCookie,
   clearSessionCookie,
@@ -29,7 +29,7 @@ import {
 } from './cookie.util';
 import { SessionService } from './session.service';
 import type { RequestWithAuth } from './session.guard';
-import { RequireOrgGuard, SessionGuard } from './session.guard';
+import { RequireFacilityGuard, SessionGuard } from './session.guard';
 
 @Controller()
 export class AuthController {
@@ -68,7 +68,7 @@ export class AuthController {
     ).replace(/\/+$/, '');
     // Backend OAuth callbacks run on :8080; relative redirects would land on missing :8080 frontend routes.
     response.redirect(
-      `${frontOrigin}${session.user.orgId ? '/dashboard' : '/onboarding'}`,
+      `${frontOrigin}${session.user.facilityId ? '/dashboard' : '/onboarding'}`,
     );
   }
 
@@ -97,10 +97,10 @@ export class AuthController {
     clearSessionCookie(response);
   }
 
-  @Post('/api/orgs')
+  @Post('/api/facilities')
   @UseGuards(SessionGuard)
-  async createOrg(
-    @Body() body: CreateOrganizationBody,
+  async createFacility(
+    @Body() body: CreateFacilityBody,
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ) {
@@ -112,7 +112,7 @@ export class AuthController {
       body.businessRegistrationNumber.trim()
         ? body.businessRegistrationNumber.trim()
         : null;
-    const session = await this.auth.createOrganizationForUser(
+    const session = await this.auth.createFacilityForUser(
       request.user.id,
       facilityName,
       businessRegistrationNumber,
@@ -132,15 +132,15 @@ export class AuthController {
     return { user: request.user };
   }
 
-  @Get('/api/org-protected-probe')
-  @UseGuards(SessionGuard, RequireOrgGuard)
+  @Get('/api/facility-protected-probe')
+  @UseGuards(SessionGuard, RequireFacilityGuard)
   @Header('cache-control', 'no-store')
-  orgProtectedProbe(
+  facilityProtectedProbe(
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ) {
     this.refreshRotatedCookie(request, response);
-    return { orgId: request.user?.orgId };
+    return { facilityId: request.user?.facilityId };
   }
 
   private refreshRotatedCookie(

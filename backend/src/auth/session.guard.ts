@@ -38,12 +38,12 @@ export class SessionGuard implements CanActivate {
 }
 
 @Injectable()
-export class RequireOrgGuard implements CanActivate {
+export class RequireFacilityGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithAuth>();
     if (!request.user) throw new UnauthorizedException('Missing session');
-    if (!request.user.orgId)
-      throw new ForbiddenException('Organization onboarding required');
+    if (!request.user.facilityId)
+      throw new ForbiddenException('Facility onboarding required');
     return true;
   }
 }

@@ -82,7 +82,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-1',
       type: AlertEventTypes.fall,
@@ -145,7 +145,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-bed-exit-1',
       type: AlertEventTypes.bedExit,
@@ -203,7 +203,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-1',
       type: AlertEventTypes.fall,
@@ -252,7 +252,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-1',
       type: AlertEventTypes.fall,
@@ -302,7 +302,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-1',
       type: AlertEventTypes.fall,
@@ -363,7 +363,7 @@ describe('AlertEventsService', () => {
     );
 
     await service.ensureOutboxForIngest({
-      orgId: 'org-1',
+      facilityId: 'facility-1',
       sourceId: 'cam-1',
       externalEventId: 'idem-1',
       type: AlertEventTypes.fall,
@@ -481,7 +481,7 @@ function recipientRecord(
 ) {
   return {
     id,
-    orgId: 'org-1',
+    facilityId: 'facility-1',
     kakaoIdentity: {
       accessTokenCipher,
       tokenExpiresAt,
