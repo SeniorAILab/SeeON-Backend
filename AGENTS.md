@@ -60,7 +60,7 @@ First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example b
 > Issue-driven 루프. AGENTS.md는 라우팅만 담고, 실제 메커니즘은 링크된 rules에 위임한다(SSOT).
 
 ```
-plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가능·필요시 fan-out) → 리뷰 + CI → merge → plan archive + ADR distill
+plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가능·필요시 fan-out) → 리뷰 + CI → merge → plan archive + ADR distill → docs 준수검증
 ```
 
 1. **Plan** — 먼저 spec/plan 작성 (아래 [Lifecycle](#lifecycle) · [Conventions](#conventions) › plan-first mandate).
@@ -69,6 +69,7 @@ plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가�
 4. **PR** — 하나의 리뷰 가능한 변경; 큰 작업은 한 이슈 → fan-out PR로 분해. → [`docs/rules/pr-decomposition-and-review.md`](docs/rules/pr-decomposition-and-review.md)
 5. **Review + CI** — 모든 PR은 리뷰를 거치고, size/base/draft 게이트가 CI에서 돈다. → [`.github/workflows/pr-check.yml`](.github/workflows/pr-check.yml)
 6. **Merge → archive → ADR** — merge 후 plan archive, expensive-to-reverse 결정은 ADR로 distill. → [`docs/decisions/README.md`](docs/decisions/README.md)
+7. **Document** — 마지막 단계로 `/skill:documentation-and-adrs`를 돌려 변경이 `docs/rules/` 컨벤션과 `docs/decisions/` ADR를 준수했는지(위반 없음) 검증하고, spec/plan이 `docs/exec-plan/`에 누적·아카이브됐는지 확인한다(ADR distill 자체는 6단계 소관). → [`docs/rules/README.md`](docs/rules/README.md) · [`docs/decisions/README.md`](docs/decisions/README.md)
 
 ## Artifact Ontology
 
