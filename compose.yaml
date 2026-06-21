@@ -1,7 +1,10 @@
+# Host stack (single host): db + backend + front(nginx). ML runs on the external
+# edge device — see compose.edge.yaml (ML inference pushes signed events to the
+# backend /ingest endpoint per ADR-029, so ml-serving is not part of this stack).
 # App services are gated by profiles in compose.override.yaml; db stays profile-free for default local startup.
-# PostgreSQL for dev/prod parity.
-# Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
-# Dev:  docker compose up -d db   (then backend reads .env.development)
+#
+# PostgreSQL for dev/prod parity. Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
+#   Dev:  docker compose up -d db   (then backend reads .env.development)
 #
 # DB role separation (ADR-A / NR1):
 #   fall     = superuser      → migrations, seed (DIRECT_URL)
@@ -41,7 +44,9 @@ services:
       DATABASE_URL: postgresql://${APP_DB_USER:-fall_app}:${APP_DB_PASSWORD:-fall_app}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
       # DIRECT_URL keeps the privileged fall superuser for migrations / seed only.
       DIRECT_URL: postgresql://${POSTGRES_USER:-fall}:${POSTGRES_PASSWORD:-fall}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
-      ML_SERVING_URL: http://ml-serving:8000
+      # ML_SERVING_URL is intentionally absent: ML runs on the edge and pushes to /ingest.
+      # The backend MlServingPredictionAdapter pull seam stays dormant (ADR-029 / ADR-048);
+      # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
       # Auth boot config. KakaoClient validates these at startup; defaults are dev
       # placeholders so the parity/full stack boots out of the box. Override with
@@ -58,24 +63,17 @@ services:
       db:
         condition: service_healthy
 
-  ml-serving:
-    build:
-      context: .
-      dockerfile: ml/Dockerfile
-      target: runner
-    ports:
-      - "${ML_SERVING_PORT:-8000}:8000"
-
   front:
     build:
       context: .
       dockerfile: front/Dockerfile
       target: runner
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
-      API_INTERNAL_URL: http://backend:8080
+    # nginx serves the built SPA and reverse-proxies /api, /auth, /ingest to the
+    # backend (same-origin), so no NEXT_PUBLIC_*/API_INTERNAL_URL is needed.
     ports:
       - "${FRONT_PORT:-3000}:3000"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:

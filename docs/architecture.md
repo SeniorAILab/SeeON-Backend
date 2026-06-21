@@ -11,7 +11,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── package.json                    ← dev:*, build:*, lint, db:*, prisma:* scripts
 ├── pnpm-workspace.yaml             ← workspace: [front, backend]
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
-├── docker-compose.yml              ← postgres:17-alpine service (db)
+├── compose.yaml                    ← host stack: db + backend + front(nginx); +override(dev)/+prod; compose.edge.yaml = ML edge (ADR-062)
 │
 ├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
 │   ├── src/
@@ -210,6 +210,8 @@ pnpm prisma:generate          # regenerate Prisma client after schema changes
 ```
 
 The `docker-compose.yml` mounts a named volume (`pgdata`) so data survives container restarts. Default credentials (`fall`/`fall`) match `.env.development`; override via environment variables before `docker compose up`.
+
+**Compose topology (ADR-062).** The host stack is `db` + `backend` + `front`: `compose.yaml` (base) + `compose.override.yaml` (dev) + `compose.prod.yaml` (prod overlay). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
 
 ---
 
