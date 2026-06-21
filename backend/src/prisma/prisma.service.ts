@@ -14,6 +14,7 @@ import { TenantContext } from '../common/tenant-context.js';
 // See migration SQL for the matching RLS exclusion comment.
 const TENANT_MODELS = new Set([
   'Resident',
+  'ResidentAssignment',
   'Guardian',
   'Camera',
   'Alert',

@@ -21,6 +21,7 @@ describe('placement RLS tenant isolation', () => {
     await direct.$connect();
     await app.$connect();
 
+    await direct.residentAssignment.deleteMany();
     await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
