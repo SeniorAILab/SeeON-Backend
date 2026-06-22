@@ -59,11 +59,11 @@ Browser-facing URLs must use `localhost` because the browser runs on the host. C
 For container parity and production-shaped runs:
 
 ```bash
-pnpm compose:dev:full  # full app stack with dev targets/profile
+pnpm compose:full      # full host stack (db+backend+front[nginx], runner) via --profile full
 pnpm compose:prod:up   # compose.yaml + compose.prod.yaml, runner targets
 ```
 
-On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work.
+On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:full`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
 ## Commands
 
@@ -78,7 +78,7 @@ On macOS, bind-mounted container dev watchers are best-effort and can lag. Prefe
 | `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
 | `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
-| `pnpm compose:dev:full` | Full container-dev parity stack (`--profile full`) |
+| `pnpm compose:full` | Full host stack (db+backend+front[nginx], `--profile full`) |
 | `pnpm compose:prod:up` | Production-shaped Compose stack (`compose.yaml` + `compose.prod.yaml`) |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |

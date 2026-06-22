@@ -1,7 +1,9 @@
 # Host stack (single host): db + backend + front(nginx). ML runs on the external
 # edge device — see compose.edge.yaml (ML inference pushes signed events to the
 # backend /ingest endpoint per ADR-029, so ml-serving is not part of this stack).
-# App services are gated by profiles in compose.override.yaml; db stays profile-free for default local startup.
+# App services (backend, front) are gated behind the `full` profile so the default
+# `docker compose up` / `pnpm db:up` brings up db only (daily dev is native hot reload).
+# Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
 # PostgreSQL for dev/prod parity. Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
 #   Dev:  docker compose up -d db   (then backend reads .env.development)
@@ -34,6 +36,7 @@ services:
       retries: 5
 
   backend:
+    profiles: [full]
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -64,6 +67,7 @@ services:
         condition: service_healthy
 
   front:
+    profiles: [full]
     build:
       context: .
       dockerfile: front/Dockerfile

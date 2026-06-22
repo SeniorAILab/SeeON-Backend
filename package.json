@@ -21,7 +21,7 @@
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "compose:up": "docker compose up -d db",
-    "compose:dev:full": "docker compose --profile full up -d --build",
+    "compose:full": "docker compose --profile full up -d --build",
     "compose:prod:up": "docker compose -f compose.yaml -f compose.prod.yaml up -d --build",
     "compose:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",

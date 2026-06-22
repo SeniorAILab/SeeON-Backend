@@ -60,7 +60,7 @@ First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example b
 
 - **Env 위치**: 네이티브 dev(`pnpm dev:*`)는 `backend/.env.development`를 읽는다. 루트 `.env`는 Docker Compose `${VAR}` 전용. 비밀키 커밋 금지(`.env*` gitignored).
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
-- **Compose 패리티**: dev `pnpm compose:dev:full` / prod `pnpm compose:prod:up`.
+- **Compose**: db만 `pnpm db:up` / 풀 호스트 스택 `pnpm compose:full` (`--profile full`) / prod `pnpm compose:prod:up`. 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
 - **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
 
 ## Development Flow
