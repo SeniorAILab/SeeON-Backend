@@ -254,7 +254,7 @@ export function formatAlertEvent(event: SseAlertLike): string {
     residentId: event.residentId,
     cameraId: event.cameraId,
     spaceId: event.spaceId,
-    room: event.room ?? event.space?.name ?? event.resident?.room ?? null,
+    room: event.room ?? event.space?.name ?? null,
     space: event.space ?? null,
     type: event.type,
     probability: event.probability,

@@ -30,7 +30,7 @@ export interface AlertEvent {
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
-  resident?: { name: string; room: string | null } | null;
+  resident?: { name: string } | null;
   space?: { name: string } | null;
   room: string | null;
 }
@@ -156,7 +156,7 @@ export class AlertWriterService {
             idempotencyKey,
           },
           include: {
-            resident: { select: { name: true, room: true } },
+            resident: { select: { name: true } },
             space: { select: { name: true } },
           },
         });
@@ -199,7 +199,7 @@ export class AlertWriterService {
       status: alert.status,
       resident: alert.resident,
       space: alert.space,
-      room: alert.space?.name ?? alert.resident?.room ?? null,
+      room: alert.space.name,
     };
 
     // Emit alert AFTER commit (F3).

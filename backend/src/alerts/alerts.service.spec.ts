@@ -113,7 +113,7 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     detectedAt: new Date('2026-06-22T00:00:00Z'),
     status: AlertStatus.NEW,
     createdAt: new Date('2026-06-22T00:00:01Z'),
-    resident: { name: '홍길동', room: 'legacy' },
+    resident: { name: '홍길동' },
     space: { name: 'Room 101' },
     ...overrides,
   };

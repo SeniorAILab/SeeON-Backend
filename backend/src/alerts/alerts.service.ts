@@ -102,7 +102,7 @@ export class AlertsService {
 }
 
 const alertInclude = {
-  resident: { select: { name: true, room: true } },
+  resident: { select: { name: true } },
   space: { select: { name: true } },
 } satisfies Prisma.AlertInclude;
 
@@ -118,7 +118,7 @@ function presentAlert(alert: AlertWithContext) {
     residentId: alert.residentId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,
-    room: alert.space?.name ?? alert.resident?.room ?? null,
+    room: alert.space.name,
     type: alert.type,
     probability: alert.probability,
     snapshotKey: alert.snapshotKey,

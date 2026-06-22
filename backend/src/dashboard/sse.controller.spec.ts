@@ -16,7 +16,7 @@ describe('formatAlertEvent', () => {
       snapshotKey: null,
       detectedAt: new Date('2026-06-22T00:00:00Z'),
       status: 'NEW',
-      resident: { name: '홍길동', room: 'legacy' },
+      resident: { name: '홍길동' },
     });
 
     const payload = JSON.parse(frame.split('data: ')[1]) as {

@@ -61,8 +61,6 @@ export class SpacesService {
       name,
       type,
       capacity,
-      cameraId:
-        dto.cameraId !== undefined ? dto.cameraId?.trim() || null : null,
       isActive: dto.isActive,
       assignedStaff:
         dto.assignedStaff !== undefined
@@ -111,8 +109,6 @@ function normalizeSpaceUpdate(dto: UpdateSpaceDto) {
     name: dto.name?.trim(),
     type: dto.type,
     capacity: dto.capacity,
-    cameraId:
-      dto.cameraId !== undefined ? dto.cameraId?.trim() || null : undefined,
     isActive: dto.isActive,
     assignedStaff:
       dto.assignedStaff !== undefined
@@ -129,7 +125,6 @@ export function presentSpace(space: Space) {
     name: space.name,
     type: space.type,
     capacity: space.capacity,
-    cameraId: space.cameraId ?? null,
     isActive: space.isActive,
     assignedStaff: space.assignedStaff,
     createdAt: space.createdAt.toISOString(),
