@@ -234,21 +234,28 @@ type SseAlertLike = Pick<
   | 'facilityId'
   | 'residentId'
   | 'cameraId'
+  | 'spaceId'
   | 'type'
   | 'probability'
   | 'snapshotKey'
   | 'detectedAt'
   | 'status'
   | 'resident'
->;
+> & {
+  space?: { name: string } | null;
+  room?: string | null;
+};
 
-function formatAlertEvent(event: SseAlertLike): string {
+export function formatAlertEvent(event: SseAlertLike): string {
   return formatSseEvent(event.alertSeq, {
     alertSeq: event.alertSeq.toString(),
     id: event.id,
     facilityId: event.facilityId,
     residentId: event.residentId,
     cameraId: event.cameraId,
+    spaceId: event.spaceId,
+    room: event.room ?? event.space?.name ?? event.resident?.room ?? null,
+    space: event.space ?? null,
     type: event.type,
     probability: event.probability,
     snapshotKey: event.snapshotKey,

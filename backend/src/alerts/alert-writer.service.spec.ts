@@ -1,7 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
 import { ResidentState } from '@prisma/client';
 import { AlertEventTypes } from './dto/alert-events.dto';
 
-import { PrismaService } from '../prisma/prisma.service';
+import type { PrismaService } from '../prisma/prisma.service';
 import {
   AlertWriterService,
   type AlertEvent,
@@ -17,6 +18,7 @@ function setup() {
           id: 'a1',
           status: 'NEW',
           resident: null,
+          space: { name: 'Room 101' },
           ...data,
         }),
       ),
@@ -36,6 +38,7 @@ function input(probability: number) {
     facilityId: 'facility-1',
     residentId: 'r1',
     cameraId: 'c1',
+    spaceId: 'space-1',
     type: AlertEventTypes.fall,
     probability,
     snapshotKey: null,
@@ -53,8 +56,22 @@ describe('AlertWriterService', () => {
     const event = await service.writeAlert(input(0.9));
     expect(event.id).toBe('a1');
     expect(event.residentId).toBe('r1');
+    expect(event.spaceId).toBe('space-1');
+    expect(event.room).toBe('Room 101');
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
+  });
+
+  it('rejects roomless writes before touching the database', async () => {
+    const { service, tx } = setup();
+
+    await expect(
+      service.writeAlert({ ...input(0.9), spaceId: null } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.writeAlert({ ...input(0.9), spaceId: '  ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.alert.create).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -247,6 +247,7 @@ model Alert {
   residentId     String      @map("resident_id")
   /// Nullable: alert may originate from an unconfigured camera path.
   cameraId       String?     @map("camera_id")
+  spaceId        String?     @map("space_id")
   type           String
   probability    Float
   /// Internal facility-scoped storage key for the snapshot image (never a raw URL).
@@ -262,9 +263,11 @@ model Alert {
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
   camera   Camera?      @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space    Space?       @relation(fields: [facilityId, spaceId], references: [facilityId, id])
 
   @@unique([facilityId, idempotencyKey])
   @@index([facilityId, alertSeq])
+  @@index([facilityId, spaceId, alertSeq])
   @@map("alerts")
 }
 
@@ -328,6 +331,7 @@ model Space {
   zones    Zone[]
   assignments ResidentAssignment[]
   camera   Camera?
+  alerts   Alert[]
 
   @@unique([facilityId, floorId, name])
   @@unique([facilityId, id])
