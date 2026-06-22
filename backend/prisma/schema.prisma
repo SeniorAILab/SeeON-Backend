@@ -212,6 +212,7 @@ model Camera {
   facilityId            String    @map("facility_id")
   /// Nullable: camera may not yet be assigned to a resident.
   residentId       String?   @map("resident_id")
+  spaceId          String?   @map("space_id")
   label            String
   /// Selector-only key identifier sent in X-Ingest-KeyId header.
   ingestKeyId      String    @map("ingest_key_id")
@@ -225,12 +226,14 @@ model Camera {
   /// Composite FK (facilityId, residentId) → Resident(facilityId, id) prevents
   /// a camera from being assigned to a resident in a different facility (F9).
   resident Resident?    @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  space    Space?       @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   alerts   Alert[]
   residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
 
   @@unique([facilityId, id])
   @@unique([facilityId, label])
   @@unique([facilityId, ingestKeyId])
+  @@unique([facilityId, spaceId])
   @@map("cameras")
 }
 
@@ -324,6 +327,7 @@ model Space {
   floor    Floor    @relation(fields: [facilityId, floorId], references: [facilityId, id])
   zones    Zone[]
   assignments ResidentAssignment[]
+  camera   Camera?
 
   @@unique([facilityId, floorId, name])
   @@unique([facilityId, id])
