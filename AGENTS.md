@@ -251,6 +251,11 @@ Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
 PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
 
+### CI gate & merge discipline
+Branch protection / required status checks are **unavailable** on this plan (private + free → `/branches/main/protection` returns 403), so `ci.yml` runs on PRs but is **advisory only** — it cannot block a merge. Two consequences every actor (agent or human) must honor:
+- **Local gate is the real gate.** `pre-push` runs `scripts/git-guard/check-lint.sh` (lint + typecheck on changed packages, mirroring `ci.yml`: frontend lint/type block, backend type blocks + `lint:check` warn-first per ADR-064, ml `ruff` blocks). Do not push lint/type failures. Bypass only intentionally with `GIT_GUARD_SKIP_LINT=1` (or `--no-verify`), never to dodge a real failure.
+- **Never merge on a pending/red CI.** Because nothing is required, `gh pr merge --auto` merges the instant a PR is mergeable — even while `ci.yml` (Backend/Frontend/ML) is still running or red. Wait for the `ci-gate` job green (or re-run the equivalent checks locally) before merging. "A check exists" never means "a check gated".
+
 ### Backend architecture lint & guard
 백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064. 명령: `pnpm --filter backend run lint:check`.
 
