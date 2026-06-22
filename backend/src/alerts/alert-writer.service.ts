@@ -12,7 +12,7 @@
  * so SSE streams can deliver `event: status` frames to connected clients
  * (AC5/AC6 live resident status badge).
  */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -67,6 +67,7 @@ export class AlertWriterService {
   private readonly _listeners = new Map<string, Set<Listener>>();
   private readonly _statusListeners = new Map<string, Set<StatusListener>>();
   private _queue: Promise<unknown> = Promise.resolve();
+  private readonly logger = new Logger(AlertWriterService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -184,6 +185,16 @@ export class AlertWriterService {
         return created;
       },
     );
+    if (!residentId) {
+      this.logger.log({
+        event: 'alert.empty_room_written',
+        facilityId,
+        spaceId: alert.spaceId,
+        cameraId: alert.cameraId,
+        alertId: alert.id,
+        alertSeq: alert.alertSeq.toString(),
+      });
+    }
 
     const event: AlertEvent = {
       alertSeq: alert.alertSeq,
