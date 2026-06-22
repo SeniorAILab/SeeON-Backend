@@ -155,7 +155,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         {
           id: 'cam-a',
           facilityId: 'facility-a',
-          residentId: 'res-a',
           spaceId: 'space-a',
           label: 'Camera A',
           ingestKeyId: 'key-a',
@@ -164,7 +163,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         {
           id: 'cam-b',
           facilityId: 'facility-b',
-          residentId: 'res-b',
           spaceId: 'space-b',
           label: 'Camera B',
           ingestKeyId: 'key-b',
@@ -315,9 +313,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         SELECT id FROM residents WHERE facility_id = 'facility-b'
       `;
         const rawCrossFacilityUpdate = await tx.$executeRaw`
-        UPDATE residents SET room = 'hacked' WHERE facility_id = 'facility-b'
+        UPDATE residents SET name = name WHERE facility_id = 'facility-b'
       `;
-
         return {
           residentIds: residents.map((resident) => resident.id),
           rawResidentIds: rawResidents.map((resident) => resident.id),
@@ -412,7 +409,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         data: {
           id: 'bad-camera',
           facilityId: 'facility-b',
-          residentId: 'res-a',
           spaceId: 'space-a',
           label: 'Bad Camera',
           ingestKeyId: 'bad-camera-key',

@@ -147,7 +147,6 @@ model Resident {
   id        String   @id @default(cuid())
   facilityId     String   @map("facility_id")
   name      String
-  room      String?
   isActive Boolean @default(true) @map("is_active")
   gender    String?
   age       Int?
@@ -158,7 +157,6 @@ model Resident {
 
   facility            Facility   @relation(fields: [facilityId], references: [id])
   guardians      Guardian[]
-  cameras        Camera[]
   alerts         Alert[]
   residentStatus ResidentStatus?
   assignments ResidentAssignment[]
@@ -210,8 +208,6 @@ model Guardian {
 model Camera {
   id               String    @id @default(cuid())
   facilityId            String    @map("facility_id")
-  /// Required room anchor; resident_id remains only for legacy data until PR8.
-  residentId       String?   @map("resident_id")
   spaceId          String    @map("space_id")
   label            String
   /// Selector-only key identifier sent in X-Ingest-KeyId header.
@@ -223,9 +219,6 @@ model Camera {
   createdAt        DateTime  @default(now()) @map("created_at")
 
   facility      Facility @relation(fields: [facilityId], references: [id])
-  /// Composite FK (facilityId, residentId) → Resident(facilityId, id) prevents
-  /// a camera from being assigned to a resident in a different facility (F9).
-  resident Resident?    @relation(fields: [facilityId, residentId], references: [facilityId, id])
   space    Space        @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   alerts   Alert[]
   residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
@@ -312,8 +305,7 @@ model Floor {
   @@map("floors")
 }
 
-/// Facility space/room. cameraId is nullable and intentionally has no FK until
-/// the camera-to-space remodel lands.
+/// Facility space/room.
 model Space {
   id            String    @id @default(cuid())
   facilityId    String    @map("facility_id")
@@ -321,7 +313,6 @@ model Space {
   name          String
   type          SpaceType
   capacity      Int
-  cameraId      String?   @map("camera_id")
   isActive      Boolean   @default(true) @map("is_active")
   assignedStaff String?   @map("assigned_staff")
   createdAt     DateTime  @default(now()) @map("created_at")

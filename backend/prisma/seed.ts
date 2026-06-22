@@ -118,7 +118,6 @@ async function main() {
         id: 'demo-res-01',
         facilityId: facility.id,
         name: '홍길동',
-        room: '101호',
       },
     }),
     prisma.resident.upsert({
@@ -128,7 +127,6 @@ async function main() {
         id: 'demo-res-02',
         facilityId: facility.id,
         name: '이순신',
-        room: '202호',
       },
     }),
   ]);
@@ -176,7 +174,6 @@ async function main() {
       create: {
         id: 'demo-cam-01',
         facilityId: facility.id,
-        residentId: resA.id,
         spaceId: spaceA.id,
         label: 'Cam 01',
         ingestKeyId: cam1Keys.keyId,
@@ -193,7 +190,6 @@ async function main() {
       create: {
         id: 'demo-cam-02',
         facilityId: facility.id,
-        residentId: resB.id,
         spaceId: spaceB.id,
         label: 'Cam 02',
         ingestKeyId: cam2Keys.keyId,

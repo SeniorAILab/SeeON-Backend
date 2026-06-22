@@ -22,7 +22,7 @@ describe('camera_space_expand migration', () => {
     expect(sql).toContain('space_id AS "spaceId"');
   });
 
-  it('blocks duplicate, missing, stale, and cross-facility Space.cameraId claims', () => {
+  it('blocks duplicate, missing, stale, and cross-facility legacy camera claims', () => {
     expect(sql).toContain('duplicate_same_facility');
     expect(sql).toContain('missing_claim');
     expect(sql).toContain('stale_claim');
