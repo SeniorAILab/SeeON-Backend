@@ -98,3 +98,5 @@ ml/experiments/loop_status.json
 # local verification artifacts (screenshots, transcripts, captures, reports)
 /artifacts/
 front/artifacts/
+# Obsidian vault symlink (canonical technical report lives in secondbrain/book/)
+secondbrain
