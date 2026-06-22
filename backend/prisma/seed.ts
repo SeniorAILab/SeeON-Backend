@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 
 // Suppress BigInt JSON serialisation errors in console.log
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
-  return this.toString();
+  return BigInt.prototype.toString.call(this);
 };
 
 // Use privileged connection to bypass RLS during seed (NR3). Do not fall back
@@ -39,7 +39,8 @@ function makeCameraSecret(
   fixed?: string,
 ): { keyId: string; secret: string; hash: string } {
   const keyId = `demo-${label.toLowerCase().replace(/\s+/g, '-')}-keyid`;
-  const secret = fixed && fixed.length > 0 ? fixed : crypto.randomBytes(24).toString('hex');
+  const secret =
+    fixed && fixed.length > 0 ? fixed : crypto.randomBytes(24).toString('hex');
   return { keyId, secret, hash: sha256(secret) };
 }
 
@@ -62,18 +63,49 @@ async function main() {
   const floor = await prisma.floor.upsert({
     where: { facilityId_name: { facilityId: facility.id, name: 'Demo Floor' } },
     update: {},
-    create: { id: 'demo-floor-01', facilityId: facility.id, name: 'Demo Floor', orderIndex: 1 },
+    create: {
+      id: 'demo-floor-01',
+      facilityId: facility.id,
+      name: 'Demo Floor',
+      orderIndex: 1,
+    },
   });
   const [spaceA, spaceB] = await Promise.all([
     prisma.space.upsert({
-      where: { facilityId_floorId_name: { facilityId: facility.id, floorId: floor.id, name: '101호' } },
+      where: {
+        facilityId_floorId_name: {
+          facilityId: facility.id,
+          floorId: floor.id,
+          name: '101호',
+        },
+      },
       update: {},
-      create: { id: 'demo-space-101', facilityId: facility.id, floorId: floor.id, name: '101호', type: 'ROOM', capacity: 1 },
+      create: {
+        id: 'demo-space-101',
+        facilityId: facility.id,
+        floorId: floor.id,
+        name: '101호',
+        type: 'ROOM',
+        capacity: 1,
+      },
     }),
     prisma.space.upsert({
-      where: { facilityId_floorId_name: { facilityId: facility.id, floorId: floor.id, name: '202호' } },
+      where: {
+        facilityId_floorId_name: {
+          facilityId: facility.id,
+          floorId: floor.id,
+          name: '202호',
+        },
+      },
       update: {},
-      create: { id: 'demo-space-202', facilityId: facility.id, floorId: floor.id, name: '202호', type: 'ROOM', capacity: 1 },
+      create: {
+        id: 'demo-space-202',
+        facilityId: facility.id,
+        floorId: floor.id,
+        name: '202호',
+        type: 'ROOM',
+        capacity: 1,
+      },
     }),
   ]);
 
@@ -82,26 +114,50 @@ async function main() {
     prisma.resident.upsert({
       where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-01' } },
       update: {},
-      create: { id: 'demo-res-01', facilityId: facility.id, name: '홍길동', room: '101호' },
+      create: {
+        id: 'demo-res-01',
+        facilityId: facility.id,
+        name: '홍길동',
+        room: '101호',
+      },
     }),
     prisma.resident.upsert({
       where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-02' } },
       update: {},
-      create: { id: 'demo-res-02', facilityId: facility.id, name: '이순신', room: '202호' },
+      create: {
+        id: 'demo-res-02',
+        facilityId: facility.id,
+        name: '이순신',
+        room: '202호',
+      },
     }),
   ]);
   console.log(`Residents: ${resA.name}, ${resB.name}`);
 
   await Promise.all([
     prisma.residentAssignment.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-assignment-01' } },
+      where: {
+        facilityId_id: { facilityId: facility.id, id: 'demo-assignment-01' },
+      },
       update: {},
-      create: { id: 'demo-assignment-01', facilityId: facility.id, residentId: resA.id, spaceId: spaceA.id },
+      create: {
+        id: 'demo-assignment-01',
+        facilityId: facility.id,
+        residentId: resA.id,
+        spaceId: spaceA.id,
+      },
     }),
     prisma.residentAssignment.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-assignment-02' } },
+      where: {
+        facilityId_id: { facilityId: facility.id, id: 'demo-assignment-02' },
+      },
       update: {},
-      create: { id: 'demo-assignment-02', facilityId: facility.id, residentId: resB.id, spaceId: spaceB.id },
+      create: {
+        id: 'demo-assignment-02',
+        facilityId: facility.id,
+        residentId: resB.id,
+        spaceId: spaceB.id,
+      },
     }),
   ]);
 
@@ -112,11 +168,16 @@ async function main() {
   const [cam1, cam2] = await Promise.all([
     prisma.camera.upsert({
       where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-01' } },
-      update: { ingestKeyId: cam1Keys.keyId, ingestSecretHash: cam1Keys.hash },
+      update: {
+        ingestKeyId: cam1Keys.keyId,
+        ingestSecretHash: cam1Keys.hash,
+        spaceId: spaceA.id,
+      },
       create: {
         id: 'demo-cam-01',
         facilityId: facility.id,
         residentId: resA.id,
+        spaceId: spaceA.id,
         label: 'Cam 01',
         ingestKeyId: cam1Keys.keyId,
         ingestSecretHash: cam1Keys.hash,
@@ -124,18 +185,25 @@ async function main() {
     }),
     prisma.camera.upsert({
       where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-02' } },
-      update: { ingestKeyId: cam2Keys.keyId, ingestSecretHash: cam2Keys.hash },
+      update: {
+        ingestKeyId: cam2Keys.keyId,
+        ingestSecretHash: cam2Keys.hash,
+        spaceId: spaceB.id,
+      },
       create: {
         id: 'demo-cam-02',
         facilityId: facility.id,
         residentId: resB.id,
+        spaceId: spaceB.id,
         label: 'Cam 02',
         ingestKeyId: cam2Keys.keyId,
         ingestSecretHash: cam2Keys.hash,
       },
     }),
   ]);
-  console.log(`Cameras: ${cam1.label} (keyId=${cam1.ingestKeyId}), ${cam2.label} (keyId=${cam2.ingestKeyId})`);
+  console.log(
+    `Cameras: ${cam1.label} (keyId=${cam1.ingestKeyId}), ${cam2.label} (keyId=${cam2.ingestKeyId})`,
+  );
 
   // ── Guardians ───────────────────────────────────────────────────────────────
   await Promise.all([
@@ -195,8 +263,12 @@ async function main() {
 
   console.log('\nSeed complete.');
   console.log('Camera secrets (save these — they are not stored in DB):');
-  console.log(`  ${cam1.label}: secret=${cam1Keys.secret}  keyId=${cam1Keys.keyId}`);
-  console.log(`  ${cam2.label}: secret=${cam2Keys.secret}  keyId=${cam2Keys.keyId}`);
+  console.log(
+    `  ${cam1.label}: secret=${cam1Keys.secret}  keyId=${cam1Keys.keyId}`,
+  );
+  console.log(
+    `  ${cam2.label}: secret=${cam2Keys.secret}  keyId=${cam2Keys.keyId}`,
+  );
 }
 
 main()

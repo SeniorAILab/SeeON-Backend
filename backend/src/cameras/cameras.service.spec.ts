@@ -40,7 +40,6 @@ function setup() {
 const fullCamera = {
   id: 'c1',
   facilityId: 'facility-1',
-  residentId: null,
   spaceId: 'space-1',
   label: 'Room 1',
   ingestKeyId: 'cam-abc',
@@ -81,6 +80,7 @@ describe('CamerasService', () => {
     expect(result).not.toHaveProperty('ingestSecretHash');
     expect(result.ingestKeyId).toBe('cam-abc');
     expect(result.spaceId).toBe('space-1');
+    expect(result).not.toHaveProperty('residentId');
   });
 
   it('throws NotFound when getOne misses', async () => {

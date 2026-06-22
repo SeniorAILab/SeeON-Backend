@@ -112,12 +112,51 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       ],
     });
 
+    await direct.floor.createMany({
+      data: [
+        {
+          id: 'floor-a',
+          facilityId: 'facility-a',
+          name: 'Floor A',
+          orderIndex: 1,
+        },
+        {
+          id: 'floor-b',
+          facilityId: 'facility-b',
+          name: 'Floor B',
+          orderIndex: 1,
+        },
+      ],
+    });
+
+    await direct.space.createMany({
+      data: [
+        {
+          id: 'space-a',
+          facilityId: 'facility-a',
+          floorId: 'floor-a',
+          name: 'Room A',
+          type: 'ROOM',
+          capacity: 1,
+        },
+        {
+          id: 'space-b',
+          facilityId: 'facility-b',
+          floorId: 'floor-b',
+          name: 'Room B',
+          type: 'ROOM',
+          capacity: 1,
+        },
+      ],
+    });
+
     await direct.camera.createMany({
       data: [
         {
           id: 'cam-a',
           facilityId: 'facility-a',
           residentId: 'res-a',
+          spaceId: 'space-a',
           label: 'Camera A',
           ingestKeyId: 'key-a',
           ingestSecretHash: 'hash-a',
@@ -126,6 +165,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           id: 'cam-b',
           facilityId: 'facility-b',
           residentId: 'res-b',
+          spaceId: 'space-b',
           label: 'Camera B',
           ingestKeyId: 'key-b',
           ingestSecretHash: 'hash-b',
@@ -371,6 +411,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           id: 'bad-camera',
           facilityId: 'facility-b',
           residentId: 'res-a',
+          spaceId: 'space-a',
           label: 'Bad Camera',
           ingestKeyId: 'bad-camera-key',
           ingestSecretHash: 'bad-camera-hash',

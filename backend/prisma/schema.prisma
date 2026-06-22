@@ -210,9 +210,9 @@ model Guardian {
 model Camera {
   id               String    @id @default(cuid())
   facilityId            String    @map("facility_id")
-  /// Nullable: camera may not yet be assigned to a resident.
+  /// Required room anchor; resident_id remains only for legacy data until PR8.
   residentId       String?   @map("resident_id")
-  spaceId          String?   @map("space_id")
+  spaceId          String    @map("space_id")
   label            String
   /// Selector-only key identifier sent in X-Ingest-KeyId header.
   ingestKeyId      String    @map("ingest_key_id")
@@ -226,7 +226,7 @@ model Camera {
   /// Composite FK (facilityId, residentId) → Resident(facilityId, id) prevents
   /// a camera from being assigned to a resident in a different facility (F9).
   resident Resident?    @relation(fields: [facilityId, residentId], references: [facilityId, id])
-  space    Space?       @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  space    Space        @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   alerts   Alert[]
   residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
 

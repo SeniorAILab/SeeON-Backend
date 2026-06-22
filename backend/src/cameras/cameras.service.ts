@@ -45,7 +45,6 @@ export class CamerasService {
             data: {
               facilityId,
               label: dto.label.trim(),
-              residentId: dto.residentId ?? null,
               spaceId: dto.spaceId,
               ingestKeyId,
               ingestSecretHash,
@@ -81,8 +80,6 @@ export class CamerasService {
             where: { id },
             data: {
               label: dto.label?.trim(),
-              residentId:
-                dto.residentId === undefined ? undefined : dto.residentId,
               spaceId:
                 dto.spaceId === undefined ? undefined : dto.spaceId.trim(),
             },
@@ -133,7 +130,6 @@ function toCameraDto(camera: Camera) {
   return {
     id: camera.id,
     facilityId: camera.facilityId,
-    residentId: camera.residentId,
     spaceId: camera.spaceId,
     label: camera.label,
     ingestKeyId: camera.ingestKeyId,
@@ -150,9 +146,7 @@ function throwCameraWriteConflict(err: unknown): never {
     );
   }
   if (isReferenceConstraintError(err)) {
-    throw new ConflictException(
-      'Camera space or resident must belong to the facility',
-    );
+    throw new ConflictException('Camera space must belong to the facility');
   }
   throw err;
 }
