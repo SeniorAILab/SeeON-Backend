@@ -186,6 +186,10 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 
 ## Conventions
 
+### Change discipline
+- 최소 변경: 목표 달성에 필요한 가장 작은 diff만 만든다 — 인접 리팩터·포맷·스코프 확장 금지.
+- 불필요한 주석 금지: 코드로 자명한 것은 주석으로 달지 않고, 스테일·장식 주석은 추가·잔존시키지 않는다.
+
 ### plan-first mandate
 Every *meaningful* change must have a `docs/exec-plan/active/{slug}/` entry **before** any code is
 modified. Enforcement is convention-level (no hook-based hard gate this cycle).
