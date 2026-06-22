@@ -1,12 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AlertStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import type { AlertStatusDto } from './dto/alert-status.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 
 export interface AlertQuery {
   residentId?: string;
-  status?: AlertStatus;
+  status?: AlertStatusDto;
   /** Forward cursor: returns alerts with alertSeq > afterSeq. */
   afterSeq?: bigint;
   /** Backward cursor: returns alerts with alertSeq < beforeSeq (AC7 history scroll). */

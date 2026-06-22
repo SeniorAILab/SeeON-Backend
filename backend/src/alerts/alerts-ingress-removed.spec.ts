@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -17,7 +17,7 @@ describe('legacy alert events ingress removal', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await app.close();
   });
 
   it('does not mount POST /api.alerts/events', async () => {

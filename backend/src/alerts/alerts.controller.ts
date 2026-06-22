@@ -16,7 +16,7 @@ import {
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AlertStatus } from '@prisma/client';
+import { parseAlertStatus } from './dto/alert-status.dto.js';
 import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
@@ -46,11 +46,7 @@ export class AlertsController {
     @Query('beforeSeq') beforeSeq?: string,
     @Query('limit') limit?: string,
   ) {
-    const validStatus = Object.values(AlertStatus).includes(
-      status as AlertStatus,
-    )
-      ? (status as AlertStatus)
-      : undefined;
+    const validStatus = parseAlertStatus(status);
     return this.service.list(requireFacilityId(req), {
       residentId,
       status: validStatus,

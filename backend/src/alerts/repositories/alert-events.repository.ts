@@ -15,12 +15,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   AlertEventTypes,
   type AlertEventIngressDto,
+  type AlertPolicyDecision,
+  type AlertSuppressedReason,
 } from '../dto/alert-events.dto.js';
 import type { DeliveryResult } from '../ports/channel.port.js';
-import type {
-  AlertPolicyDecision,
-  AlertSuppressedReason,
-} from '../services/alert-policy.service.js';
 
 const DEFAULT_RETRY_AFTER_MS = 60_000;
 const DEFAULT_OPERATOR_ACTION =

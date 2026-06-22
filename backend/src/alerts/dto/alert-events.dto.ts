@@ -51,3 +51,14 @@ export type AlertEventResponseDto = {
   readonly delivery_attempt_id?: string;
   readonly delivery_status?: DeliveryStatusDto;
 };
+export type AlertSuppressedReason =
+  | 'cooldown'
+  | 'hourly_cap'
+  | 'below_threshold';
+
+export type AlertPolicyDecision =
+  | { readonly kind: 'dispatch' }
+  | {
+      readonly kind: 'suppress';
+      readonly suppressed_reason: AlertSuppressedReason;
+    };
