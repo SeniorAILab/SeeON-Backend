@@ -13,9 +13,9 @@
 
 | 검사 대상 | 도구 | 어디서 도나 | 차단? |
 |---|---|---|---|
-| 계층 import 경계(controller→service→repository, service→port) | **ESLint**(`no-restricted-imports`) | 에디터 + CI `lint:check` | warn (비차단) |
-| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제) | **ESLint**(`no-restricted-syntax`) | 에디터 + CI `lint:check` | warn (비차단) |
-| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint** | 에디터 + CI `lint:check` | warn (비차단) |
+| 계층 import 경계(controller→service→repository, service→port) | **ESLint**(`no-restricted-imports`) | 에디터 + CI `lint` | warn (비차단) |
+| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제) | **ESLint**(`no-restricted-syntax`) | 에디터 + CI `lint` | warn (비차단) |
+| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint** | 에디터 + CI `lint` | warn (비차단) |
 | **스키마↔마이그레이션 결합** | **이 스크립트** | `.githooks/pre-commit` + CI | **차단**(exit 1) |
 
 ESLint로 잡을 수 있는 것은 전부 ESLint(warn-first)로 두고, **ESLint로 불가능한
@@ -57,11 +57,11 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 ## 호출 지점 (단일소스 — 로직 재구현 금지)
 
 - `.githooks/pre-commit` → `check-schema-migration.sh staged` (벤더 무관 1차 게이트 — Claude/Codex/GJC/사람 모두 커밋 시 동일 적용)
-- `.github/workflows/ci.yml` (backend job) → `check-schema-migration.sh auto` + `pnpm --filter backend run lint:check`(non-blocking warn-first)
+- `.github/workflows/ci.yml` (backend job) → `check-schema-migration.sh auto` + `pnpm --filter backend run lint`(non-blocking warn-first)
 - 실행권한 부여: `scripts/git-guard/setup-hooks.sh` 가 `chmod +x` 처리
 
 > 벤더 무관 보증은 git-native `.githooks/pre-commit` + CI 입니다. 스키마 가드는 에이전트
 > pre-edit 훅(`.claude`/`.codex`)에 넣지 않습니다 — 스키마만 스테이지된 동안 모든 셸/편집을
 > 막아 데드락을 유발할 수 있고, pre-commit 이 이미 전 벤더를 커밋 시점에 커버하기 때문입니다.
 > ADR-016 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
-> (ESLint 에디터 + CI lint:check 로만 노출).
+> (ESLint 에디터 + CI lint 로만 노출).

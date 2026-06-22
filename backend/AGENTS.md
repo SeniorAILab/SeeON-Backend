@@ -22,3 +22,4 @@ backend/src/
 
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).
+- lint: `pnpm --filter backend lint` (check) / `pnpm --filter backend lint:fix` (autofix). Convention: ADR-065.
