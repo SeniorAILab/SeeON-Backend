@@ -61,6 +61,7 @@ For container parity and production-shaped runs:
 ```bash
 pnpm compose:full      # full host stack (db+backend+front[nginx], runner) via --profile full
 pnpm compose:prod:up   # compose.yaml + compose.prod.yaml, runner targets
+pnpm compose:gateway   # prod-shaped overlay: single nginx gateway on :80, backend/db internal
 ```
 
 On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:full`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
@@ -80,6 +81,7 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
 | `pnpm compose:full` | Full host stack (db+backend+front[nginx], `--profile full`) |
 | `pnpm compose:prod:up` | Production-shaped Compose stack (`compose.yaml` + `compose.prod.yaml`) |
+| `pnpm compose:gateway` | Prod-shaped gateway overlay: single nginx on `:80`, `backend`/`db` internal (`compose.yaml` + `compose.gateway.yaml`) |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 

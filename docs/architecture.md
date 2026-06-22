@@ -11,7 +11,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── package.json                    ← dev:*, build:*, lint, db:*, prisma:* scripts
 ├── pnpm-workspace.yaml             ← workspace: [front, backend]
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
-├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; compose.edge.yaml = ML edge (ADR-062/063)
+├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; +compose.gateway.yaml (single-gateway prod-shaped overlay, root nginx.conf); compose.edge.yaml = ML edge (ADR-062/063)
 │
 ├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
 │   ├── src/
@@ -211,7 +211,7 @@ pnpm prisma:generate          # regenerate Prisma client after schema changes
 
 The `docker-compose.yml` mounts a named volume (`pgdata`) so data survives container restarts. Default credentials (`fall`/`fall`) match `.env.development`; override via environment variables before `docker compose up`.
 
-**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. Default `docker compose up` / `pnpm db:up` is db-only (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:full` (`docker compose --profile full up -d --build`) brings up the whole host stack. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
+**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. Default `docker compose up` / `pnpm db:up` is db-only (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:full` (`docker compose --profile full up -d --build`) brings up the whole host stack. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). `compose.gateway.yaml` is an optional prod-shaped overlay (`pnpm compose:gateway`): a single `nginx` gateway (root `nginx.conf`, reusing the front runner image for the baked SPA dist) is the **only** host-published port (`:80`), serving the SPA and reverse-proxying `/api`, `/auth`, `/ingest`, and `/api/sse` (direct, unbuffered) to an internal `backend`, with `backend`/`db` host ports reset to internal-only — verified at L1 (topology + routing + exposure boundary; real login/data/SSE delivery, TLS, and secrets are deferred). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
 
 ---
 
