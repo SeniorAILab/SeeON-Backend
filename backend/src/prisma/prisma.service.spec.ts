@@ -217,8 +217,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
   });
 
   afterAll(async () => {
-    await prisma?.onModuleDestroy();
-    await direct?.$disconnect();
+    await prisma.onModuleDestroy();
+    await direct.$disconnect();
   });
 
   it('uses a dedicated runtime role without superuser or BYPASSRLS privileges', async () => {

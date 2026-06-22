@@ -1,5 +1,7 @@
-import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
+import { ServiceUnavailableException } from '@nestjs/common';
+import type { TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';

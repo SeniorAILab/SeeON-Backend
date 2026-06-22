@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { User } from '@prisma/client';
 import type { Response } from 'express';
 import { AuthController } from './auth.controller';
 import { OAUTH_STATE_COOKIE_NAME } from './auth.constants';
@@ -15,6 +16,17 @@ describe('AuthController', () => {
     }) as unknown as Response & {
       redirect: jest.Mock;
     };
+
+  const makeUser = (facilityId: string | null): User => ({
+    id: 'user-1',
+    createdAt: new Date('2026-06-18T00:00:00.000Z'),
+    facilityId,
+    kakaoId: 'kakao-1',
+    email: null,
+    nickname: '테스트 사용자',
+    role: 'CAREGIVER',
+    sessionVersion: 1,
+  });
 
   const makeController = (frontOrigin?: string) => {
     const auth = {
@@ -33,8 +45,8 @@ describe('AuthController', () => {
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { facilityId: null },
-    } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
+      user: makeUser(null),
+    });
     const response = makeResponse();
 
     await controller.kakaoCallback(
@@ -56,8 +68,8 @@ describe('AuthController', () => {
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { facilityId: 'demo-facility-01' },
-    } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
+      user: makeUser('demo-facility-01'),
+    });
     const response = makeResponse();
 
     await controller.kakaoCallback(
@@ -79,8 +91,8 @@ describe('AuthController', () => {
     auth.completeKakaoCallback.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
-      user: { facilityId: null },
-    } as Awaited<ReturnType<AuthService['completeKakaoCallback']>>);
+      user: makeUser(null),
+    });
     const response = makeResponse();
 
     await controller.kakaoCallback(

@@ -114,8 +114,8 @@ describe('placement RLS tenant isolation', () => {
   });
 
   afterAll(async () => {
-    await app?.$disconnect();
-    await direct?.$disconnect();
+    await app.$disconnect();
+    await direct.$disconnect();
   });
 
   it('returns zero rows without app.facility_id', async () => {
