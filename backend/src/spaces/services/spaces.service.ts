@@ -5,18 +5,25 @@ import {
 } from '@nestjs/common';
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
-import type { CreateSpaceDto, UpdateSpaceDto } from '../dto/space.dto.js';
-import {
-  SpacesRepository,
-  type SpaceFilters,
-} from '../repositories/spaces.repository.js';
+import type {
+  CreateSpaceDto,
+  SpaceTypeDto,
+  UpdateSpaceDto,
+} from '../dto/space.dto.js';
+import { SpacesRepository } from '../repositories/spaces.repository.js';
 
 @Injectable()
 export class SpacesService {
   constructor(private readonly spacesRepository: SpacesRepository) {}
 
-  async list(facilityId: string, filters: SpaceFilters = {}) {
-    const spaces = await this.spacesRepository.list(facilityId, filters);
+  async list(
+    facilityId: string,
+    filters: { floorId?: string; type?: SpaceTypeDto; isActive?: boolean } = {},
+  ) {
+    const spaces = await this.spacesRepository.list(facilityId, {
+      ...filters,
+      type: filters.type,
+    });
     return spaces.map(presentSpace);
   }
 

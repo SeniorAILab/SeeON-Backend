@@ -12,14 +12,17 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { SpaceType } from '@prisma/client';
 import { FacilityContextInterceptor } from '../../auth/facility-context.interceptor.js';
 import {
   RequireFacilityGuard,
   SessionGuard,
 } from '../../auth/session.guard.js';
 import type { RequestWithAuth } from '../../auth/session.guard.js';
-import type { CreateSpaceDto, UpdateSpaceDto } from '../dto/space.dto.js';
+import type {
+  CreateSpaceDto,
+  SpaceTypeDto,
+  UpdateSpaceDto,
+} from '../dto/space.dto.js';
 import { SpacesService } from '../services/spaces.service.js';
 
 @Controller('api/spaces')
@@ -30,7 +33,7 @@ export class SpacesController {
   @Get() list(
     @Req() req: RequestWithAuth,
     @Query('floorId') floorId?: string,
-    @Query('type') type?: SpaceType,
+    @Query('type') type?: SpaceTypeDto,
     @Query('isActive') isActive?: string,
   ) {
     return this.service.list(requireFacilityId(req), {
