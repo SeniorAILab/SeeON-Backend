@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AlertStatus } from '@prisma/client';
 
 import { FacilityScopedNotFoundException } from '../common/domain-errors';
-import { PrismaService } from '../prisma/prisma.service';
+import type { PrismaService } from '../prisma/prisma.service';
 import { AlertsService } from './alerts.service';
 
 type FindManyArg = {
@@ -74,6 +74,25 @@ describe('AlertsService (read-model)', () => {
     });
     expect(result).toMatchObject({
       alertSeq: '1',
+      spaceId: 'space-1',
+      room: 'Room 101',
+    });
+  });
+  it('serializes room-only alerts with null resident fields', async () => {
+    const { service, alert } = setup();
+    alert.findUnique.mockResolvedValue(
+      alertRow({
+        residentId: null,
+        resident: null,
+        space: { name: 'Room 101' },
+      }),
+    );
+
+    const result = await service.getOne('facility-1', 'a1');
+
+    expect(result).toMatchObject({
+      residentId: null,
+      resident: null,
       spaceId: 'space-1',
       room: 'Room 101',
     });

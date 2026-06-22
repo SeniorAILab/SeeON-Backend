@@ -63,13 +63,13 @@ describe('toKakaoAlertMessageDto', () => {
     ).toBe(88);
   });
 
-  it('uses a fallback resident name and null room when absent', () => {
+  it('uses null resident name and room label when resident is absent', () => {
     const dto = toKakaoAlertMessageDto(
-      message({ resident_name: undefined, resident_room: null }),
+      message({ resident_name: undefined, resident_room: 'Room 101' }),
       DASHBOARD,
     );
-    expect(dto.residentName).toBe('거주자 미상');
-    expect(dto.room).toBeNull();
+    expect(dto.residentName).toBeNull();
+    expect(dto.room).toBe('Room 101');
   });
 
   it('uses null confidencePercent when confidence is absent', () => {
@@ -102,6 +102,17 @@ describe('buildKakaoAlertText', () => {
     expect(text).toContain('확신도 92%');
     expect(text).toContain('대시보드에서 상태 확인');
     expect(text).toContain('\n');
+  });
+  it('renders room label instead of fake resident text when resident is absent', () => {
+    const text = buildKakaoAlertText(
+      toKakaoAlertMessageDto(
+        message({ resident_name: undefined, resident_room: 'Room 101' }),
+        DASHBOARD,
+      ),
+    );
+    expect(text).toContain('🏠 Room 101');
+    expect(text).not.toContain('거주자 미상');
+    expect(text).not.toContain('님');
   });
 
   it('never leaks debug/database identifiers', () => {

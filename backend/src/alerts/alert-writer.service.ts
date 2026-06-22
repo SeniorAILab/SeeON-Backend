@@ -22,7 +22,7 @@ export interface AlertEvent {
   alertSeq: bigint;
   id: string;
   facilityId: string;
-  residentId: string;
+  residentId: string | null;
   cameraId: string | null;
   spaceId: string | null;
   type: string;
@@ -47,7 +47,7 @@ export interface StatusEvent {
 
 export interface WriteAlertInput {
   facilityId: string;
-  residentId: string;
+  residentId: string | null;
   cameraId: string | null;
   spaceId: string;
   type: string;
@@ -161,24 +161,25 @@ export class AlertWriterService {
           },
         });
 
-        // Upsert ResidentStatus.
-        await tx.residentStatus.upsert({
-          where: { residentId },
-          update: {
-            state: newState,
-            lastSeenAt: detectedAt,
-            cameraOnline,
-            sourceId: cameraId ?? undefined,
-          },
-          create: {
-            residentId,
-            facilityId,
-            state: newState,
-            lastSeenAt: detectedAt,
-            cameraOnline,
-            sourceId: cameraId ?? undefined,
-          },
-        });
+        if (residentId) {
+          await tx.residentStatus.upsert({
+            where: { residentId },
+            update: {
+              state: newState,
+              lastSeenAt: detectedAt,
+              cameraOnline,
+              sourceId: cameraId ?? undefined,
+            },
+            create: {
+              residentId,
+              facilityId,
+              state: newState,
+              lastSeenAt: detectedAt,
+              cameraOnline,
+              sourceId: cameraId ?? undefined,
+            },
+          });
+        }
 
         return created;
       },
@@ -198,22 +199,23 @@ export class AlertWriterService {
       status: alert.status,
       resident: alert.resident,
       space: alert.space,
-      room: alert.space === null ? alert.resident.room : alert.space.name,
+      room: alert.space?.name ?? alert.resident?.room ?? null,
     };
 
     // Emit alert AFTER commit (F3).
     this._emit(facilityId, event);
 
-    // Emit status event (AC5/AC6) — same causal order, same alertSeq.
-    const statusEvent: StatusEvent = {
-      alertSeq: alert.alertSeq,
-      facilityId,
-      residentId,
-      state: newState,
-      cameraOnline,
-      lastSeenAt: detectedAt,
-    };
-    this._emitStatus(facilityId, statusEvent);
+    if (residentId) {
+      const statusEvent: StatusEvent = {
+        alertSeq: alert.alertSeq,
+        facilityId,
+        residentId,
+        state: newState,
+        cameraOnline,
+        lastSeenAt: detectedAt,
+      };
+      this._emitStatus(facilityId, statusEvent);
+    }
 
     return event;
   }

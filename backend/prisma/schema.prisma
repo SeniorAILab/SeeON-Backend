@@ -244,7 +244,7 @@ model Alert {
   /// Monotonically increasing within the table; used as SSE Last-Event-ID.
   alertSeq       BigInt      @default(autoincrement()) @map("alert_seq")
   facilityId          String      @map("facility_id")
-  residentId     String      @map("resident_id")
+  residentId     String?     @map("resident_id")
   /// Nullable: alert may originate from an unconfigured camera path.
   cameraId       String?     @map("camera_id")
   spaceId        String?     @map("space_id")
@@ -259,7 +259,7 @@ model Alert {
   createdAt      DateTime    @default(now()) @map("created_at")
 
   facility      Facility @relation(fields: [facilityId], references: [id])
-  resident Resident     @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  resident Resident?    @relation(fields: [facilityId, residentId], references: [facilityId, id])
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
   camera   Camera?      @relation(fields: [facilityId, cameraId], references: [facilityId, id])

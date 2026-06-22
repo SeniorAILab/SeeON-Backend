@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE alerts ALTER COLUMN resident_id DROP NOT NULL;
+
+COMMIT;

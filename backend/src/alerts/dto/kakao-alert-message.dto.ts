@@ -8,7 +8,7 @@ import type { AlertDeliveryMessage } from '../ports/channel.port.js';
  */
 export interface KakaoAlertMessageDto {
   readonly title: string;
-  readonly residentName: string;
+  readonly residentName: string | null;
   readonly room: string | null;
   readonly detectedAtKST: string;
   readonly confidencePercent: number | null;
@@ -16,7 +16,7 @@ export interface KakaoAlertMessageDto {
 }
 
 const MAX_TEXT_LENGTH = 180;
-const FALLBACK_RESIDENT = '거주자 미상';
+const FALLBACK_ROOM = '공간 미상';
 
 const TITLE_BY_TYPE: Record<AlertEventType, string> = {
   fall: '🚨 낙상 감지',
@@ -55,7 +55,7 @@ export function toKakaoAlertMessageDto(
 ): KakaoAlertMessageDto {
   const residentName = message.resident_name?.trim()
     ? clip(message.resident_name, 24)
-    : FALLBACK_RESIDENT;
+    : null;
   const room = message.resident_room?.trim()
     ? clip(message.resident_room, 16)
     : null;
@@ -64,7 +64,7 @@ export function toKakaoAlertMessageDto(
       ? null
       : Math.round(message.confidence * 100);
   return {
-    title: TITLE_BY_TYPE[message.type] ?? '🚨 알림',
+    title: TITLE_BY_TYPE[message.type],
     residentName,
     room,
     detectedAtKST: formatDetectedAtKST(message.detected_at),
@@ -75,10 +75,12 @@ export function toKakaoAlertMessageDto(
 
 /** Render the Korean rich-text body (emoji/newlines, <=180 chars, no debug IDs). */
 export function buildKakaoAlertText(dto: KakaoAlertMessageDto): string {
-  const who = `👤 ${dto.residentName}님`;
+  const who = dto.residentName
+    ? `👤 ${dto.residentName}님`
+    : `🏠 ${dto.room ?? FALLBACK_ROOM}`;
   const lines: string[] = [
     dto.title,
-    dto.room ? `${who} · 🏠 ${dto.room}` : who,
+    dto.residentName && dto.room ? `${who} · 🏠 ${dto.room}` : who,
     `🕐 ${dto.detectedAtKST}`,
   ];
   if (dto.confidencePercent !== null) {

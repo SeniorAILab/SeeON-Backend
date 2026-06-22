@@ -61,6 +61,18 @@ describe('AlertWriterService', () => {
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
   });
+  it('persists empty-room alerts without creating ResidentStatus or status events', async () => {
+    const { service, tx } = setup();
+    const statuses: StatusEvent[] = [];
+    service.subscribeStatus('facility-1', (e) => statuses.push(e));
+
+    const event = await service.writeAlert({ ...input(0.9), residentId: null });
+
+    expect(event.residentId).toBeNull();
+    expect(event.room).toBe('Room 101');
+    expect(tx.residentStatus.upsert).not.toHaveBeenCalled();
+    expect(statuses).toHaveLength(0);
+  });
 
   it('rejects roomless writes before touching the database', async () => {
     const { service, tx } = setup();
