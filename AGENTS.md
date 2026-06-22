@@ -21,7 +21,8 @@
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/
-│   └── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
+│   ├── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
+│   └── backend-guard/       # backend layering/DTO enforcement: schema↔migration guard — ADR-064
 ├── ml/                      # Python/uv edge runtime — L0→L4 layers, guards, run → ml/AGENTS.md (ADR-057)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks → backend/AGENTS.md (ADR-001)
 ├── front/                   # Vite + React dashboard (SSOT) → front/AGENTS.md
@@ -249,6 +250,9 @@ Standing rule: `docs/rules/worktree-workflow.md`.
 Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
 
 PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
+
+### Backend architecture lint & guard
+백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064. 명령: `pnpm --filter backend run lint:check`.
 
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.
