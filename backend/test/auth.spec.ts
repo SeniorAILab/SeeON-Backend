@@ -220,7 +220,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const facilityCreateBody =
       facilityCreate.body as unknown as AuthResponseBody;
     expect(facilityCreateBody.user.facilityId).toBeTruthy();
-    expect(facilityCreateBody.user.role).toBe('OWNER');
+    expect(facilityCreateBody.user.role).toBe('ADMIN');
     const kakaoIdentity = await direct.kakaoIdentity.findUniqueOrThrow({
       where: { userId: facilityCreateBody.user.id },
     });

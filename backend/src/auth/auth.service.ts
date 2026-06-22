@@ -76,7 +76,7 @@ export class AuthService {
       async (tx) => {
         const updated = await tx.user.update({
           where: { id: userId },
-          data: { facilityId: facility.id, role: 'OWNER' },
+          data: { facilityId: facility.id, role: 'ADMIN' },
         });
         await tx.kakaoIdentity.upsert({
           where: { userId },
@@ -112,7 +112,7 @@ export class AuthService {
           kakaoId: profile.kakaoId,
           email: profile.email,
           nickname: profile.nickname,
-          role: 'OWNER',
+          role: 'ADMIN',
         },
       });
 

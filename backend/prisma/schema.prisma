@@ -17,8 +17,9 @@ datasource db {
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum Role {
-  OWNER
+  SUPER_ADMIN
   ADMIN
+  CAREGIVER
 }
 
 enum AlertStatus {
@@ -95,7 +96,7 @@ model User {
   kakaoId        String   @unique @map("kakao_id")
   email          String?
   nickname       String
-  role           Role     @default(OWNER)
+  role           Role     @default(ADMIN)
   /// Increment to invalidate all existing sessions for this user.
   sessionVersion Int      @default(0) @map("session_version")
   createdAt      DateTime @default(now()) @map("created_at")
