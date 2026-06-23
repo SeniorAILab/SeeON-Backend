@@ -1,332 +1,268 @@
-/**
- * Demo seed — creates one facility with residents, cameras, guardians, and initial
- * ResidentStatus rows.
- *
- * Runs with the DIRECT_URL (fall superuser) to bypass RLS during setup.
- * Production ingest uses the same HMAC contract: per-camera HMAC-SHA256 secret,
- * only the hash is stored in the DB (never the plaintext secret).
- */
-import { PrismaClient, ResidentState } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
+import {
+  NOKYANG_ADMIN_EMAIL,
+  NOKYANG_FACILITY_ID,
+  nokyangAssignments,
+  nokyangCameras,
+  nokyangFacility,
+  nokyangFloors,
+  nokyangGuardians,
+  nokyangResidents,
+  nokyangSpaces,
+  nokyangStatuses,
+  nokyangZones,
+  verifyNokyangFixture,
+} from './demo-nokyang.fixture';
 import { hashPassword } from '../src/auth/password';
 
-// Suppress BigInt JSON serialisation errors in console.log
-(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
-  return BigInt.prototype.toString.call(this);
-};
-
-// Use privileged connection to bypass RLS during seed (NR3). Do not fall back
-// to DATABASE_URL: the runtime app role must stay NOSUPERUSER/NOBYPASSRLS.
 const directUrl = process.env.DIRECT_URL;
 if (!directUrl) {
-  console.error('DIRECT_URL must be set for privileged seed execution');
-  process.exit(1);
+  throw new Error('DIRECT_URL must be set for privileged seed execution');
 }
 
 const prisma = new PrismaClient({
   datasources: { db: { url: directUrl } },
 });
 
+type CameraSecret = {
+  readonly hash: string;
+  readonly keyId: string;
+  readonly secret: string;
+};
+
 function sha256(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-// ponytail: env override, random fallback. A fixed `DEMO_INGEST_SECRET` (set only
-// in gitignored .env files, never committed) pins the demo camera secret so every
-// reseed reproduces the same hash — the live Streamlit→Kakao demo keeps matching
-// ml/.env's INGEST_SECRET. Unset → random per seed (the original behaviour).
-function makeCameraSecret(
-  label: string,
-  fixed?: string,
-): { keyId: string; secret: string; hash: string } {
-  const keyId = `demo-${label.toLowerCase().replace(/\s+/g, '-')}-keyid`;
+function makeCameraSecret(label: string, fixed?: string): CameraSecret {
+  const keyId = `demo-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}-keyid`;
   const secret =
     fixed && fixed.length > 0 ? fixed : crypto.randomBytes(24).toString('hex');
-  return { keyId, secret, hash: sha256(secret) };
+  return { hash: sha256(secret), keyId, secret };
 }
 
-async function main() {
-  console.log('Seeding demo data…');
-
-  // ── Facility ────────────────────────────────────────────────────────────
-  const facility = await prisma.facility.upsert({
-    where: { id: 'demo-facility-01' },
-    update: { name: 'Demo Nursing Home', code: 'demo-nursing-home' },
-    create: {
-      id: 'demo-facility-01',
-      name: 'Demo Nursing Home',
-      code: 'demo-nursing-home',
-      businessRegistrationNumber: '123-45-67890',
+async function upsertFacility(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.facility.upsert({
+    where: { id: NOKYANG_FACILITY_ID },
+    update: {
+      address: nokyangFacility.address,
+      businessRegistrationNumber: nokyangFacility.businessRegistrationNumber,
+      code: nokyangFacility.code,
+      name: nokyangFacility.name,
+      phone: nokyangFacility.phone,
     },
+    create: nokyangFacility,
   });
-  console.log(`Facility: ${facility.name} (${facility.id})`);
+}
 
+async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
   const demoLoginPassword = process.env.DEMO_LOGIN_PASSWORD ?? '1234';
-  const demoPasswordHash = await hashPassword(demoLoginPassword);
-  await Promise.all([
-    prisma.user.upsert({
-      where: { email: 'super@sen.ai' },
-      update: {
-        facilityId: null,
-        nickname: '통합 관리자',
-        passwordHash: demoPasswordHash,
-        role: 'SUPER_ADMIN',
-      },
-      create: {
-        id: 'demo-user-super',
-        email: 'super@sen.ai',
-        nickname: '통합 관리자',
-        passwordHash: demoPasswordHash,
-        role: 'SUPER_ADMIN',
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'admin@sen.ai' },
-      update: {
-        facilityId: facility.id,
-        nickname: '시설 관리자',
-        passwordHash: demoPasswordHash,
-        role: 'ADMIN',
-      },
-      create: {
-        id: 'demo-user-admin',
-        email: 'admin@sen.ai',
-        facilityId: facility.id,
-        nickname: '시설 관리자',
-        passwordHash: demoPasswordHash,
-        role: 'ADMIN',
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'staff@sen.ai' },
-      update: {
-        facilityId: facility.id,
-        nickname: '케어 직원',
-        passwordHash: demoPasswordHash,
-        role: 'CAREGIVER',
-      },
-      create: {
-        id: 'demo-user-staff',
-        email: 'staff@sen.ai',
-        facilityId: facility.id,
-        nickname: '케어 직원',
-        passwordHash: demoPasswordHash,
-        role: 'CAREGIVER',
-      },
-    }),
-  ]);
-  console.log('Demo login users seeded: super@sen.ai, admin@sen.ai, staff@sen.ai');
-
-  const floor = await prisma.floor.upsert({
-    where: { facilityId_name: { facilityId: facility.id, name: 'Demo Floor' } },
-    update: {},
+  const passwordHash = await hashPassword(demoLoginPassword);
+  await tx.user.upsert({
+    where: { email: NOKYANG_ADMIN_EMAIL },
+    update: {
+      facilityId: NOKYANG_FACILITY_ID,
+      nickname: '녹양역점 관리자',
+      passwordHash,
+      role: 'ADMIN',
+      sessionVersion: { increment: 1 },
+    },
     create: {
-      id: 'demo-floor-01',
-      facilityId: facility.id,
-      name: 'Demo Floor',
-      orderIndex: 1,
+      email: NOKYANG_ADMIN_EMAIL,
+      facilityId: NOKYANG_FACILITY_ID,
+      id: 'user_nokyang_admin',
+      nickname: '녹양역점 관리자',
+      passwordHash,
+      role: 'ADMIN',
     },
   });
-  const [spaceA, spaceB] = await Promise.all([
-    prisma.space.upsert({
+}
+
+async function upsertFacilityGraph(tx: Prisma.TransactionClient): Promise<void> {
+  for (const floor of nokyangFloors) {
+    await tx.floor.upsert({
+      where: { facilityId_id: { facilityId: floor.facilityId, id: floor.id } },
+      update: {
+        name: floor.name,
+        orderIndex: floor.orderIndex,
+      },
+      create: floor,
+    });
+  }
+
+  for (const space of nokyangSpaces) {
+    await tx.space.upsert({
+      where: { facilityId_id: { facilityId: space.facilityId, id: space.id } },
+      update: {
+        assignedStaff: space.assignedStaff,
+        capacity: space.capacity,
+        floorId: space.floorId,
+        isActive: true,
+        name: space.name,
+        type: space.type,
+      },
+      create: space,
+    });
+  }
+
+  for (const zone of nokyangZones) {
+    await tx.zone.upsert({
+      where: { facilityId_id: { facilityId: zone.facilityId, id: zone.id } },
+      update: {
+        name: zone.name,
+        orderIndex: zone.orderIndex,
+        spaceId: zone.spaceId,
+        type: zone.type,
+      },
+      create: zone,
+    });
+  }
+}
+
+async function upsertResidents(tx: Prisma.TransactionClient): Promise<void> {
+  for (const resident of nokyangResidents) {
+    await tx.resident.upsert({
       where: {
-        facilityId_floorId_name: {
-          facilityId: facility.id,
-          floorId: floor.id,
-          name: '101호',
+        facilityId_id: {
+          facilityId: resident.facilityId,
+          id: resident.id,
         },
       },
-      update: {},
-      create: {
-        id: 'demo-space-101',
-        facilityId: facility.id,
-        floorId: floor.id,
-        name: '101호',
-        type: 'ROOM',
-        capacity: 1,
+      update: {
+        age: resident.age,
+        diagnosisTags: [...resident.diagnosisTags],
+        fallRiskBaseline: resident.fallRiskBaseline,
+        gender: resident.gender,
+        isActive: true,
+        isFocusResident: resident.isFocusResident,
+        name: resident.name,
       },
-    }),
-    prisma.space.upsert({
+      create: {
+        ...resident,
+        diagnosisTags: [...resident.diagnosisTags],
+      },
+    });
+  }
+
+  for (const assignment of nokyangAssignments) {
+    await tx.residentAssignment.upsert({
       where: {
-        facilityId_floorId_name: {
-          facilityId: facility.id,
-          floorId: floor.id,
-          name: '202호',
+        facilityId_id: {
+          facilityId: assignment.facilityId,
+          id: assignment.id,
         },
       },
-      update: {},
-      create: {
-        id: 'demo-space-202',
-        facilityId: facility.id,
-        floorId: floor.id,
-        name: '202호',
-        type: 'ROOM',
-        capacity: 1,
-      },
-    }),
-  ]);
-
-  // ── Residents ───────────────────────────────────────────────────────────────
-  const [resA, resB] = await Promise.all([
-    prisma.resident.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-01' } },
-      update: {},
-      create: {
-        id: 'demo-res-01',
-        facilityId: facility.id,
-        name: '홍길동',
-      },
-    }),
-    prisma.resident.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-res-02' } },
-      update: {},
-      create: {
-        id: 'demo-res-02',
-        facilityId: facility.id,
-        name: '이순신',
-      },
-    }),
-  ]);
-  console.log(`Residents: ${resA.name}, ${resB.name}`);
-
-  await Promise.all([
-    prisma.residentAssignment.upsert({
-      where: {
-        facilityId_id: { facilityId: facility.id, id: 'demo-assignment-01' },
-      },
-      update: {},
-      create: {
-        id: 'demo-assignment-01',
-        facilityId: facility.id,
-        residentId: resA.id,
-        spaceId: spaceA.id,
-      },
-    }),
-    prisma.residentAssignment.upsert({
-      where: {
-        facilityId_id: { facilityId: facility.id, id: 'demo-assignment-02' },
-      },
-      update: {},
-      create: {
-        id: 'demo-assignment-02',
-        facilityId: facility.id,
-        residentId: resB.id,
-        spaceId: spaceB.id,
-      },
-    }),
-  ]);
-
-  // ── Cameras ─────────────────────────────────────────────────────────────────
-  const cam1Keys = makeCameraSecret('Cam 01', process.env.DEMO_INGEST_SECRET);
-  const cam2Keys = makeCameraSecret('Cam 02');
-
-  const [cam1, cam2] = await Promise.all([
-    prisma.camera.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-01' } },
       update: {
-        ingestKeyId: cam1Keys.keyId,
-        ingestSecretHash: cam1Keys.hash,
-        spaceId: spaceA.id,
+        endedAt: null,
+        residentId: assignment.residentId,
+        spaceId: assignment.spaceId,
+        startedAt: assignment.startedAt,
+        zoneId: assignment.zoneId,
       },
-      create: {
-        id: 'demo-cam-01',
-        facilityId: facility.id,
-        spaceId: spaceA.id,
-        label: 'Cam 01',
-        ingestKeyId: cam1Keys.keyId,
-        ingestSecretHash: cam1Keys.hash,
-      },
-    }),
-    prisma.camera.upsert({
-      where: { facilityId_id: { facilityId: facility.id, id: 'demo-cam-02' } },
+      create: assignment,
+    });
+  }
+
+  for (const guardian of nokyangGuardians) {
+    await tx.guardian.upsert({
+      where: { id: guardian.id },
       update: {
-        ingestKeyId: cam2Keys.keyId,
-        ingestSecretHash: cam2Keys.hash,
-        spaceId: spaceB.id,
+        name: guardian.name,
+        phone: guardian.phone,
+        relation: guardian.relation,
+        residentId: guardian.residentId,
       },
-      create: {
-        id: 'demo-cam-02',
-        facilityId: facility.id,
-        spaceId: spaceB.id,
-        label: 'Cam 02',
-        ingestKeyId: cam2Keys.keyId,
-        ingestSecretHash: cam2Keys.hash,
-      },
-    }),
-  ]);
-  console.log(
-    `Cameras: ${cam1.label} (keyId=${cam1.ingestKeyId}), ${cam2.label} (keyId=${cam2.ingestKeyId})`,
-  );
+      create: guardian,
+    });
+  }
+}
 
-  // ── Guardians ───────────────────────────────────────────────────────────────
-  await Promise.all([
-    prisma.guardian.upsert({
-      where: { id: 'demo-grd-01' },
-      update: {},
-      create: {
-        id: 'demo-grd-01',
-        facilityId: facility.id,
-        residentId: resA.id,
-        name: '홍보호자',
-        phone: '010-****-1234',
-        relation: '자녀',
+async function upsertCameras(
+  tx: Prisma.TransactionClient,
+): Promise<readonly CameraSecret[]> {
+  const secrets: CameraSecret[] = [];
+  for (const camera of nokyangCameras) {
+    const cameraSecret = makeCameraSecret(
+      camera.label,
+      process.env.DEMO_INGEST_SECRET,
+    );
+    secrets.push(cameraSecret);
+    await tx.camera.upsert({
+      where: {
+        facilityId_id: {
+          facilityId: camera.facilityId,
+          id: camera.id,
+        },
       },
-    }),
-    prisma.guardian.upsert({
-      where: { id: 'demo-grd-02' },
-      update: {},
-      create: {
-        id: 'demo-grd-02',
-        facilityId: facility.id,
-        residentId: resB.id,
-        name: '이보호자',
-        phone: '010-****-5678',
-        relation: '배우자',
+      update: {
+        ingestKeyId: cameraSecret.keyId,
+        ingestSecretHash: cameraSecret.hash,
+        label: camera.label,
+        online: true,
+        spaceId: camera.spaceId,
       },
-    }),
-  ]);
-  console.log('Guardians seeded');
+      create: {
+        ...camera,
+        ingestKeyId: cameraSecret.keyId,
+        ingestSecretHash: cameraSecret.hash,
+        online: true,
+      },
+    });
+  }
+  return secrets;
+}
 
-  // ── ResidentStatus ───────────────────────────────────────────────────────────
-  await Promise.all([
-    prisma.residentStatus.upsert({
-      where: { residentId: resA.id },
-      update: {},
-      create: {
-        residentId: resA.id,
-        facilityId: facility.id,
-        state: ResidentState.NORMAL,
-        cameraOnline: false,
-        sourceId: cam1.id,
+async function upsertStatuses(tx: Prisma.TransactionClient): Promise<void> {
+  for (const status of nokyangStatuses) {
+    await tx.residentStatus.upsert({
+      where: { residentId: status.residentId },
+      update: {
+        cameraOnline: status.cameraOnline,
+        facilityId: status.facilityId,
+        sourceId: status.sourceId,
+        state: status.state,
       },
-    }),
-    prisma.residentStatus.upsert({
-      where: { residentId: resB.id },
-      update: {},
-      create: {
-        residentId: resB.id,
-        facilityId: facility.id,
-        state: ResidentState.NORMAL,
-        cameraOnline: false,
-        sourceId: cam2.id,
-      },
-    }),
-  ]);
-  console.log('ResidentStatus seeded');
+      create: status,
+    });
+  }
+}
 
-  console.log('\nSeed complete.');
-  console.log('Camera secrets (save these — they are not stored in DB):');
+async function seedNokyangDemo(): Promise<readonly CameraSecret[]> {
+  verifyNokyangFixture();
+  return prisma.$transaction(async (tx) => {
+    await upsertFacility(tx);
+    await upsertAdmin(tx);
+    await upsertFacilityGraph(tx);
+    await upsertResidents(tx);
+    const secrets = await upsertCameras(tx);
+    await upsertStatuses(tx);
+    return secrets;
+  });
+}
+
+async function main(): Promise<void> {
+  console.log('Seeding 녹양역점 demo data...');
+  const cameraSecrets = await seedNokyangDemo();
   console.log(
-    `  ${cam1.label}: secret=${cam1Keys.secret}  keyId=${cam1Keys.keyId}`,
+    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} role=ADMIN Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Zones=${nokyangZones.length} Residents=${nokyangResidents.length} Cameras=${nokyangCameras.length}`,
   );
-  console.log(
-    `  ${cam2.label}: secret=${cam2Keys.secret}  keyId=${cam2Keys.keyId}`,
-  );
+  console.log('Camera secrets (save these; only hashes are stored):');
+  for (const [index, camera] of nokyangCameras.entries()) {
+    const secret = cameraSecrets[index];
+    if (!secret) {
+      continue;
+    }
+    console.log(
+      `  ${camera.label}: secret=${secret.secret} keyId=${secret.keyId}`,
+    );
+  }
+  console.log('Seed complete.');
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
+  .catch((error: unknown) => {
+    console.error(error);
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
