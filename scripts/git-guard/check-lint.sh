@@ -38,22 +38,23 @@ changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
 [ -z "$changed" ] && exit 0
 
 # Map changed files -> packages (mirrors ci.yml dorny/paths-filter).
-fe=0; be=0; mlc=0
+fe=0; be=0; mlc=0; envc=0
 if printf '%s\n' "$changed" | grep -Eq '^front/';   then fe=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^(backend/|scripts/backend-guard/)'; then be=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^ml/';      then mlc=1; fi
+if printf '%s\n' "$changed" | grep -Eq '^(compose(\..*)?\.ya?ml|\.env.*\.example|scripts/env/|\.github/workflows/ci\.yml|package\.json)$'; then envc=1; fi
 # Shared TS manifests/lockfiles affect both front and backend.
 if printf '%s\n' "$changed" | grep -Eq '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)$'; then fe=1; be=1; fi
 
-[ "$fe" = 0 ] && [ "$be" = 0 ] && [ "$mlc" = 0 ] && exit 0
+[ "$fe" = 0 ] && [ "$be" = 0 ] && [ "$mlc" = 0 ] && [ "$envc" = 0 ] && exit 0
 
-if [ "$fe" = 1 ] || [ "$be" = 1 ]; then
+if [ "$fe" = 1 ] || [ "$be" = 1 ] || [ "$envc" = 1 ]; then
   if ! command -v pnpm >/dev/null 2>&1; then
     gg_warn "pnpm not found — skipping JS lint/typecheck gate (run 'pnpm install' to enable)"
-    fe=0; be=0
+    fe=0; be=0; envc=0
   elif [ ! -d node_modules ]; then
     gg_warn "node_modules missing — run 'pnpm install' to enable the JS lint/typecheck gate; skipping"
-    fe=0; be=0
+    fe=0; be=0; envc=0
   fi
 fi
 
@@ -70,6 +71,11 @@ if [ "$be" = 1 ]; then
   pnpm --filter backend run dto:check || fail=1
   pnpm --filter backend exec tsc --noEmit || fail=1
   pnpm --filter backend run lint:check || gg_warn "backend lint:check reported issues (warn-first per ADR-064 — not blocking)"
+fi
+
+if [ "$envc" = 1 ]; then
+  gg_warn "env/compose contract changed -> pnpm env:verify"
+  pnpm env:verify || fail=1
 fi
 
 if [ "$mlc" = 1 ]; then

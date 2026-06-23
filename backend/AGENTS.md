@@ -18,7 +18,7 @@ backend/src/
 ## Guards
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.
 - Never bypass the HMAC guard on `POST /ingest/alerts` (`src/ingest/hmac.guard.ts`).
-- Never commit `.env*` (native dev reads `backend/.env.development`).
+- Never commit real `.env*`; native dev reads the repo-root `.env.local` SSOT.
 
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).

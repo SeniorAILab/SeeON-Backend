@@ -47,11 +47,11 @@
 | front (Vite + React) | `http://localhost:3000` | `pnpm dev:front` |
 | ml demo (Streamlit) | — | `pnpm dev:demo` |
 
-First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example backend/.env.development` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
+First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .env.local` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
 
-- **Env 위치**: 네이티브 dev(`pnpm dev:*`)는 `backend/.env.development`를 읽는다. 루트 `.env`는 Docker Compose `${VAR}` 전용. 비밀키 커밋 금지(`.env*` gitignored).
+- **Env 위치**: local/native/Prisma/Compose는 루트 `.env.local`, host prod는 루트 `.env.host.prod`, edge prod는 루트 `.env.edge.prod`를 읽는다. 실제 `.env*`는 gitignored, tracked 계약은 `.env.local.example`/`.env.host.prod.example`/`.env.edge.prod.example`. `backend/.env*`/`front/.env*`/`ml/.env*`는 만들지 않는다.
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
-- **Compose**: db만 `pnpm db:up` / 풀 호스트 스택 `pnpm compose:full` (`--profile full`) / prod `pnpm compose:prod:up`. 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
+- **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod-shaped 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod`). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
 - **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
 
 ## Development Flow

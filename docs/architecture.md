@@ -11,7 +11,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── package.json                    ← dev:*, build:*, lint, db:*, prisma:* scripts
 ├── pnpm-workspace.yaml             ← workspace: [front, backend]
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
-├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; +compose.gateway.yaml (single-gateway prod-shaped overlay, root nginx.conf); compose.edge.yaml = ML edge (ADR-062/063)
+├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; compose.edge.yaml = ML edge (ADR-062/063)
 │
 ├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
 │   ├── src/
@@ -29,9 +29,9 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │       ├── prisma.module.ts
 │   │       └── prisma.service.ts
 │   ├── prisma/schema.prisma        ← provider=postgresql, url=env("DATABASE_URL")
-│   ├── .env.development            ← DATABASE_URL + ML_SERVING_URL (localhost)
-│   ├── .env.production
-│   └── .env.example
+│   ├── .env.local.example          ← local/native + Compose development contract
+│   ├── .env.host.prod.example      ← host production contract
+│   └── .env.edge.prod.example      ← edge ML production contract
 │
 ├── ml/                             ← independent uv project (training + serving + demo)
 │   ├── pyproject.toml              ← uv project; dep groups: serving (default), demo, training
@@ -82,9 +82,9 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 ### 2. `backend/` — Product logic, persistence, alert policy
 
-NestJS 11, `@nestjs/config` (env-file per `NODE_ENV`), Prisma 6 (PostgreSQL). Listens on `PORT` (default 3000, configured in `.env.development`).
+NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local default 8080 from `.env.local`).
 
-`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md), superseded for the facility rename + placement domain by [ADR-058](decisions/backend/ADR-058-facility-placement-domain-model.md)/[ADR-059](decisions/backend/ADR-059-facility-rls-guc-rename.md)). Placement/resident CRUD is implemented; camera/space-status/detection-event/alert-rule/resident-risk read models are guarded 501 skeletons pending the ML read-model.
+`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md), superseded for the facility rename + placement domain by [ADR-058](decisions/backend/ADR-058-facility-placement-domain-model.md)/[ADR-059](decisions/backend/ADR-059-facility-rls-guc-rename.md)). Placement/resident CRUD is implemented; camera/space-status/detection-event/alert-rule/resident-risk read models are guarded 501 skeletons pending the ML read-model.
 
 Key responsibilities (all deferred, ownership defined now):
 - Call ML serving (`ML_SERVING_URL=http://localhost:8000`) with a video window
@@ -198,20 +198,20 @@ PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into 
 |-------|-----------|--------|
 | Database engine | PostgreSQL 17-alpine (Docker) | `docker-compose.yml` |
 | ORM / migrations | Prisma 6 | `backend/prisma/schema.prisma` |
-| Dev connection | `postgresql://fall:fall@localhost:5432/fall_dev` | `backend/.env.development` |
-| Prod connection | `postgresql://<user>:<pass>@<host>:5432/<db>` | `backend/.env.production` |
+| Dev connection | `postgresql://fall:fall@localhost:5432/fall_dev` | `.env.local` |
+| Prod connection | `postgresql://<user>:<pass>@<host>:5432/<db>` | `.env.host.prod` |
 
 Start the database:
 
 ```bash
 pnpm db:up                    # docker compose up -d db
-pnpm prisma:migrate           # prisma migrate dev (reads .env.development via dotenv-cli)
+pnpm prisma:migrate           # prisma migrate dev (reads .env.local via dotenv-cli)
 pnpm prisma:generate          # regenerate Prisma client after schema changes
 ```
 
-The `docker-compose.yml` mounts a named volume (`pgdata`) so data survives container restarts. Default credentials (`fall`/`fall`) match `.env.development`; override via environment variables before `docker compose up`.
+The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. Default `docker compose up` / `pnpm db:up` is db-only (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:full` (`docker compose --profile full up -d --build`) brings up the whole host stack. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). `compose.gateway.yaml` is an optional prod-shaped overlay (`pnpm compose:gateway`): a single `nginx` gateway (root `nginx.conf`, reusing the front runner image for the baked SPA dist) is the **only** host-published port (`:80`), serving the SPA and reverse-proxying `/api`, `/auth`, `/ingest`, and `/api/sse` (direct, unbuffered) to an internal `backend`, with `backend`/`db` host ports reset to internal-only — verified at L1 (topology + routing + exposure boundary; real login/data/SSE delivery, TLS, and secrets are deferred). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
+**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
 
 ---
 

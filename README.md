@@ -22,11 +22,9 @@ pnpm install
 # 2. Install Python dependencies (ml)
 cd ml && uv sync && cd ..
 
-# 3. Copy environment templates
-#    Root .env feeds Docker Compose ${VAR} interpolation; backend/.env.development
-#    is what the native NestJS dev server reads (PORT, DATABASE_URL/DIRECT_URL, auth).
-cp .env.example .env
-cp backend/.env.example backend/.env.development
+# 3. Copy the single local environment file
+#    .env.local feeds native backend, Vite frontend, Prisma, and local Compose.
+cp .env.local.example .env.local
 
 # 4. Start PostgreSQL via Docker
 pnpm db:up
@@ -43,7 +41,9 @@ pnpm dev:front    # http://localhost:3000
 bash scripts/git-guard/setup-hooks.sh
 ```
 
-> Real `.env.*` files (`.env`, `.env.development`, `.env.production`) are gitignored. Never commit secrets.
+> Real `.env.local`, `.env.host.prod`, and `.env.edge.prod` files are gitignored.
+> Never commit secrets. Do not create package-local env files under `backend/`,
+> `front/`, or `ml/`.
 
 ## Standard ports
 
@@ -59,12 +59,11 @@ Browser-facing URLs must use `localhost` because the browser runs on the host. C
 For container parity and production-shaped runs:
 
 ```bash
-pnpm compose:full      # full host stack (db+backend+front[nginx], runner) via --profile full
-pnpm compose:prod:up   # compose.yaml + compose.prod.yaml, runner targets
-pnpm compose:gateway   # prod-shaped overlay: single nginx gateway on :80, backend/db internal
+pnpm compose:local:up  # full local host stack via .env.local + --profile full
+pnpm compose:prod:up   # full prod-shaped host stack via .env.host.prod
 ```
 
-On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:full`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
+On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
 ## Commands
 
@@ -79,9 +78,8 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 | `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
 | `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
-| `pnpm compose:full` | Full host stack (db+backend+front[nginx], `--profile full`) |
-| `pnpm compose:prod:up` | Production-shaped Compose stack (`compose.yaml` + `compose.prod.yaml`) |
-| `pnpm compose:gateway` | Prod-shaped gateway overlay: single nginx on `:80`, `backend`/`db` internal (`compose.yaml` + `compose.gateway.yaml`) |
+| `pnpm compose:local:up` | Full local host stack (db+backend+front[nginx], `.env.local`, `--profile full`) |
+| `pnpm compose:prod:up` | Production-shaped full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod`) |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 

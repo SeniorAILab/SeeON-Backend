@@ -6,8 +6,6 @@
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
 # PostgreSQL for dev/prod parity. Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
-#   Dev:  docker compose up -d db   (then backend reads .env.development)
-#
 # DB role separation (ADR-A / NR1):
 #   fall     = superuser      → migrations, seed (DIRECT_URL)
 #   fall_app = NOSUPERUSER NOBYPASSRLS → application runtime (DATABASE_URL)
@@ -51,9 +49,6 @@ services:
       # The backend MlServingPredictionAdapter pull seam stays dormant (ADR-029 / ADR-048);
       # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
-      # Auth boot config. KakaoClient validates these at startup; defaults are dev
-      # placeholders so the parity/full stack boots out of the box. Override with
-      # real Kakao credentials and a strong SESSION_JWT_SECRET via the root .env in prod.
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:8080/auth/kakao/callback}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}

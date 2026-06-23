@@ -26,6 +26,9 @@ front/out/
 .env
 .env.*
 !.env.example
+!.env.local.example
+!.env.host.prod.example
+!.env.edge.prod.example
 
 # macOS/local editor noise
 .DS_Store

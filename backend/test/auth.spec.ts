@@ -237,9 +237,16 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBe(facilityCreateBody.user.facilityId);
 
     const activeSession = await direct.serverSession.findFirstOrThrow({
-      where: { userId: facilityCreateBody.user.id, revokedAt: null },
+      where: {
+        userId: facilityCreateBody.user.id,
+        facilityId: facilityCreateBody.user.facilityId,
+        revokedAt: null,
+      },
       orderBy: { createdAt: 'desc' },
     });
+    const sessionSecret = app
+      .get(ConfigService)
+      .getOrThrow<string>('SESSION_JWT_SECRET');
     const nowSeconds = Math.floor(Date.now() / 1000);
     const oldToken = createSignedSessionToken(
       {
@@ -250,7 +257,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds - 700,
         exp: nowSeconds + 1800,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const expiredToken = createSignedSessionToken(
       {
@@ -261,7 +268,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds - 3600,
         exp: nowSeconds - 1,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const staleVersionToken = createSignedSessionToken(
       {
@@ -272,7 +279,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds,
         exp: nowSeconds + 1800,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const tamperedToken = `${oldToken.slice(0, -1)}${oldToken.endsWith('a') ? 'b' : 'a'}`;
 
