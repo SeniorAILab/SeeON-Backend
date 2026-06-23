@@ -14,6 +14,8 @@ describe('AuthController', () => {
       clearCookie: jest.fn(),
       redirect: jest.fn(),
     }) as unknown as Response & {
+      cookie: jest.Mock;
+      clearCookie: jest.Mock;
       redirect: jest.Mock;
     };
 
@@ -23,6 +25,7 @@ describe('AuthController', () => {
     facilityId,
     kakaoId: 'kakao-1',
     email: null,
+    passwordHash: null,
     nickname: '테스트 사용자',
     role: 'CAREGIVER',
     sessionVersion: 1,
@@ -31,6 +34,7 @@ describe('AuthController', () => {
   const makeController = (frontOrigin?: string) => {
     const auth = {
       completeKakaoCallback: jest.fn(),
+      loginWithPassword: jest.fn(),
     } as unknown as jest.Mocked<AuthService>;
     const controller = new AuthController(
       auth,
@@ -106,6 +110,38 @@ describe('AuthController', () => {
 
     expect(response.redirect).toHaveBeenCalledWith(
       'http://localhost:3000/onboarding',
+    );
+  });
+
+  it('logs in with email/password and does not expose passwordHash', async () => {
+    const { auth, controller } = makeController();
+    auth.loginWithPassword.mockResolvedValue({
+      token: 'session-token',
+      maxAgeSeconds: 60,
+      user: {
+        ...makeUser('demo-facility-01'),
+        email: 'admin@sen.ai',
+        passwordHash: 'hash',
+      },
+    });
+    const response = makeResponse();
+
+    const body = await controller.login(
+      { email: 'admin@sen.ai', password: '1234' },
+      response,
+    );
+
+    expect(auth.loginWithPassword.mock.calls[0]).toEqual([
+      'admin@sen.ai',
+      '1234',
+    ]);
+    expect(response.cookie).toHaveBeenCalled();
+    expect('passwordHash' in body.user).toBe(false);
+    expect(body.user).toEqual(
+      expect.objectContaining({
+        email: 'admin@sen.ai',
+        facilityId: 'demo-facility-01',
+      }),
     );
   });
 });

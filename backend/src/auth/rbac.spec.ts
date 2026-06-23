@@ -1,4 +1,3 @@
-import { UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import {
@@ -17,14 +16,24 @@ describe('RBAC SSOT', () => {
     expect(BACKEND_ROLES).toEqual(['SUPER_ADMIN', 'ADMIN', 'CAREGIVER']);
     expect(hasRbacCapability('SUPER_ADMIN', 'personalLogin')).toBe(true);
     expect(hasRbacCapability('ADMIN', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('CAREGIVER', 'personalLogin')).toBe(false);
+    expect(hasRbacCapability('CAREGIVER', 'personalLogin')).toBe(true);
     expect(hasRbacCapability('CAREGIVER', 'monitorView')).toBe(true);
     expect(RBAC_PERMISSIONS.CAREGIVER.has('facilityAdmin')).toBe(false);
   });
 
-  it('does not create personal sessions for CAREGIVER', async () => {
+  it('creates personal sessions for CAREGIVER staff users', async () => {
     const prisma = {
-      db: { serverSession: { create: jest.fn() } },
+      db: {
+        serverSession: {
+          create: jest.fn().mockResolvedValue({
+            id: 'session-1',
+            userId: 'user-1',
+            facilityId: 'facility-1',
+            expiresAt: new Date(Date.now() + 60_000),
+            revokedAt: null,
+          }),
+        },
+      },
     };
     const config = {
       get: jest.fn((key: string) =>
@@ -33,17 +42,18 @@ describe('RBAC SSOT', () => {
     } as unknown as ConfigService;
     const service = new SessionService(prisma as never, config);
 
-    await expect(
-      service.createSession({
-        id: 'user-1',
-        facilityId: 'facility-1',
-        role: 'CAREGIVER',
-        kakaoId: 'kakao-1',
-        nickname: 'Caregiver',
-        sessionVersion: 0,
-      }),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(prisma.db.serverSession.create).not.toHaveBeenCalled();
+    const session = await service.createSession({
+      id: 'user-1',
+      facilityId: 'facility-1',
+      role: 'CAREGIVER',
+      kakaoId: 'kakao-1',
+      nickname: 'Caregiver',
+      sessionVersion: 0,
+    });
+
+    expect(typeof session.token).toBe('string');
+    expect(typeof session.maxAgeSeconds).toBe('number');
+    expect(prisma.db.serverSession.create).toHaveBeenCalled();
   });
 
   it('onboards Kakao users as ADMIN, not legacy OWNER', async () => {

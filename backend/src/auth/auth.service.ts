@@ -13,6 +13,7 @@ import {
 } from './kakao.client';
 import { SessionService } from './session.service';
 import { encryptToken } from './token-crypto';
+import { verifyPassword } from './password';
 
 @Injectable()
 export class AuthService {
@@ -38,6 +39,30 @@ export class AuthService {
     const kakaoToken = await this.kakao.exchangeCode(code);
     const profile = await this.kakao.getProfile(kakaoToken.access_token);
     const user = await this.upsertUser(profile, kakaoToken);
+    const session = await this.sessions.createSession(user);
+    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+  }
+
+  async loginWithPassword(
+    email: string,
+    password: string,
+  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !password) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const user = await this.prisma.db.user.findFirst({
+      where: { email: normalizedEmail },
+    });
+    if (!user?.passwordHash) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    const passwordMatches = await verifyPassword(password, user.passwordHash);
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     const session = await this.sessions.createSession(user);
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
@@ -78,11 +103,17 @@ export class AuthService {
           where: { id: userId },
           data: { facilityId: facility.id, role: 'ADMIN' },
         });
-        await tx.kakaoIdentity.upsert({
-          where: { userId },
-          update: { facilityId: facility.id, kakaoId: updated.kakaoId },
-          create: { userId, facilityId: facility.id, kakaoId: updated.kakaoId },
-        });
+        if (updated.kakaoId) {
+          await tx.kakaoIdentity.upsert({
+            where: { userId },
+            update: { facilityId: facility.id, kakaoId: updated.kakaoId },
+            create: {
+              userId,
+              facilityId: facility.id,
+              kakaoId: updated.kakaoId,
+            },
+          });
+        }
         return updated;
       },
     );
@@ -152,6 +183,10 @@ export class AuthService {
       if (!used.has(candidate)) return candidate;
     }
   }
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 function slugFacilityName(name: string): string {
