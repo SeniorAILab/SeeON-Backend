@@ -93,8 +93,9 @@ model Facility {
 model User {
   id             String   @id @default(cuid())
   facilityId          String?  @map("facility_id")
-  kakaoId        String   @unique @map("kakao_id")
-  email          String?
+  kakaoId        String?  @unique @map("kakao_id")
+  email          String?  @unique
+  passwordHash   String?  @map("password_hash")
   nickname       String
   role           Role     @default(ADMIN)
   /// Increment to invalidate all existing sessions for this user.

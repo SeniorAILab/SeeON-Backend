@@ -4,7 +4,8 @@ export interface AuthenticatedUser {
   id: string;
   facilityId: string | null;
   role: Role;
-  kakaoId: string;
+  kakaoId: string | null;
+  email: string | null;
   nickname: string;
   sessionVersion: number;
 }

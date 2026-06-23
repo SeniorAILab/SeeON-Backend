@@ -29,7 +29,7 @@ export const RBAC_PERMISSIONS: Record<
     'facilityAdmin',
     'monitorView',
   ]),
-  CAREGIVER: new Set<RbacCapability>(['monitorView']),
+  CAREGIVER: new Set<RbacCapability>(['personalLogin', 'monitorView']),
 };
 
 export function hasRbacCapability(

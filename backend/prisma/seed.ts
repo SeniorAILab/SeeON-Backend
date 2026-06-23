@@ -8,6 +8,7 @@
  */
 import { PrismaClient, ResidentState } from '@prisma/client';
 import * as crypto from 'crypto';
+import { hashPassword } from '../src/auth/password';
 
 // Suppress BigInt JSON serialisation errors in console.log
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -59,6 +60,62 @@ async function main() {
     },
   });
   console.log(`Facility: ${facility.name} (${facility.id})`);
+
+  const demoLoginPassword = process.env.DEMO_LOGIN_PASSWORD ?? '1234';
+  const demoPasswordHash = await hashPassword(demoLoginPassword);
+  await Promise.all([
+    prisma.user.upsert({
+      where: { email: 'super@sen.ai' },
+      update: {
+        facilityId: null,
+        nickname: '통합 관리자',
+        passwordHash: demoPasswordHash,
+        role: 'SUPER_ADMIN',
+      },
+      create: {
+        id: 'demo-user-super',
+        email: 'super@sen.ai',
+        nickname: '통합 관리자',
+        passwordHash: demoPasswordHash,
+        role: 'SUPER_ADMIN',
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'admin@sen.ai' },
+      update: {
+        facilityId: facility.id,
+        nickname: '시설 관리자',
+        passwordHash: demoPasswordHash,
+        role: 'ADMIN',
+      },
+      create: {
+        id: 'demo-user-admin',
+        email: 'admin@sen.ai',
+        facilityId: facility.id,
+        nickname: '시설 관리자',
+        passwordHash: demoPasswordHash,
+        role: 'ADMIN',
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'staff@sen.ai' },
+      update: {
+        facilityId: facility.id,
+        nickname: '케어 직원',
+        passwordHash: demoPasswordHash,
+        role: 'CAREGIVER',
+      },
+      create: {
+        id: 'demo-user-staff',
+        email: 'staff@sen.ai',
+        facilityId: facility.id,
+        nickname: '케어 직원',
+        passwordHash: demoPasswordHash,
+        role: 'CAREGIVER',
+      },
+    }),
+  ]);
+  console.log('Demo login users seeded: super@sen.ai, admin@sen.ai, staff@sen.ai');
 
   const floor = await prisma.floor.upsert({
     where: { facilityId_name: { facilityId: facility.id, name: 'Demo Floor' } },
