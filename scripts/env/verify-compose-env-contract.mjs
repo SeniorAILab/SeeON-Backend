@@ -41,6 +41,8 @@ const forbiddenHostFragments = [
   'published: "3000"',
   'published: "5432"',
   'published: "8080"',
+  'dockerfile:',
+  'build:',
 ];
 
 class VerificationError extends Error {
@@ -162,30 +164,6 @@ function verify() {
         'fall_app',
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
-        'VITE_USE_MOCK: "false"',
-      ]);
-
-      const registryHostConfig = requireSuccess(
-        'host registry prod config',
-        [
-          '--profile',
-          'full',
-          '-f',
-          'compose.yaml',
-          '-f',
-          'compose.prod.yaml',
-          '-f',
-          'compose.registry.yaml',
-          'config',
-        ],
-        hostEnvPath,
-      );
-      assertForbiddenFragments(
-        'host registry prod config',
-        registryHostConfig,
-        forbiddenHostFragments,
-      );
-      assertRequiredFragments('host registry prod config', registryHostConfig, [
         'ghcr.io/goberomsu/eldercare-fall-ai/backend:test',
         'ghcr.io/goberomsu/eldercare-fall-ai/front:test',
         'pull_policy: always',

@@ -60,7 +60,7 @@ For container parity and production-shaped runs:
 
 ```bash
 pnpm compose:local:up  # full local host stack via .env.local + --profile full
-pnpm compose:prod:up   # full prod-shaped host stack via .env.host.prod
+pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
 ```
 
 On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
@@ -79,7 +79,7 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 | `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
 | `pnpm compose:local:up` | Full local host stack (db+backend+front[nginx], `.env.local`, `--profile full`) |
-| `pnpm compose:prod:up` | Production-shaped full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod`) |
+| `pnpm compose:prod:up` | Production full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod` image pins) |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 

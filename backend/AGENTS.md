@@ -17,6 +17,8 @@ backend/src/
 
 ## Guards
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.
+- See `prisma/AGENTS.md` before changing schema, migrations, runtime DB roles, or
+  deploy-time database replay.
 - Never bypass the HMAC guard on `POST /ingest/alerts` (`src/ingest/hmac.guard.ts`).
 - Never commit real `.env*`; native dev reads the repo-root `.env.local` SSOT.
 

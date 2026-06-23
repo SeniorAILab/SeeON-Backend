@@ -51,7 +51,7 @@ First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .en
 
 - **Env 위치**: local/native/Prisma/Compose는 루트 `.env.local`, host prod는 루트 `.env.host.prod`, edge prod는 루트 `.env.edge.prod`를 읽는다. 실제 `.env*`는 gitignored, tracked 계약은 `.env.local.example`/`.env.host.prod.example`/`.env.edge.prod.example`. `backend/.env*`/`front/.env*`/`ml/.env*`는 만들지 않는다.
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
-- **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod-shaped 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod`). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
+- **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod` image pins). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
 - **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
 
 ## Development Flow

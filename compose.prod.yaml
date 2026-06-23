@@ -13,8 +13,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required in prod} -d ${POSTGRES_DB:?POSTGRES_DB is required in prod}"]
 
   backend:
-    build:
-      target: runner
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required in prod}
+    build: !reset null
+    pull_policy: always
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -29,11 +30,9 @@ services:
     ports: !reset []
 
   front:
-    build:
-      target: runner
-      args:
-        VITE_USE_MOCK: "false"
-        VITE_API_BASE_URL: /api
+    image: ${FRONT_IMAGE:?FRONT_IMAGE is required in prod}
+    build: !reset null
+    pull_policy: always
     restart: unless-stopped
     ports: !override
       - "80:3000"

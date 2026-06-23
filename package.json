@@ -23,7 +23,7 @@
     "db:up": "docker compose --env-file .env.local up -d db",
     "db:down": "docker compose down",
     "compose:local:up": "docker compose --env-file .env.local --profile full up -d --build",
-    "compose:prod:up": "docker compose --env-file .env.host.prod --profile full -f compose.yaml -f compose.prod.yaml up -d --build",
+    "compose:prod:up": "docker compose --env-file .env.host.prod --profile full -f compose.yaml -f compose.prod.yaml up -d",
     "compose:down": "docker compose down",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
     "prisma:migrate": "pnpm --filter backend run prisma:migrate",
