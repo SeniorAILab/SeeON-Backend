@@ -21,6 +21,8 @@ SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
 KAKAO_REST_API_KEY=prod-kakao-rest-api-key
 KAKAO_REDIRECT_URI=https://senai.example.com/auth/kakao/callback
 KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+BACKEND_IMAGE=ghcr.io/goberomsu/eldercare-fall-ai/backend:test
+FRONT_IMAGE=ghcr.io/goberomsu/eldercare-fall-ai/front:test
 `;
 
 const completeEdgeEnv = `ML_SERVING_PORT=8000
@@ -161,6 +163,32 @@ function verify() {
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
         'VITE_USE_MOCK: "false"',
+      ]);
+
+      const registryHostConfig = requireSuccess(
+        'host registry prod config',
+        [
+          '--profile',
+          'full',
+          '-f',
+          'compose.yaml',
+          '-f',
+          'compose.prod.yaml',
+          '-f',
+          'compose.registry.yaml',
+          'config',
+        ],
+        hostEnvPath,
+      );
+      assertForbiddenFragments(
+        'host registry prod config',
+        registryHostConfig,
+        forbiddenHostFragments,
+      );
+      assertRequiredFragments('host registry prod config', registryHostConfig, [
+        'ghcr.io/goberomsu/eldercare-fall-ai/backend:test',
+        'ghcr.io/goberomsu/eldercare-fall-ai/front:test',
+        'pull_policy: always',
       ]);
 
       const edgeConfig = requireSuccess(

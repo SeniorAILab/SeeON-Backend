@@ -36,7 +36,6 @@ ENV PORT="8080"
 COPY --from=build /prod/backend/package.json ./package.json
 COPY --from=build /prod/backend/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./dist
-COPY --from=build /app/backend/prisma ./prisma
 
 EXPOSE 8080
 # nest build preserves the multi-root layout (src/, prisma/, scripts/), so the entry is dist/src/main.

@@ -37,19 +37,3 @@ services:
     restart: unless-stopped
     ports: !override
       - "80:3000"
-
-  migrate:
-    profiles: [migrate]
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      target: runner
-    command: ["pnpm", "exec", "prisma", "migrate", "deploy"]
-    restart: "no"
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in prod}
-      DIRECT_URL: ${DIRECT_URL:?DIRECT_URL is required in prod}
-    depends_on:
-      db:
-        condition: service_healthy
