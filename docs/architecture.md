@@ -76,7 +76,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. Dashboard UI (monitoring, alerts, residents, admin) currently driven by mock services (`USE_MOCK=true`) behind an apiClient seam; Phase 2 wires these to the backend. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam; explicit `VITE_USE_MOCK=true` keeps the mock runtime available for tests/demo-only surfaces while remaining service wiring is replaced incrementally. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
