@@ -9,6 +9,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 # One in-flight run per PR; cancel superseded pushes.
 concurrency:

@@ -40,3 +40,7 @@ COPY --from=build /app/backend/dist ./dist
 EXPOSE 8080
 # nest build preserves the multi-root layout (src/, prisma/, scripts/), so the entry is dist/src/main.
 CMD ["node", "dist/src/main"]
+
+FROM build AS migrator
+WORKDIR /app
+CMD ["pnpm", "--filter", "backend", "exec", "prisma", "migrate", "deploy"]

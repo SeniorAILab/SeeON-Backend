@@ -2,6 +2,7 @@
 # ML runs on the external edge device — see compose.edge.yaml.
 services:
   db:
+    ports: !reset []
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required in prod}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in prod}
@@ -23,8 +24,7 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required in prod}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
       KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:?KAKAO_TOKEN_ENC_KEY is required in prod}
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
+    ports: !reset []
 
   front:
     build:
@@ -33,5 +33,20 @@ services:
         VITE_USE_MOCK: "false"
         VITE_API_BASE_URL: /api
     restart: unless-stopped
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
+    ports: !override
+      - "80:3000"
+
+  migrate:
+    profiles: [migrate]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: migrator
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${APP_DB_USER:?APP_DB_USER is required in prod}:${APP_DB_PASSWORD:?APP_DB_PASSWORD is required in prod}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required in prod}?schema=public
+      DIRECT_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required in prod}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in prod}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required in prod}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy

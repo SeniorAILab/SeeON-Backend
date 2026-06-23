@@ -10,9 +10,6 @@ const fixedLocalKakaoTokenKey =
 const completeHostEnv = `NODE_ENV=production
 FRONT_ORIGIN=https://senai.example.com
 ALERT_DASHBOARD_URL=https://senai.example.com
-FRONT_PORT=3000
-BACKEND_PORT=8080
-POSTGRES_PORT=5432
 POSTGRES_USER=fall_prod_admin
 POSTGRES_PASSWORD=prod-admin-password-32chars
 POSTGRES_DB=fall_prod
@@ -41,6 +38,9 @@ const forbiddenHostFragments = [
   fixedLocalKakaoTokenKey,
   'VITE_USE_MOCK: "true"',
   'VITE_USE_MOCK: true',
+  'published: "3000"',
+  'published: "5432"',
+  'published: "8080"',
 ];
 
 class VerificationError extends Error {
