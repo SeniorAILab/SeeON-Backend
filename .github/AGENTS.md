@@ -16,6 +16,8 @@ Naver Cloud deploy trigger.
   needs them.
 - Production deploy runs only when a non-prerelease GitHub Release is published,
   or through explicit `workflow_dispatch` with a concrete ref.
+- Prefer `pnpm release:prod -- vX.Y.Z` for production release creation so the
+  release target and tag format stay consistent.
 - Production deploy images are built in GitHub Actions and pushed to GHCR with
   the exact commit SHA tag.
 - Workflow inputs and secrets must fail validation before SSH starts. Do not
