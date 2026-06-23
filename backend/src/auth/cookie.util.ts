@@ -1,6 +1,13 @@
 import type { Response } from 'express';
 import { OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME } from './auth.constants';
 
+function secureCookiesEnabled(): boolean {
+  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
 export function readCookie(
   cookieHeader: string | undefined,
   name: string,
@@ -20,7 +27,7 @@ export function setSessionCookie(
 ): void {
   response.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookiesEnabled(),
     sameSite: 'lax',
     path: '/',
     maxAge: maxAgeSeconds * 1000,
@@ -38,7 +45,7 @@ export function setOAuthStateCookie(
 ): void {
   response.cookie(OAUTH_STATE_COOKIE_NAME, state, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookiesEnabled(),
     sameSite: 'lax',
     path: '/auth',
     maxAge: maxAgeSeconds * 1000,

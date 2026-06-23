@@ -31,6 +31,15 @@ describe('validateBackendEnv', () => {
     expect(validateBackendEnv(VALID_PROD_ENV)).toBe(VALID_PROD_ENV);
   });
 
+  it('accepts an explicit production secure-cookie override', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      AUTH_COOKIE_SECURE: 'false',
+    };
+
+    expect(validateBackendEnv(env)).toBe(env);
+  });
+
   it('rejects missing production values', () => {
     const env: Record<string, string> = { ...VALID_PROD_ENV };
     delete env.KAKAO_REST_API_KEY;
@@ -69,5 +78,18 @@ describe('validateBackendEnv', () => {
     };
 
     expect(() => validateBackendEnv(env)).toThrow(BackendEnvValidationError);
+  });
+
+  it('rejects malformed production boolean flags', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      AUTH_COOKIE_SECURE: '0',
+    };
+
+    expect(() => validateBackendEnv(env)).toThrow(
+      new BackendEnvValidationError([
+        'AUTH_COOKIE_SECURE must be either true or false',
+      ]),
+    );
   });
 });
