@@ -14,7 +14,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   AlertEventTypes,
-  type AlertEventIngressDto,
+  type AlertEventRequestDto,
   type AlertPolicyDecision,
   type AlertSuppressedReason,
 } from '../dto/alert-events.dto.js';
@@ -34,7 +34,7 @@ export type AlertEventAggregate = ExistingAlertEventAggregate & {
 };
 
 export type CreateAlertEventInput = {
-  readonly event: AlertEventIngressDto;
+  readonly event: AlertEventRequestDto;
   readonly decision: AlertPolicyDecision;
   readonly fallProbability?: number;
   readonly operatingThreshold?: number;
@@ -253,7 +253,7 @@ function alertEventCreateData(input: CreateAlertEventInput) {
 }
 
 export function toPrismaEventType(
-  type: AlertEventIngressDto['type'],
+  type: AlertEventRequestDto['type'],
 ): PrismaAlertEventType {
   switch (type) {
     case AlertEventTypes.fall:

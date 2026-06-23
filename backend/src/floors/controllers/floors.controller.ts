@@ -18,7 +18,10 @@ import {
   SessionGuard,
 } from '../../auth/session.guard.js';
 import type { RequestWithAuth } from '../../auth/session.guard.js';
-import type { CreateFloorDto, UpdateFloorDto } from '../dto/floor.dto.js';
+import type {
+  CreateFloorRequestDto,
+  UpdateFloorRequestDto,
+} from '../dto/floor.dto.js';
 import { FloorsService } from '../services/floors.service.js';
 
 @Controller('api/floors')
@@ -29,13 +32,16 @@ export class FloorsController {
   @Get() list(@Req() req: RequestWithAuth) {
     return this.service.list(requireFacilityId(req));
   }
-  @Post() create(@Req() req: RequestWithAuth, @Body() body: CreateFloorDto) {
+  @Post() create(
+    @Req() req: RequestWithAuth,
+    @Body() body: CreateFloorRequestDto,
+  ) {
     return this.service.create(requireFacilityId(req), body);
   }
   @Patch(':floorId') update(
     @Req() req: RequestWithAuth,
     @Param('floorId') floorId: string,
-    @Body() body: UpdateFloorDto,
+    @Body() body: UpdateFloorRequestDto,
   ) {
     return this.service.update(requireFacilityId(req), floorId, body);
   }

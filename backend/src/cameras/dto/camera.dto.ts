@@ -1,9 +1,9 @@
-export interface CreateCameraDto {
+export interface CreateCameraRequestDto {
   label: string;
   spaceId: string;
 }
 
-export interface UpdateCameraDto {
+export interface UpdateCameraRequestDto {
   label?: string;
   spaceId?: string;
 }

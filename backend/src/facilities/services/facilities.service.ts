@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Facility } from '@prisma/client';
-import type { UpdateFacilityDto } from '../dto/facility.dto.js';
+import type { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 import { FacilitiesRepository } from '../repositories/facilities.repository.js';
 
 @Injectable()
@@ -22,7 +22,7 @@ export class FacilitiesService {
     return presentFacility(facility);
   }
 
-  async update(facilityId: string, dto: UpdateFacilityDto) {
+  async update(facilityId: string, dto: UpdateFacilityRequestDto) {
     if (dto.name !== undefined && !dto.name.trim()) {
       throw new ConflictException({
         error: 'conflict',

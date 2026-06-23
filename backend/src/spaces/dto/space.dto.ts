@@ -1,4 +1,4 @@
-export type SpaceTypeDto =
+export type SpaceTypeValue =
   | 'ROOM'
   | 'HALLWAY'
   | 'PROGRAM_ROOM'
@@ -11,19 +11,19 @@ export type SpaceTypeDto =
   | 'STORAGE'
   | 'STAFF_LOUNGE'
   | 'ETC';
-export interface CreateSpaceDto {
+export interface CreateSpaceRequestDto {
   floorId?: string;
   name?: string;
-  type?: SpaceTypeDto;
+  type?: SpaceTypeValue;
   capacity?: number;
   isActive?: boolean;
   assignedStaff?: string | null;
   facilityId?: string;
 }
-export interface UpdateSpaceDto {
+export interface UpdateSpaceRequestDto {
   floorId?: string;
   name?: string;
-  type?: SpaceTypeDto;
+  type?: SpaceTypeValue;
   capacity?: number;
   isActive?: boolean;
   assignedStaff?: string | null;

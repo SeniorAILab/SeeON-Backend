@@ -35,6 +35,7 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'scripts/backend-guard/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
@@ -102,6 +103,8 @@ jobs:
       - name: Backend lint guard (warn-first; non-blocking — see ADR-064)
         continue-on-error: true
         run: pnpm --filter backend run lint:check
+      - name: Backend DTO contract guard
+        run: pnpm --filter backend run dto:check
       - name: Typecheck
         run: pnpm --filter backend exec tsc --noEmit
       - name: Build

@@ -19,7 +19,6 @@ import {
   SESSION_COOKIE_NAME,
 } from './auth.constants';
 import { AuthService } from './auth.service';
-import type { CreateFacilityBody } from './auth.types';
 import {
   clearOAuthStateCookie,
   clearSessionCookie,
@@ -27,6 +26,7 @@ import {
   setOAuthStateCookie,
   setSessionCookie,
 } from './cookie.util';
+import type { CreateFacilityRequestDto } from './dto/auth.dto';
 import { SessionService } from './session.service';
 import type { RequestWithAuth } from './session.guard';
 import { RequireFacilityGuard, SessionGuard } from './session.guard';
@@ -100,7 +100,7 @@ export class AuthController {
   @Post('/api/facilities')
   @UseGuards(SessionGuard)
   async createFacility(
-    @Body() body: CreateFacilityBody,
+    @Body() body: CreateFacilityRequestDto,
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ) {

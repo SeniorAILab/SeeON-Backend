@@ -8,7 +8,7 @@
 #
 # Mirrors `ci.yml` semantics exactly so local == CI:
 #   frontend (front/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint` (BLOCK)
-#   backend  (backend/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint:check` (WARN-first, ADR-064)
+#   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint:check` (WARN-first, ADR-064)
 #   ml       (ml/**): `ruff check` (BLOCK)
 #
 # Scoped to changed packages so a frontend-only push never needs uv, and vice versa.
@@ -40,7 +40,7 @@ changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
 # Map changed files -> packages (mirrors ci.yml dorny/paths-filter).
 fe=0; be=0; mlc=0
 if printf '%s\n' "$changed" | grep -Eq '^front/';   then fe=1; fi
-if printf '%s\n' "$changed" | grep -Eq '^backend/'; then be=1; fi
+if printf '%s\n' "$changed" | grep -Eq '^(backend/|scripts/backend-guard/)'; then be=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^ml/';      then mlc=1; fi
 # Shared TS manifests/lockfiles affect both front and backend.
 if printf '%s\n' "$changed" | grep -Eq '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)$'; then fe=1; be=1; fi
@@ -66,7 +66,8 @@ if [ "$fe" = 1 ]; then
 fi
 
 if [ "$be" = 1 ]; then
-  gg_warn "backend changed -> tsc --noEmit (block) + lint:check (warn-first, ADR-064)"
+  gg_warn "backend changed -> dto:check + tsc --noEmit (block) + lint:check (warn-first, ADR-064)"
+  pnpm --filter backend run dto:check || fail=1
   pnpm --filter backend exec tsc --noEmit || fail=1
   pnpm --filter backend run lint:check || gg_warn "backend lint:check reported issues (warn-first per ADR-064 — not blocking)"
 fi

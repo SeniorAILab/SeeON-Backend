@@ -7,7 +7,7 @@ export const AlertEventTypes = {
 export type AlertEventType =
   (typeof AlertEventTypes)[keyof typeof AlertEventTypes];
 
-export type AlertEventIngressDto = {
+export type AlertEventRequestDto = {
   readonly type: AlertEventType;
   readonly source_id: string;
   readonly external_event_id: string;
@@ -25,14 +25,14 @@ export type PredictFallResponseDto = {
   readonly is_fall: boolean;
 };
 
-export type PredictionAlertInputDto = {
+export type PredictionAlertRequestDto = {
   readonly source_id: string;
   readonly external_event_id: string;
   readonly detected_at: string;
   readonly prediction: PredictFallResponseDto;
 };
 
-export type PredictionWindowAlertInputDto = {
+export type PredictionWindowAlertRequestDto = {
   readonly source_id: string;
   readonly external_event_id: string;
   readonly detected_at: string;

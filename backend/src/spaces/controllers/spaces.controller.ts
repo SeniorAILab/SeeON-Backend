@@ -19,9 +19,9 @@ import {
 } from '../../auth/session.guard.js';
 import type { RequestWithAuth } from '../../auth/session.guard.js';
 import type {
-  CreateSpaceDto,
-  SpaceTypeDto,
-  UpdateSpaceDto,
+  CreateSpaceRequestDto,
+  SpaceTypeValue,
+  UpdateSpaceRequestDto,
 } from '../dto/space.dto.js';
 import { SpacesService } from '../services/spaces.service.js';
 
@@ -33,7 +33,7 @@ export class SpacesController {
   @Get() list(
     @Req() req: RequestWithAuth,
     @Query('floorId') floorId?: string,
-    @Query('type') type?: SpaceTypeDto,
+    @Query('type') type?: SpaceTypeValue,
     @Query('isActive') isActive?: string,
   ) {
     return this.service.list(requireFacilityId(req), {
@@ -48,13 +48,16 @@ export class SpacesController {
   ) {
     return this.service.getOne(requireFacilityId(req), spaceId);
   }
-  @Post() create(@Req() req: RequestWithAuth, @Body() body: CreateSpaceDto) {
+  @Post() create(
+    @Req() req: RequestWithAuth,
+    @Body() body: CreateSpaceRequestDto,
+  ) {
     return this.service.create(requireFacilityId(req), body);
   }
   @Patch(':spaceId') update(
     @Req() req: RequestWithAuth,
     @Param('spaceId') spaceId: string,
-    @Body() body: UpdateSpaceDto,
+    @Body() body: UpdateSpaceRequestDto,
   ) {
     return this.service.update(requireFacilityId(req), spaceId, body);
   }

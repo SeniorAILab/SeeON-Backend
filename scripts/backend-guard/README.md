@@ -4,22 +4,24 @@
 `scripts/git-guard/`(레포 전역 워크플로/자산 가드)의 형제 디렉터리이며, 같은
 `scripts/git-guard/lib.sh` 헬퍼(`gg_warn`/`gg_die`)를 재사용합니다.
 
-> ADR 근거: **ADR-046**(백엔드 계층 규약) 강제 레이어, **ADR-008**(단일소스 호출),
-> **ADR-016**(되돌릴 수 있는 convention에는 warn-tier 훅 금지) 경계 준수.
+> ADR 근거: **ADR-046**(백엔드 계층 규약) 강제 레이어, **ADR-066**(DTO hard gate),
+> **ADR-008**(단일소스 호출), **ADR-016**(되돌릴 수 있는 convention에는 warn-tier 훅 금지) 경계 준수.
 > 자세한 결정은 `docs/decisions/backend/ADR-064-backend-layering-lint-and-guard-enforcement.md`
 > 와 `docs/rules/backend-architecture-lint-and-guard.md` 참고.
 
 ## 무엇을 어디서 검사하나 (경계)
 
-| 검사 대상 | 도구 | 어디서 도나 | 차단? |
-|---|---|---|---|
-| 계층 import 경계(controller→service→repository, service→port) | **ESLint**(`no-restricted-imports`) | 에디터 + CI `lint:check` | warn (비차단) |
-| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제) | **ESLint**(`no-restricted-syntax`) | 에디터 + CI `lint:check` | warn (비차단) |
-| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint** | 에디터 + CI `lint:check` | warn (비차단) |
-| **스키마↔마이그레이션 결합** | **이 스크립트** | `.githooks/pre-commit` + CI | **차단**(exit 1) |
+| 검사 대상                                                          | 도구                                | 어디서 도나                                                   | 차단?            |
+| ------------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------- | ---------------- |
+| 계층 import 경계(controller→service→repository, service→port)      | **ESLint**(`no-restricted-imports`) | 에디터 + CI `lint:check`                                      | warn (비차단)    |
+| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제)                        | **ESLint**(`no-restricted-syntax`)  | 에디터 + CI `lint:check`                                      | warn (비차단)    |
+| DTO suffix + controller `@Body()` request DTO 강제                 | **check-dto-contracts.mjs**         | `pnpm --filter backend run dto:check` + CI/local backend gate | block (exit 1)   |
+| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint**                          | 에디터 + CI `lint:check`                                      | warn (비차단)    |
+| **스키마↔마이그레이션 결합**                                       | **이 스크립트**                     | `.githooks/pre-commit` + CI                                   | **차단**(exit 1) |
 
-ESLint로 잡을 수 있는 것은 전부 ESLint(warn-first)로 두고, **ESLint로 불가능한
-배포 계약(스키마 변경 시 마이그레이션 동반)** 만 이 스크립트로 둡니다.
+ESLint로 잡는 계층/타입 규칙은 warn-first로 두고, **차단해야 하는 기계적 계약**은
+이 디렉터리의 스크립트로 둡니다. 현재 block 대상은 스키마↔마이그레이션 결합과
+DTO suffix/controller body boundary입니다.
 
 ## tenant(시설) 격리는 여기서 검사하지 않습니다
 
@@ -33,7 +35,7 @@ ESLint로 잡을 수 있는 것은 전부 ESLint(warn-first)로 두고, **ESLint
   `SET LOCAL app.facility_id` 로 트랜잭션을 묶는다.
 
 → 별도의 정적 tenant 검사 스크립트는 (중복·오탐이라) 의도적으로 두지 않습니다.
-   더 강한 구조적 강제(타입/API 레벨)는 별도 리팩터 follow-up.
+더 강한 구조적 강제(타입/API 레벨)는 별도 리팩터 follow-up.
 
 ## check-schema-migration.sh
 
@@ -53,6 +55,17 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 ```
 
 종료코드: `0` 통과, `1` 위반(스키마 변경 + 마이그레이션 누락) 또는 도구 오류.
+
+## check-dto-contracts.mjs
+
+`backend/src/**/dto/*.dto.ts`의 exported `*Dto` 이름과 컨트롤러 `@Body()` 경계를 검사합니다.
+
+```sh
+pnpm --filter backend run dto:check
+pnpm --filter backend run dto:check -- --fixture scripts/backend-guard/fixtures/invalid-dto-contracts
+```
+
+종료코드: `0` 통과, `1` DTO suffix 또는 controller body boundary 위반.
 
 ## 호출 지점 (단일소스 — 로직 재구현 금지)
 

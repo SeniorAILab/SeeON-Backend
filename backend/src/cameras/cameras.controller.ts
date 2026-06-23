@@ -15,7 +15,10 @@ import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
 import { CamerasService } from './cameras.service.js';
-import type { CreateCameraDto, UpdateCameraDto } from './dto/camera.dto.js';
+import type {
+  CreateCameraRequestDto,
+  UpdateCameraRequestDto,
+} from './dto/camera.dto.js';
 
 @Controller('api/cameras')
 @UseGuards(SessionGuard, RequireFacilityGuard)
@@ -34,7 +37,7 @@ export class CamerasController {
   }
 
   @Post()
-  create(@Req() req: RequestWithAuth, @Body() body: CreateCameraDto) {
+  create(@Req() req: RequestWithAuth, @Body() body: CreateCameraRequestDto) {
     return this.service.create(requireFacilityId(req), {
       label: body.label,
       spaceId: body.spaceId,
@@ -45,7 +48,7 @@ export class CamerasController {
   update(
     @Req() req: RequestWithAuth,
     @Param('id') id: string,
-    @Body() body: UpdateCameraDto,
+    @Body() body: UpdateCameraRequestDto,
   ) {
     return this.service.update(requireFacilityId(req), id, body);
   }

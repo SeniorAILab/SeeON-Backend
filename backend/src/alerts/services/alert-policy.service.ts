@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 
 import {
   AlertEventTypes,
-  type AlertEventIngressDto,
+  type AlertEventRequestDto,
   type AlertPolicyDecision,
-  type PredictionAlertInputDto,
+  type PredictionAlertRequestDto,
 } from '../dto/alert-events.dto.js';
 
 const DEFAULT_POLICY_ENABLED = true;
@@ -34,7 +34,7 @@ export class AlertPolicyService {
     private readonly clock: AlertPolicyClock,
   ) {}
 
-  evaluateIngress(event: AlertEventIngressDto): AlertPolicyDecision {
+  evaluateIngress(event: AlertEventRequestDto): AlertPolicyDecision {
     if (!this.isPolicyEnabled()) {
       return { kind: 'dispatch' };
     }
@@ -57,7 +57,7 @@ export class AlertPolicyService {
     return { kind: 'dispatch' };
   }
 
-  evaluatePrediction(input: PredictionAlertInputDto): AlertPolicyDecision {
+  evaluatePrediction(input: PredictionAlertRequestDto): AlertPolicyDecision {
     const { prediction } = input;
     if (
       !prediction.is_fall ||
@@ -115,7 +115,7 @@ export class AlertPolicyService {
   }
 }
 
-function policyKey(event: AlertEventIngressDto): string {
+function policyKey(event: AlertEventRequestDto): string {
   return `${event.source_id}:${event.type}`;
 }
 

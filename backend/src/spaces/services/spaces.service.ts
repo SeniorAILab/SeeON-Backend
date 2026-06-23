@@ -6,9 +6,9 @@ import {
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
 import type {
-  CreateSpaceDto,
-  SpaceTypeDto,
-  UpdateSpaceDto,
+  CreateSpaceRequestDto,
+  SpaceTypeValue,
+  UpdateSpaceRequestDto,
 } from '../dto/space.dto.js';
 import { SpacesRepository } from '../repositories/spaces.repository.js';
 
@@ -18,7 +18,11 @@ export class SpacesService {
 
   async list(
     facilityId: string,
-    filters: { floorId?: string; type?: SpaceTypeDto; isActive?: boolean } = {},
+    filters: {
+      floorId?: string;
+      type?: SpaceTypeValue;
+      isActive?: boolean;
+    } = {},
   ) {
     const spaces = await this.spacesRepository.list(facilityId, {
       ...filters,
@@ -37,7 +41,7 @@ export class SpacesService {
     return presentSpace(space);
   }
 
-  async create(facilityId: string, dto: CreateSpaceDto) {
+  async create(facilityId: string, dto: CreateSpaceRequestDto) {
     const floorId = dto.floorId;
     const name = dto.name?.trim();
     const type = dto.type;
@@ -77,7 +81,7 @@ export class SpacesService {
     return presentSpace(space);
   }
 
-  async update(facilityId: string, id: string, dto: UpdateSpaceDto) {
+  async update(facilityId: string, id: string, dto: UpdateSpaceRequestDto) {
     await this.ensureExists(facilityId, id);
     const data = normalizeSpaceUpdate(dto);
     const space = await this.spacesRepository.update(facilityId, id, data);
@@ -100,7 +104,7 @@ export class SpacesService {
   }
 }
 
-function normalizeSpaceUpdate(dto: UpdateSpaceDto) {
+function normalizeSpaceUpdate(dto: UpdateSpaceRequestDto) {
   if (dto.name !== undefined && !dto.name.trim())
     throw new ConflictException({
       error: 'conflict',

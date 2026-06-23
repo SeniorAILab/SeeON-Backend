@@ -4,7 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Floor } from '@prisma/client';
-import type { CreateFloorDto, UpdateFloorDto } from '../dto/floor.dto.js';
+import type {
+  CreateFloorRequestDto,
+  UpdateFloorRequestDto,
+} from '../dto/floor.dto.js';
 import { FloorsRepository } from '../repositories/floors.repository.js';
 
 @Injectable()
@@ -14,7 +17,7 @@ export class FloorsService {
     const floors = await this.floorsRepository.list(facilityId);
     return floors.map(presentFloor);
   }
-  async create(facilityId: string, dto: CreateFloorDto) {
+  async create(facilityId: string, dto: CreateFloorRequestDto) {
     const name = dto.name?.trim();
     if (!name)
       throw new ConflictException({
@@ -29,7 +32,7 @@ export class FloorsService {
     });
     return presentFloor(floor);
   }
-  async update(facilityId: string, id: string, dto: UpdateFloorDto) {
+  async update(facilityId: string, id: string, dto: UpdateFloorRequestDto) {
     if (dto.name !== undefined && !dto.name.trim())
       throw new ConflictException({
         error: 'conflict',

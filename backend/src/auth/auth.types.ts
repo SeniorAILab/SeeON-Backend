@@ -14,8 +14,3 @@ export interface AuthenticatedRequest {
   user?: AuthenticatedUser;
   sessionId?: string;
 }
-
-export interface CreateFacilityBody {
-  facilityName?: unknown;
-  businessRegistrationNumber?: unknown;
-}

@@ -7,7 +7,10 @@ import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { CreateCameraDto, UpdateCameraDto } from './dto/camera.dto.js';
+import type {
+  CreateCameraRequestDto,
+  UpdateCameraRequestDto,
+} from './dto/camera.dto.js';
 
 @Injectable()
 export class CamerasService {
@@ -31,7 +34,7 @@ export class CamerasService {
     return toCameraDto(cam);
   }
 
-  async create(facilityId: string, dto: CreateCameraDto) {
+  async create(facilityId: string, dto: CreateCameraRequestDto) {
     if (!dto.label.trim()) throw new ConflictException('label is required');
     if (!dto.spaceId.trim()) throw new ConflictException('spaceId is required');
     const ingestKeyId = `cam-${crypto.randomBytes(8).toString('hex')}`;
@@ -57,7 +60,7 @@ export class CamerasService {
     }
   }
 
-  async update(facilityId: string, id: string, dto: UpdateCameraDto) {
+  async update(facilityId: string, id: string, dto: UpdateCameraRequestDto) {
     const existing = await this.prisma.withFacilityContext(
       facilityId,
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
