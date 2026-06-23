@@ -1,11 +1,11 @@
 name: PR Check
 
-# PR 위생 게이트 — 로직 churn 라벨링(로직>1000 hard gate) + base 브랜치 가드 + draft 표시.
+# PR 위생 게이트 — 로직 churn 라벨링(로직>1000 hard gate) + PR 브랜치 정책 + draft 표시.
 # 설계 출처: Yeachan-Heo/oh-my-claudecode .github/workflows/pr-check.yml 패턴을 본 repo
-# 컨벤션(base=main, ubuntu-latest, worktree <type>/<issue#>-<slug>)에 맞게 이식.
+# 컨벤션(base=main, ubuntu-latest)에 맞게 이식.
 # 사이즈 게이트는 "리뷰 가능한 로직 churn"만으로 판정한다. 테스트/Prisma 마이그레이션/
 # docs·markdown/pnpm-lock.yaml 은 비-로직으로 제외하며, `size/override` 라벨이 있으면
-# 로직>1000 이어도 size 체크는 통과(escape hatch). base=main 은 별도 job 에서 hard 유지.
+# 로직>1000 이어도 size 체크는 통과(escape hatch). PR 브랜치 정책은 별도 job 에서 hard 유지.
 
 on:
   pull_request:
@@ -144,29 +144,43 @@ jobs:
             // === SIZE-CHECK-LOGIC-END ===
 
   base-branch-check:
-    name: Base Branch Check
+    name: PR Branch Policy
     runs-on: ubuntu-latest
     steps:
-      - name: Require allowed base branch
+      - name: Require allowed PR branches
         uses: actions/github-script@v7
         with:
           script: |
             // === BASE-BRANCH-LOGIC-START ===
-            // base 게이트는 size/override 와 무관하게 항상 hard 다(별도 job).
-            // 본 repo 정책상 허용 base: main + release/* + hotfix/* (기존 정책 보존).
             const pr = context.payload.pull_request;
             if (!pr) {
-              core.notice('No pull_request payload; skipping base branch check');
+              core.notice('No pull_request payload; skipping PR branch policy check');
               return;
             }
+
             const base = pr.base.ref;
-            const allowed = new Set(['main']);
-            const isRelease = /^release\/.+/.test(base);
-            const isHotfix = /^hotfix\/.+/.test(base);
-            if (!allowed.has(base) && !isRelease && !isHotfix) {
+            const allowedBase = base === 'main' || /^release\/.+/.test(base) || /^hotfix\/.+/.test(base);
+            if (!allowedBase) {
               core.setFailed(
                 `PR base는 \`main\`, \`release/*\`, \`hotfix/*\` 중 하나여야 합니다 (현재: \`${base}\`). ` +
                 `수정: gh pr edit ${context.issue.number} --base main`
+              );
+            }
+
+            const head = pr.head.ref;
+            const sameRepo = pr.head.repo.full_name === context.payload.repository.full_name;
+            if (sameRepo && head === 'main') {
+              core.setFailed(
+                `PR head가 보호 브랜치 \`main\` 입니다. ` +
+                `작업 브랜치는 \`git wt <issue#>\` 로 만든 \`<type>/<issue#>-<slug>\` 형태를 사용하세요.`
+              );
+            }
+
+            const conventionalHead = /^(feat|fix|chore|docs|refactor|test)\/[0-9]+-[a-z0-9][a-z0-9-]*$/.test(head);
+            if (sameRepo && !conventionalHead && head !== 'main') {
+              core.notice(
+                `PR head \`${head}\` 는 권장 형식 \`<type>/<issue#>-<slug>\` 이 아닙니다. ` +
+                `이는 추적성 notice이며 CI hard gate는 아닙니다.`
               );
             }
             // === BASE-BRANCH-LOGIC-END ===
