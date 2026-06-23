@@ -13,8 +13,10 @@ ALERT_DASHBOARD_URL=https://senai.example.com
 POSTGRES_USER=fall_prod_admin
 POSTGRES_PASSWORD=prod-admin-password-32chars
 POSTGRES_DB=fall_prod
-APP_DB_USER=fall_app_prod
+APP_DB_USER=fall_app
 APP_DB_PASSWORD=prod-app-password-32chars
+DATABASE_URL=postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public
+DIRECT_URL=postgresql://fall_prod_admin:prod-admin-password-32chars@db:5432/fall_prod?schema=public
 SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
 KAKAO_REST_API_KEY=prod-kakao-rest-api-key
 KAKAO_REDIRECT_URI=https://senai.example.com/auth/kakao/callback
@@ -159,7 +161,8 @@ function verify() {
       assertRequiredFragments('host prod config', hostConfig, [
         'NODE_ENV: production',
         'fall_prod',
-        'fall_app_prod',
+        'fall_app',
+        'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
         'VITE_USE_MOCK: "false"',
       ]);

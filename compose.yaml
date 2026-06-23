@@ -21,6 +21,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fall}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall}
       POSTGRES_DB: ${POSTGRES_DB:-fall_dev}
+      APP_DB_USER: ${APP_DB_USER:-fall_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-fall_app}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
