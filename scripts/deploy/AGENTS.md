@@ -9,6 +9,9 @@ production Compose image-pull topology.
   `/opt/eldercare-fall-ai`, and swap.
 - `ncloud-deploy.sh` - consumes the uploaded bundle, pulls explicit GHCR image
   tags, replays migration SQL, starts Compose, and runs one smoke check.
+- `scripts/release/manual-production-deploy.mjs` - local quota-exhaustion path:
+  builds/pushes SHA-tagged GHCR images, uploads the bundle, then invokes this
+  VM pull-only deploy script.
 - `docs/runbooks/ncloud-vm-deploy.md` - operator-facing runbook that must match
   these scripts.
 
@@ -17,6 +20,8 @@ production Compose image-pull topology.
 - `IMAGE_TAG` is required. Treat an empty tag as a deploy error, never as a
   signal to infer `latest`.
 - The VM pulls already-built backend/front images and runs Docker Compose.
+- Local manual deploy may build application images before upload, but only on
+  the operator machine and only under the resolved commit SHA tag.
 - Production DB schema replay is done by deploy tooling with `psql` from the
   Postgres container.
 - Public exposure is `front` on port `80`; backend and DB stay internal to the

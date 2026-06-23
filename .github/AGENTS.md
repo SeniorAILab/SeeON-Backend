@@ -18,8 +18,11 @@ Naver Cloud deploy trigger.
   or through explicit `workflow_dispatch` with a concrete ref.
 - Prefer `pnpm release:prod -- vX.Y.Z` for production release creation so the
   release target and tag format stay consistent.
-- Production deploy images are built in GitHub Actions and pushed to GHCR with
-  the exact commit SHA tag.
+- Normal production deploy images are built in GitHub Actions and pushed to GHCR
+  with the exact commit SHA tag.
+- If Actions quota prevents image builds, use the documented local manual path
+  (`pnpm deploy:prod:manual -- <release-or-sha>`) instead of adding workflow
+  fallback logic.
 - Workflow inputs and secrets must fail validation before SSH starts. Do not
   echo private keys, tokens, `.env` content, or passwords.
 - Advisory checks still matter: never treat a pending or red `ci-gate` as safe

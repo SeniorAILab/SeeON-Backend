@@ -26,6 +26,8 @@
     "compose:prod:up": "docker compose --env-file .env.host.prod --profile full -f compose.yaml -f compose.prod.yaml up -d",
     "compose:down": "docker compose down",
     "release:prod": "node scripts/release/create-production-release.mjs",
+    "release:prod:manual": "node scripts/release/manual-production-deploy.mjs",
+    "deploy:prod:manual": "node scripts/release/manual-production-deploy.mjs",
     "prisma:generate": "pnpm --filter backend exec prisma generate",
     "prisma:migrate": "pnpm --filter backend run prisma:migrate",
     "prisma:seed": "pnpm --filter backend run prisma:seed",
