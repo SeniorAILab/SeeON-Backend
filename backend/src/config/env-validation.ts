@@ -48,6 +48,7 @@ export function validateBackendEnv(
   validateUrl(config, 'KAKAO_REDIRECT_URI', errors);
   validateSessionSecret(config, errors);
   validateKakaoTokenKey(config, errors);
+  validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
 
   if (errors.length > 0) {
     throw new BackendEnvValidationError(errors);
@@ -115,4 +116,18 @@ function decodeKey(encodedKey: string): Buffer {
     return Buffer.from(trimmed, 'hex');
   }
   return Buffer.from(trimmed, 'base64');
+}
+
+function validateBooleanFlag(
+  config: Record<string, unknown>,
+  key: string,
+  errors: string[],
+): void {
+  const value = stringValue(config, key);
+  if (value === undefined) {
+    return;
+  }
+  if (value !== 'true' && value !== 'false') {
+    errors.push(`${key} must be either true or false`);
+  }
 }
