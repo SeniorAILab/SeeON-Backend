@@ -10,6 +10,10 @@
 **/*.pyc
 ml/data
 ml/models
+**/*.pt
+**/*.pth
+**/*.onnx
+**/*.safetensors
 ml/experiments
 ml/.env*
 .gjc

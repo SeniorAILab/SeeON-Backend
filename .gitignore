@@ -29,6 +29,9 @@ front/out/
 !.env.local.example
 !.env.host.prod.example
 !.env.edge.prod.example
+ml/config/edge-cameras*.json
+/edge-cameras*.json
+!ml/config/edge-cameras.example.json
 
 # macOS/local editor noise
 .DS_Store
@@ -53,6 +56,10 @@ checkpoints/
 ml/models
 # Run outputs (and the worktree symlink to the main clone's store)
 ml/artifacts
+
+# Edge camera configs contain RTSP URLs and ingest secrets. Keep only the fake example tracked.
+ml/config/edge-cameras.local*.json
+ml/config/edge-cameras.*.local.json
 
 # ...but the training source package is code, not weights — keep it tracked.
 # (Weight files inside it are still caught by the *.pt/*.pth rules above.)
