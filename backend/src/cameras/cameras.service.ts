@@ -38,8 +38,8 @@ export class CamerasService {
     if (!dto.label.trim()) throw new ConflictException('label is required');
     if (!dto.spaceId.trim()) throw new ConflictException('spaceId is required');
     const ingestKeyId = `cam-${crypto.randomBytes(8).toString('hex')}`;
-    // The HMAC secret is not returned from this service; Camera DTOs expose only the selector key id.
-    const ingestSecretHash = crypto.randomBytes(32).toString('hex');
+    const ingestSecret = crypto.randomBytes(24).toString('hex');
+    const ingestSecretHash = sha256(ingestSecret);
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
@@ -54,7 +54,7 @@ export class CamerasService {
             },
           }),
       );
-      return toCameraDto(camera);
+      return { ...toCameraDto(camera), ingestSecret };
     } catch (err: unknown) {
       throwCameraWriteConflict(err);
     }
@@ -140,6 +140,10 @@ function toCameraDto(camera: Camera) {
     online: camera.online,
     createdAt: camera.createdAt,
   };
+}
+
+function sha256(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
 }
 
 function throwCameraWriteConflict(err: unknown): never {

@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
@@ -66,7 +67,7 @@ describe('CamerasService', () => {
     expect(camera.create).not.toHaveBeenCalled();
   });
 
-  it('generates an ingestKeyId and never leaks the secret hash in the DTO', async () => {
+  it('generates one-time ingest credentials without leaking the stored secret hash', async () => {
     const { service, camera } = setup();
     camera.create.mockResolvedValue(fullCamera);
     const result = await service.create('facility-1', {
@@ -76,7 +77,11 @@ describe('CamerasService', () => {
 
     const createArg = camera.create.mock.calls[0][0].data;
     expect(createArg.ingestKeyId).toMatch(/^cam-[0-9a-f]+$/);
-    expect(typeof createArg.ingestSecretHash).toBe('string');
+    expect(result.ingestSecret).toMatch(/^[0-9a-f]{48}$/);
+    expect(createArg.ingestSecretHash).toBe(
+      crypto.createHash('sha256').update(result.ingestSecret).digest('hex'),
+    );
+    expect(createArg.ingestSecretHash).not.toBe(result.ingestSecret);
     expect(result).not.toHaveProperty('ingestSecretHash');
     expect(result.ingestKeyId).toBe('cam-abc');
     expect(result.spaceId).toBe('space-1');

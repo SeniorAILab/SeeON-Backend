@@ -111,7 +111,7 @@ Dependency ladder: `contracts/features` (L0) → `sources/runners` (L1) →
 `serving/demo` (L5). Lower layers never import higher layers; `ml/core/` and
 `ml/util/` are removed.
 
-Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --reload --host 0.0.0.0 --port 8000`
+Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --reload --host 127.0.0.1 --port 8000`
 
 ---
 
