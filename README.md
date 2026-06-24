@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python **FastAPI** serving layer (managed by uv) that classifies video frames and returns fall-probability predictions. Product-level decisions — alert policy, deduplication, and Kakao webhook dispatch — belong exclusively to the backend; the ML layer returns predictions only. The repo is at PoC stage: front and backend are runnable skeletons with realtime transport and full feature implementation deliberately deferred.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-edge-worker -> backend /ingest/*`: the worker owns camera capture, model/domain evaluation, heartbeats, and signed ingest facts. `ml-edge-api` is a private/local FastAPI health, status, models, debug, and control surface; live camera ownership, frame relay, and backend ingest side effects stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
 
 ## Prerequisites
 
@@ -34,7 +34,8 @@ pnpm prisma:generate
 
 # 6. Start app services in separate terminals
 pnpm dev:backend  # http://localhost:8080
-pnpm dev:ml       # http://localhost:8000
+pnpm dev:ml       # ml-edge-api / FastAPI private-local surface on http://localhost:8000
+pnpm dev:ml-worker --config config/edge-cameras.local.json
 pnpm dev:front    # http://localhost:3000
 
 # 7. Register git hooks + git wt alias (run once per clone)
@@ -51,10 +52,10 @@ bash scripts/git-guard/setup-hooks.sh
 |---|---|---:|
 | `front` | `http://localhost:3000` | `3000` |
 | `backend` | `http://localhost:8080` | `8080` |
-| `ml-serving` | `http://localhost:8000` | `8000` |
+| `ml-edge-api` | `http://localhost:8000` | `8000` |
 | `db` | `localhost:5432` | `5432` |
 
-Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, backend uses `http://ml-serving:8000` inside Compose, and a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables.
+Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers reach backend production ingest through `/ingest/*`; RTSP/video transport stays inside the worker.
 
 For container parity and production-shaped runs:
 
@@ -63,7 +64,19 @@ pnpm compose:local:up  # full local host stack via .env.local + --profile full
 pnpm compose:prod:up   # full prod-shaped host stack via .env.host.prod
 ```
 
-On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
+Edge Compose is separate from the host stack and runs the two ML edge services:
+
+```bash
+EDGE_CAMERA_CONFIG=./ml/config/edge-cameras.local.json \
+  docker compose -f compose.edge.yaml up -d --build
+```
+
+`EDGE_CAMERA_CONFIG` points to a gitignored per-camera JSON file with RTSP URLs,
+backend `/ingest/*` endpoints, key IDs, and signing secrets. Use
+`scripts/ml-edge-four-mock-rtsp-ingest-e2e.sh` for deterministic synthetic
+RTSP-to-stub-ingest smoke before optional real camera or Jetson Nano checks.
+
+On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
 ## Commands
 
@@ -71,7 +84,8 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 |--------|-------------|
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
-| `pnpm dev:ml` | FastAPI serving on `:8000` via uvicorn (`ml/serving/`) |
+| `pnpm dev:ml` | `ml-edge-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/serving/`) |
+| `pnpm dev:ml-worker` | `ml-edge-worker` RTSP worker; pass `--config config/edge-cameras.local.json` because the script runs inside `ml/` |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
@@ -89,16 +103,16 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 eldercare-fall-ai/
 ├── front/          # Vite + React + TypeScript (frontend SSOT)
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
-├── ml/             # 9-package layered edge runtime (ADR-056/057); see ml/README.md
+├── ml/             # 9-package layered edge runtime (ADR-056/057/067/068); see ml/README.md
 │   ├── contracts/  # L0 pure contracts (frame/observation/model/artifacts/event)
 │   ├── features/   # L0 pure feature math
-│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp)
+│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp; OpenCV current backend)
 │   ├── runners/    # L1 model runners + ModelRegistry
 │   ├── perception/ # L2 observation assembly
 │   ├── domains/    # L3 domain interpreters (fall, bed_exit)
-│   ├── runtime/    # L3 edge orchestration (camera manager/worker)
-│   ├── events/     # L4 alert signing/outbox/publisher (→ POST /ingest/alerts)
-│   ├── serving/    # FastAPI: /health, /debug/predict/window
+│   ├── runtime/    # L3 edge orchestration for ml-edge-worker
+│   ├── events/     # L4 alert signing/outbox/publisher (-> POST /ingest/alerts)
+│   ├── serving/    # ml-edge-api FastAPI: /health, /status, /models, /debug/*
 │   ├── demo/       # Streamlit demo UI (fall classification via serving)
 │   ├── training/   # Batch training pipeline
 │   ├── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
@@ -106,7 +120,7 @@ eldercare-fall-ai/
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
 │   └── decisions/        # Architecture Decision Records (ADRs)
-└── compose*.yaml    # Compose base/dev override/prod overlay
+└── compose*.yaml    # host Compose plus compose.edge.yaml for ML edge services
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for ADRs covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.
