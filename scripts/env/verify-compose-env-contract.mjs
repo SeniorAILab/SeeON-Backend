@@ -175,8 +175,8 @@ function verify() {
         edgeEnvPath,
       );
       assertRequiredFragments('edge prod config', edgeConfig, [
-        'ml-edge-api',
-        'ml-edge-worker',
+        'ml-api',
+        'ml-worker',
         'worker.edge_worker',
         '/run/secrets/edge-cameras.json',
         'ml/config/edge-cameras.example.json',
