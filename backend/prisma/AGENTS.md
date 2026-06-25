@@ -10,7 +10,7 @@ migration SQL, seed data, and Postgres role initialization.
   `prisma migrate deploy` from deploy tooling.
 - `init/01-create-app-role.sql` and `init/02-sync-app-role.sh` - runtime role
   setup and privilege synchronization.
-- `docs/runbooks/ncloud-vm-deploy.md` - production migration contract.
+- `scripts/deploy/AGENTS.md` and `docs/decisions/common/ADR-072-local-manual-production-deploy.md` - production migration/deploy contract.
 
 ## Conventions
 - `DATABASE_URL` is the runtime app role path. `DIRECT_URL` is for migrations,

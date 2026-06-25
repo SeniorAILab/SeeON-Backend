@@ -112,7 +112,7 @@ Dependency ladder: `contracts/features` (L0) → `sources/runners` (L1) →
 `api/demo` (L5). Lower layers never import higher layers; `ml/core/` and
 `ml/util/` are removed.
 
-Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
+Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
 
 ---
 
@@ -213,7 +213,7 @@ pnpm prisma:generate          # regenerate Prisma client after schema changes
 
 The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
+**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
 
 ---
 

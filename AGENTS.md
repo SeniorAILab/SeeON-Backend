@@ -16,7 +16,6 @@
 │   ├── rules/               # Standing conventions (e.g. streamlit-demo.md); ADRs must be MECE
 │   ├── api/                 # API/serving shape notes (route-inventory, ml-serving, kakao, edge-ingest)
 │   ├── domain/              # alert pipeline + data dictionary
-│   ├── runbooks/            # demo/edge operational runbooks
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
@@ -43,7 +42,8 @@
 |---|---|---|
 | db (Postgres) | `localhost:5432` | `pnpm db:up` |
 | backend (NestJS) | `http://localhost:8080` | `pnpm dev:backend` |
-| ml-serving (FastAPI) | `http://localhost:8000` | `pnpm dev:ml` |
+| ml-api (FastAPI) | `http://localhost:8000` | `pnpm dev:ml-api` |
+| ml-worker (RTSP) | — | `pnpm dev:ml-worker --config config/ml-worker.local.yaml` |
 | front (Vite + React) | `http://localhost:3000` | `pnpm dev:front` |
 | ml demo (Streamlit) | — | `pnpm dev:demo` |
 
@@ -52,7 +52,7 @@ First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .en
 - **Env 위치**: local/native/Prisma/Compose는 루트 `.env.local`, host prod는 루트 `.env.host.prod`, edge prod는 루트 `.env.edge.prod`를 읽는다. 실제 `.env*`는 gitignored, tracked 계약은 `.env.local.example`/`.env.host.prod.example`/`.env.edge.prod.example`. `backend/.env*`/`front/.env*`/`ml/.env*`는 만들지 않는다.
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
 - **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod` image pins). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
-- **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
+- **Demo(라이브 낙상→카카오 fan-out E2E)**: 절차는 README Quick Start + `.env.local.example`, durable 기록은 `docs/exec-plan/active/thursday-mvp-live-fall-kakao-fanout/`.
 
 ## Development Flow
 
