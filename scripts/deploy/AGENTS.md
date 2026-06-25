@@ -8,10 +8,11 @@ production Compose image-pull topology.
 - `ncloud-bootstrap.sh` - one-time root bootstrap: Docker, `deploy` user,
   `/opt/eldercare-fall-ai`, and swap.
 - `ncloud-deploy.sh` - consumes the uploaded bundle, pulls explicit GHCR image
-  tags, replays migration SQL, starts Compose, and runs one smoke check.
-- `scripts/release/manual-production-deploy.mjs` - local quota-exhaustion path:
-  builds/pushes SHA-tagged GHCR images, uploads the bundle, then invokes this
-  VM pull-only deploy script.
+  tags, backs up the database, applies Prisma migrations, starts Compose, and
+  runs one smoke check.
+- `scripts/release/manual-production-deploy.mjs` - current local production
+  deploy path while Actions-backed CD is paused: builds/pushes SHA-tagged GHCR
+  images, uploads the bundle, then invokes this VM pull-only deploy script.
 - `docs/runbooks/ncloud-vm-deploy.md` - operator-facing runbook that must match
   these scripts.
 
@@ -22,8 +23,11 @@ production Compose image-pull topology.
 - The VM pulls already-built backend/front images and runs Docker Compose.
 - Local manual deploy may build application images before upload, but only on
   the operator machine and only under the resolved commit SHA tag.
-- Production DB schema replay is done by deploy tooling with `psql` from the
-  Postgres container.
+- Production DB migrations are done by deploy tooling with `prisma migrate
+  deploy` from the backend image after `pg_dump -Fc` and `pg_restore --list`
+  validation.
+- Destructive schema reset is demo-only: `DEPLOY_DB_MODE=reset-demo` plus
+  `ALLOW_DESTRUCTIVE_DB_RESET=I_UNDERSTAND_THIS_WIPES_PUBLIC_SCHEMA`.
 - Public exposure is `front` on port `80`; backend and DB stay internal to the
   Compose network.
 - Cleanup may be best-effort only where failure cannot change deploy outcome;
@@ -32,8 +36,8 @@ production Compose image-pull topology.
 ## Anti-patterns
 - No server-side application image builds or `git checkout` based deploys.
 - No fallback image tag, branch, environment file, or alternate compose profile.
-- No migrate image, Prisma CLI runtime migration, or backend app-start
-  migration step.
+- No migrate image or backend app-start migration step. Deploy tooling may run
+  one-shot Prisma CLI commands from the backend image.
 - No automatic retry loop after failed pull, migration, `compose up`, or smoke
   check.
 - No host-destructive operations outside the documented app root and Docker
