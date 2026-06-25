@@ -7,7 +7,7 @@
 
 ```
 .
-├── docs/
+├── docs/                    # documentation ontology/lifecycle rules → docs/AGENTS.md
 │   ├── research/            # Fact collection — what I found (sources, comparisons), pre-decision
 │   ├── exec-plan/           # All work-scoped plans (active + archive)
 │   │   ├── active/{slug}/   #   spec.md + plan.md while work is in progress
@@ -20,7 +20,7 @@
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
-├── scripts/
+├── scripts/                 # repo guard/deploy/release automation → scripts/AGENTS.md
 │   ├── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
 │   └── backend-guard/       # backend layering/DTO enforcement: schema↔migration guard — ADR-064
 ├── ml/                      # Python/uv edge runtime — L0→L4 layers, guards, run → ml/AGENTS.md (ADR-057)
@@ -180,6 +180,13 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 ### Change discipline
 - 최소 변경: 목표 달성에 필요한 가장 작은 diff만 만든다 — 인접 리팩터·포맷·스코프 확장 금지.
 - 불필요한 주석 금지: 코드로 자명한 것은 주석으로 달지 않고, 스테일·장식 주석은 추가·잔존시키지 않는다.
+
+### E2E verification integrity
+- **E2E는 production code path를 실제로 관통해야 한다.** Backend ingest, ML worker, frontend, 외부 연동 등 사용자가 요구한 표면을 검증할 때 stub/fake/mock 서버·레지스트리·탐지기·DB 대체물을 끼워 넣은 실행은 E2E로 부르지 않는다.
+- Stub/mock harness는 unit, contract, smoke, local fixture 검증으로만 명명한다. 필요하면 별도 보조 증거로 남길 수 있지만, 최종 E2E acceptance evidence를 대체할 수 없다.
+- Production backend ingest를 검증한다고 말하려면 실제 backend process와 실제 persistence side effect를 확인한다. ML RTSP 흐름을 검증한다고 말하려면 worker가 실제 stream consumer 경로와 실제 model/domain pipeline을 지나야 한다.
+- **Mock/stub/fake 스크립트는 E2E/acceptance/test-runner로 만들지 않는다.** Test double은 unit/contract test code 안에서만 기본 허용된다. 개발 편의를 위한 fixture publisher가 필요하면 `mock`, `stub`, `fake`, `e2e` 명칭을 피하고, 실제 production consumer가 읽는 입력을 공급하는 fixture로만 둔다.
+- Nursing-home RTSP 검증은 녹화 영상을 MediaMTX 등 실제 RTSP endpoint로 반복 송출하고 `ml-worker -> backend /ingest/* -> DB side effect`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
 
 ### plan-first mandate
 Every *meaningful* change must have a `docs/exec-plan/active/{slug}/` entry **before** any code is

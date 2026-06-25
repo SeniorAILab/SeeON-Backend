@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-edge-worker -> backend /ingest/*`: the worker owns camera capture, model/domain evaluation, heartbeats, and signed ingest facts. `ml-edge-api` is a private/local FastAPI health, status, models, debug, and control surface; live camera ownership, frame relay, and backend ingest side effects stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> backend /ingest/*`: the worker owns camera capture, model/domain evaluation, heartbeats, and signed ingest facts. `ml-api` is a private/local FastAPI health, status, models, debug, and control surface; live camera ownership, frame relay, and backend ingest side effects stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
 
 ## Prerequisites
 
@@ -34,8 +34,8 @@ pnpm prisma:generate
 
 # 6. Start app services in separate terminals
 pnpm dev:backend  # http://localhost:8080
-pnpm dev:ml       # ml-edge-api / FastAPI private-local surface on http://localhost:8000
-pnpm dev:ml-worker --config config/edge-cameras.local.json
+pnpm dev:ml-api       # ml-api / FastAPI private-local surface on http://localhost:8000
+pnpm dev:ml-worker --config config/ml-worker.local.yaml
 pnpm dev:front    # http://localhost:3000
 
 # 7. Register git hooks + git wt alias (run once per clone)
@@ -52,7 +52,7 @@ bash scripts/git-guard/setup-hooks.sh
 |---|---|---:|
 | `front` | `http://localhost:3000` | `3000` |
 | `backend` | `http://localhost:8080` | `8080` |
-| `ml-edge-api` | `http://localhost:8000` | `8000` |
+| `ml-api` | `http://localhost:8000` | `8000` |
 | `db` | `localhost:5432` | `5432` |
 
 Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers reach backend production ingest through `/ingest/*`; RTSP/video transport stays inside the worker.
@@ -67,14 +67,18 @@ pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
 Edge Compose is separate from the host stack and runs the two ML edge services:
 
 ```bash
-EDGE_CAMERA_CONFIG=./ml/config/edge-cameras.local.json \
+EDGE_CAMERA_CONFIG=./ml/config/ml-worker.local.yaml \
   docker compose -f compose.edge.yaml up -d --build
 ```
 
-`EDGE_CAMERA_CONFIG` points to a gitignored per-camera JSON file with RTSP URLs,
-backend `/ingest/*` endpoints, key IDs, and signing secrets. Use
-`scripts/ml-edge-four-mock-rtsp-ingest-e2e.sh` for deterministic synthetic
-RTSP-to-stub-ingest smoke before optional real camera or Jetson Nano checks.
+`EDGE_CAMERA_CONFIG` points to a gitignored per-camera YAML file with RTSP URLs,
+backend `/ingest/*` endpoints, key IDs, signing secrets, and the LSTM fall-model
+artifact contract. For development without a live camera, run
+`pnpm dev:rtsp -- /path/to/video.mp4` to publish that video forever as RTSP at
+`rtsp://127.0.0.1:8554/nursing-home`, then point `ml-worker.local.yaml` at that
+URL. Use `scripts/ml-worker-nursing-home-backend-e2e.sh` for a production-shaped
+RTSP worker run against the real backend ingest implementation; it reuses the
+same video-to-RTSP publisher.
 
 On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
@@ -84,8 +88,9 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 |--------|-------------|
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
-| `pnpm dev:ml` | `ml-edge-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/serving/`) |
-| `pnpm dev:ml-worker` | `ml-edge-worker` RTSP worker; pass `--config config/edge-cameras.local.json` because the script runs inside `ml/` |
+| `pnpm dev:ml-api` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
+| `pnpm dev:ml-worker` | `ml-worker` RTSP worker; pass `--config config/ml-worker.local.yaml` because the script runs inside `ml/` |
+| `pnpm dev:rtsp -- /path/to/video.mp4` | Loop a local video as RTSP for worker development (`rtsp://127.0.0.1:8554/nursing-home`) |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
@@ -111,10 +116,10 @@ eldercare-fall-ai/
 │   ├── runners/    # L1 model runners + ModelRegistry
 │   ├── perception/ # L2 observation assembly
 │   ├── domains/    # L3 domain interpreters (fall, bed_exit)
-│   ├── runtime/    # L3 edge orchestration for ml-edge-worker
+│   ├── runtime/    # L3 edge orchestration for ml-worker
 │   ├── events/     # L4 alert signing/outbox/publisher (-> POST /ingest/alerts)
-│   ├── serving/    # ml-edge-api FastAPI: /health, /status, /models, /debug/*
-│   ├── demo/       # Streamlit demo UI (fall classification via serving)
+│   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
+│   ├── demo/       # Streamlit demo UI (fall classification via api)
 │   ├── training/   # Batch training pipeline
 │   ├── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
 │   └── models/     # Model single root (gitignored; ADR-015)
