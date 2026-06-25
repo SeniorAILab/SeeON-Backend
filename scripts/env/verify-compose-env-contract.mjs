@@ -26,7 +26,7 @@ FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
 `;
 
 const completeEdgeEnv = `ML_SERVING_PORT=8000
-EDGE_CAMERA_CONFIG=./ml/config/edge-cameras.example.json
+EDGE_CAMERA_CONFIG=./ml/config/ml-worker.example.yaml
 `;
 
 const forbiddenHostFragments = [
@@ -178,8 +178,8 @@ function verify() {
         'ml-api',
         'ml-worker',
         'worker.edge_worker',
-        '/run/secrets/edge-cameras.json',
-        'ml/config/edge-cameras.example.json',
+        '/run/secrets/ml-worker.yaml',
+        'ml/config/ml-worker.example.yaml',
       ]);
     },
   );
