@@ -26,8 +26,8 @@ scripts/
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL. |
 | DTO guard | `backend-guard/check-dto-contracts.mjs` | Hard gate for backend DTO names and body types. |
 | Env contract | `env/verify-compose-env-contract.mjs` | Checks compose env usage against examples. |
-| Release | `release/create-production-release.mjs` | Creates release-gated production deploy refs. |
-| Manual deploy | `release/manual-production-deploy.mjs` | Local GHCR build/push/upload fallback path. |
+| Release | `release/create-production-release.mjs` | Creates production release tags; deploy separately while Actions-backed CD is paused. |
+| Manual deploy | `release/manual-production-deploy.mjs` | Current local GHCR build/push/upload production deploy path. |
 | VM deploy | `deploy/` | See `deploy/AGENTS.md` before editing. |
 
 ## Conventions
@@ -42,7 +42,12 @@ scripts/
 - `backend-guard/check-dto-contracts.mjs` is the hard DTO contract gate. ESLint
   layering checks remain warn-first.
 - Release and deploy scripts must use explicit refs or image tags. Production
-  deploy is release-gated or manual-dispatch only.
+  deploy currently uses local manual build/push; GitHub workflow deploys are
+  explicit `workflow_dispatch` only until Actions-backed CD is re-enabled.
+- Production DB deploy defaults to `DEPLOY_DB_MODE=migrate`: backup with
+  `pg_dump -Fc`, validate with `pg_restore --list`, then run
+  `prisma migrate deploy` from deploy tooling. `baseline-existing` and
+  `reset-demo` require explicit allow flags.
 - Env verification reads tracked example contracts. Real `.env*` files remain
   gitignored and must not be generated here.
 
@@ -52,6 +57,8 @@ scripts/
 - No fallback `latest`, fallback branch, or inferred production image tag.
 - No server-side app image builds in deploy scripts. VM deploy pulls already
   built GHCR images.
+- No default production schema reset, seed, raw migration replay, `db push`, or
+  app-start migration.
 - No automatic retry, rollback, or alternate deploy path that hides the first
   failure.
 - No secret printing while handling env files, registry credentials, SSH, or

@@ -5,8 +5,9 @@ import { spawnSync } from "node:child_process";
 const usage = `Usage:
   pnpm release:prod -- vX.Y.Z [--target <ref>] [--title <title>] [--notes <notes>] [--dry-run]
 
-Creates a non-prerelease GitHub Release. Publishing that release triggers the
-Deploy Naver Cloud workflow.
+Creates a non-prerelease GitHub Release. While Actions-backed CD is paused,
+deploy the resulting tag with:
+  pnpm deploy:prod:manual -- <tag>
 
 Examples:
   pnpm release:prod -- v0.1.0
@@ -108,7 +109,7 @@ function main() {
   validateTag(tag);
 
   const title = options.title ?? tag;
-  const notes = options.notes ?? `Production deploy ${tag}`;
+  const notes = options.notes ?? `Production release ${tag}`;
   const ghArgs = [
     "release",
     "create",
@@ -133,9 +134,9 @@ function main() {
   run("gh", ghArgs);
   process.stdout.write(
     [
-      "Release created. GitHub Actions will run Deploy Naver Cloud from the release event.",
-      "Watch it with:",
-      `  gh run watch "$(gh run list --workflow "Deploy Naver Cloud" --limit 1 --json databaseId --jq '.[0].databaseId')"`,
+      "Release created. Actions-backed CD is currently paused.",
+      "Deploy this release from the local checkout with:",
+      `  pnpm deploy:prod:manual -- ${tag}`,
       "",
     ].join("\n"),
   );
