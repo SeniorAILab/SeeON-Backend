@@ -15,6 +15,9 @@ backend/src/
 └── common/                       # shared guards, filters, decorators
 ```
 
+See `src/AGENTS.md` before changing Nest application code. See
+`test/AGENTS.md` before changing backend integration or e2e tests.
+
 ## Guards
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.
 - See `prisma/AGENTS.md` before changing schema, migrations, runtime DB roles, or
