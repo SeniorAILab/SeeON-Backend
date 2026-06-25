@@ -79,7 +79,7 @@ Four artifact types with non-overlapping responsibilities:
 | **research** | *What did I find* — facts, sources, comparisons (pre-decision) | Topic-scoped; superseded as evidence evolves | deep-research / research passes | `docs/research/{slug}.md` |
 | **spec** | *What* is this work / are requirements clear? | Work-scoped, one-shot | deep-interview skill | `docs/exec-plan/active/{slug}/spec.md` |
 | **plan** | *How* to implement (steps, files, order) | Work-scoped, body immutable; lifecycle = folder position | omc-plan / omo / omx | `docs/exec-plan/active/{slug}/plan.md` |
-| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; current ADRs persist, while fully superseded non-MECE source bundles may be retired from the visible corpus with coverage-matrix proof and git-history recovery | craft-skills documents skill | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
+| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; each ADR is the current self-complete decision for its topic, edited in place with a `## Changelog` entry per change (git holds history) | craft-skills documents skill | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 **The decision pipeline:** `research` (facts I found) → `ADR` (decision I made) → `plan` (implementation I built).
 Research collects evidence; it does **not** decide. A decision distilled from research is an **ADR**; how to
@@ -98,8 +98,8 @@ Plans and ADRs answer different questions with different lifespans. Never confla
 |---|---|---|
 | Question | *How* to implement this specific work | *Why* this expensive-to-reverse choice — and what alternatives were rejected |
 | Scope | One feature / task (work-scoped) | Ecosystem-local (`ml`, `backend`, `frontend`) or strict common if it still constrains multiple domains after attempted split |
-| Lifespan | Archivable when work ends | Permanent as current authority; fully superseded non-MECE source files may be retired only after successor coverage is proven |
-| Body | Immutable after finalize; scope change → new slug | Superseded by successor ADR(s); retired source bodies must remain recoverable from git history and mapped in the coverage matrix |
+| Lifespan | Archivable when work ends | Current decision, edited in place; each change is one `## Changelog` line; relationships via References/Refines (no supersede chains) |
+| Body | Immutable after finalize; scope change → new slug | Current decision, edited in place; each change is one `## Changelog` line; relationships via References/Refines (no supersede chains) |
 | Author | omc-plan / omo / omx agents | craft-skills documents skill |
 | Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
@@ -186,7 +186,7 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 - Stub/mock harness는 unit, contract, smoke, local fixture 검증으로만 명명한다. 필요하면 별도 보조 증거로 남길 수 있지만, 최종 E2E acceptance evidence를 대체할 수 없다.
 - Production backend ingest를 검증한다고 말하려면 실제 backend process와 실제 persistence side effect를 확인한다. ML RTSP 흐름을 검증한다고 말하려면 worker가 실제 stream consumer 경로와 실제 model/domain pipeline을 지나야 한다.
 - **Mock/stub/fake 스크립트는 E2E/acceptance/test-runner로 만들지 않는다.** Test double은 unit/contract test code 안에서만 기본 허용된다. 개발 편의를 위한 fixture publisher가 필요하면 `mock`, `stub`, `fake`, `e2e` 명칭을 피하고, 실제 production consumer가 읽는 입력을 공급하는 fixture로만 둔다.
-- Nursing-home RTSP 검증은 녹화 영상을 MediaMTX 등 실제 RTSP endpoint로 반복 송출하고 `ml-worker -> backend /ingest/* -> DB side effect`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
+- Nursing-home RTSP 검증은 녹화 영상을 MediaMTX 등 실제 RTSP endpoint로 반복 송출하고 `ml-worker -> ml-api -> backend /ingest/* -> DB side effect (ADR-067/029)`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
 
 ### plan-first mandate
 Every *meaningful* change must have a `docs/exec-plan/active/{slug}/` entry **before** any code is
@@ -268,7 +268,7 @@ Branch protection / required status checks are **unavailable** on this plan (pri
 백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064 · ADR-070. 명령: `pnpm --filter backend run lint`.
 
 ### ADR lifecycle (cross-reference)
-ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.
+ADRs follow `PROPOSED -> ACCEPTED -> DEPRECATED`. An ADR is the single current decision for one topic, stated self-complete and MECE. When that decision changes, edit the ADR body in place and add one `## Changelog` line (`- YYYY-MM-DD: what changed`); git holds the full history. Relationships between distinct atomic ADRs use `References`/`Refines` links — never supersede chains, coverage matrices, or retired-source tracking. ADR numbers are stable topic anchors and are not reused.
 
 ### Provider review lanes
 
@@ -278,4 +278,4 @@ This repo may use Claude Code, Codex, and Gemini as complementary advisory revie
 - Codex is useful for independent candidate/review passes grounded in this `AGENTS.md`, especially placement disagreements and implementation sanity checks.
 - Gemini is useful for adversarial or sanity-check review, especially omission risk, stale links, and category-boundary challenges.
 
-No provider is merge authority. Durable rules live in repo docs (`AGENTS.md`, `docs/decisions/README.md`, `docs/rules/`) and final acceptance depends on the validated diff, coverage matrix, verification evidence, and human review.
+No provider is merge authority. Durable rules live in repo docs (`AGENTS.md`, `docs/decisions/README.md`, `docs/rules/`) and final acceptance depends on the validated diff, verification evidence, and human review.

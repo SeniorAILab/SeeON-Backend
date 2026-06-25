@@ -27,3 +27,24 @@ describe('role_rbac_three_tier migration', () => {
     expect(sql).toContain('SET revoked_at = CURRENT_TIMESTAMP');
   });
 });
+
+describe('default_user_role_caregiver migration', () => {
+  const sql = readFileSync(
+    join(
+      __dirname,
+      '../../prisma/migrations/20260625183000_default_user_role_caregiver/migration.sql',
+    ),
+    'utf8',
+  );
+  const schema = readFileSync(
+    join(__dirname, '../../prisma/schema.prisma'),
+    'utf8',
+  );
+
+  it('defaults newly inserted users to CAREGIVER instead of ADMIN', () => {
+    expect(sql).toContain(
+      "ALTER TABLE users ALTER COLUMN role SET DEFAULT 'CAREGIVER'",
+    );
+    expect(schema).toContain('role           Role     @default(CAREGIVER)');
+  });
+});

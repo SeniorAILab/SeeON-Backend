@@ -52,7 +52,9 @@ services:
       # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:8080/auth/kakao/callback}
+      KAKAO_SCOPES: ${KAKAO_SCOPES:-}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
       # KAKAO_TOKEN_ENC_KEY encrypts per-user Kakao access tokens at rest (AES-256-GCM).
       # Dev placeholder is a fixed 32-byte hex key; override with a real random key in prod.

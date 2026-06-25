@@ -5,10 +5,13 @@ import {
   Get,
   Header,
   HttpCode,
+  Logger,
   Post,
   Query,
   Req,
   Res,
+  ServiceUnavailableException,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -26,7 +29,11 @@ import {
   setOAuthStateCookie,
   setSessionCookie,
 } from './cookie.util';
-import type { CreateFacilityRequestDto, LoginRequestDto } from './dto/auth.dto';
+import type {
+  CreateFacilityRequestDto,
+  LoginRequestDto,
+  RegisterRequestDto,
+} from './dto/auth.dto';
 import { SessionService } from './session.service';
 import type { RequestWithAuth } from './session.guard';
 import { RequireFacilityGuard, SessionGuard } from './session.guard';
@@ -34,6 +41,8 @@ import type { AuthenticatedUser } from './auth.types';
 
 @Controller()
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
@@ -43,8 +52,21 @@ export class AuthController {
   @Get('/auth/kakao/login')
   kakaoLogin(@Res() response: Response): void {
     const state = this.auth.createOAuthState();
+    let authorizeUrl: string;
+    try {
+      authorizeUrl = this.auth.getKakaoAuthorizeUrl(state);
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        this.logger.warn(`Kakao OAuth unavailable: ${error.message}`);
+        response.redirect(
+          `${this.frontOrigin()}/login?auth_error=kakao_unavailable`,
+        );
+        return;
+      }
+      throw error;
+    }
     setOAuthStateCookie(response, state, OAUTH_STATE_TTL_SECONDS);
-    response.redirect(this.auth.getKakaoAuthorizeUrl(state));
+    response.redirect(authorizeUrl);
   }
 
   @Get('/auth/kakao/callback')
@@ -61,15 +83,24 @@ export class AuthController {
     if (!state || !expectedState || state !== expectedState) {
       throw new BadRequestException('Invalid OAuth state');
     }
-    const session = await this.auth.completeKakaoCallback(code ?? '');
+    let session: Awaited<ReturnType<AuthService['completeKakaoCallback']>>;
+    try {
+      session = await this.auth.completeKakaoCallback(code ?? '');
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        clearOAuthStateCookie(response);
+        response.redirect(
+          `${this.frontOrigin()}/login?auth_error=kakao_unregistered`,
+        );
+        return;
+      }
+      throw error;
+    }
     clearOAuthStateCookie(response);
     setSessionCookie(response, session.token, session.maxAgeSeconds);
-    const frontOrigin = (
-      this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
-    ).replace(/\/+$/, '');
     // Backend OAuth callbacks run on :8080; relative redirects would land on missing :8080 frontend routes.
     response.redirect(
-      `${frontOrigin}${session.user.facilityId ? '/dashboard' : '/onboarding'}`,
+      `${this.frontOrigin()}${this.postLoginPath(session.user)}`,
     );
   }
 
@@ -100,6 +131,22 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
+  @Post('/auth/register')
+  async register(
+    @Body() body: RegisterRequestDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const session = await this.auth.registerWithPassword({
+      name: body.name,
+      email: body.email,
+      password: body.password,
+      phone: body.phone,
+      facilityName: body.facilityName,
+    });
+    setSessionCookie(response, session.token, session.maxAgeSeconds);
+    return { user: presentAuthUser(session.user) };
+  }
+
   @Post('/auth/logout')
   @UseGuards(SessionGuard)
   @HttpCode(204)
@@ -121,15 +168,9 @@ export class AuthController {
     if (!request.user) throw new BadRequestException('Missing user');
     const facilityName =
       typeof body.facilityName === 'string' ? body.facilityName : '';
-    const businessRegistrationNumber =
-      typeof body.businessRegistrationNumber === 'string' &&
-      body.businessRegistrationNumber.trim()
-        ? body.businessRegistrationNumber.trim()
-        : null;
     const session = await this.auth.createFacilityForUser(
       request.user.id,
       facilityName,
-      businessRegistrationNumber,
     );
     setSessionCookie(response, session.token, session.maxAgeSeconds);
     return { user: presentAuthUser(session.user) };
@@ -168,6 +209,21 @@ export class AuthController {
         request.rotatedSessionMaxAgeSeconds,
       );
     }
+  }
+
+  private frontOrigin(): string {
+    return (
+      this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
+    ).replace(/\/+$/, '');
+  }
+
+  private postLoginPath(
+    user: Pick<AuthenticatedUser, 'facilityId' | 'role'>,
+  ): string {
+    if (!user.facilityId) return '/onboarding';
+    return user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
+      ? '/dashboard'
+      : '/now';
   }
 }
 

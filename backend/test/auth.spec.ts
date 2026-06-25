@@ -18,6 +18,7 @@ type AuthResponseBody = {
   user: {
     id: string;
     kakaoId: string;
+    email?: string;
     sessionVersion: number;
     facilityId: string | null;
     role?: string;
@@ -133,7 +134,13 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     await direct.kakaoIdentity.deleteMany();
     await direct.serverSession.deleteMany();
     await direct.user.deleteMany({ where: { kakaoId: 'kakao-e2e-user' } });
+    await direct.user.deleteMany({
+      where: { email: { in: ['ulw-owner@example.test', 'dup@example.test'] } },
+    });
     await direct.facility.deleteMany({ where: { name: 'E2E Facility' } });
+    await direct.facility.deleteMany({
+      where: { name: { in: ['ULW 요양원', '중복 요양원'] } },
+    });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -172,7 +179,104 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     await request(app.getHttpServer()).get('/api/protected-probe').expect(401);
   });
 
-  it('round-trips Kakao login, creates owner facility during onboarding, and revokes session on logout', async () => {
+  it('registers a password owner, restores the session, and rejects duplicate signup', async () => {
+    const registered = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        name: '홍원장',
+        email: ' ULW-OWNER@EXAMPLE.TEST ',
+        password: 'care2026',
+        phone: '010-1111-2222',
+        facilityName: 'ULW 요양원',
+      })
+      .expect(201);
+    const sessionCookie = extractSessionCookie(
+      registered.headers['set-cookie'],
+    );
+    expect(sessionCookie).toContain('HttpOnly');
+    expect(JSON.stringify(registered.body)).not.toContain('passwordHash');
+    expect(JSON.stringify(registered.body)).not.toContain('care2026');
+    const registeredBody = registered.body as unknown as AuthResponseBody;
+    expect(registeredBody.user.facilityId).toBeTruthy();
+
+    const restored = await request(app.getHttpServer())
+      .get('/auth/session')
+      .set('cookie', sessionCookie)
+      .expect(200);
+    expect((restored.body as unknown as AuthResponseBody).user).toMatchObject({
+      email: 'ulw-owner@example.test',
+      role: 'ADMIN',
+      facilityId: registeredBody.user.facilityId,
+    });
+
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        name: '다른 원장',
+        email: 'ulw-owner@example.test',
+        password: 'care2026',
+        phone: '010-3333-4444',
+        facilityName: '중복 요양원',
+      })
+      .expect(409);
+  });
+
+  it('rejects signup when required fields are missing', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        name: '홍원장',
+        email: 'missing-phone@example.test',
+        password: 'care2026',
+        facilityName: 'ULW 요양원',
+      })
+      .expect(400);
+  });
+
+  it('rejects signup passwords shorter than the public password policy', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        name: '홍원장',
+        email: 'weak-password@example.test',
+        password: '1234567',
+        phone: '010-1111-2222',
+        facilityName: 'ULW 요양원',
+      })
+      .expect(400);
+  });
+
+  it('rejects Kakao login when the Kakao account is not registered locally', async () => {
+    const login = await request(app.getHttpServer())
+      .get('/auth/kakao/login')
+      .expect(302);
+    const stateCookie = login.headers['set-cookie'][0];
+    const state = /kakao_oauth_state=([^;]+)/.exec(stateCookie)?.[1];
+    expect(state).toBeTruthy();
+
+    const callback = await request(app.getHttpServer())
+      .get(`/auth/kakao/callback?code=test-code&state=${state}`)
+      .set('cookie', stateCookie)
+      .expect(302);
+
+    expect(callback.headers.location).toBe(
+      'http://localhost:3000/login?auth_error=kakao_unregistered',
+    );
+    expect(
+      extractSessionCookieOptional(callback.headers['set-cookie']),
+    ).toBeNull();
+  });
+
+  it('round-trips linked Kakao login, creates owner facility during onboarding, and revokes session on logout', async () => {
+    await direct.user.create({
+      data: {
+        kakaoId: 'kakao-e2e-user',
+        email: 'owner@example.test',
+        nickname: '시설 원장',
+        role: 'CAREGIVER',
+      },
+    });
+
     const login = await request(app.getHttpServer())
       .get('/auth/kakao/login')
       .expect(302);
@@ -202,6 +306,9 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       (sessionBeforeFacility.body as unknown as AuthResponseBody).user
         .facilityId,
     ).toBeNull();
+    expect(
+      (sessionBeforeFacility.body as unknown as AuthResponseBody).user.role,
+    ).toBe('CAREGIVER');
 
     await request(app.getHttpServer())
       .get('/api/facility-protected-probe')
@@ -213,7 +320,6 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .set('cookie', firstSessionCookie)
       .send({
         facilityName: 'E2E Facility',
-        businessRegistrationNumber: '123-45-67890',
       })
       .expect(201);
     const facilitySessionCookie = extractSessionCookie(

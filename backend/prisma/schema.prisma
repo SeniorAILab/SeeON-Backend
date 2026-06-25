@@ -96,8 +96,9 @@ model User {
   kakaoId        String?  @unique @map("kakao_id")
   email          String?  @unique
   passwordHash   String?  @map("password_hash")
+  phone          String?  @map("phone")
   nickname       String
-  role           Role     @default(ADMIN)
+  role           Role     @default(CAREGIVER)
   /// Increment to invalidate all existing sessions for this user.
   sessionVersion Int      @default(0) @map("session_version")
   createdAt      DateTime @default(now()) @map("created_at")

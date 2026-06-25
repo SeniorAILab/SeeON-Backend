@@ -19,7 +19,9 @@ DATABASE_URL=postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?s
 DIRECT_URL=postgresql://fall_prod_admin:prod-admin-password-32chars@db:5432/fall_prod?schema=public
 SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
 KAKAO_REST_API_KEY=prod-kakao-rest-api-key
+KAKAO_CLIENT_SECRET=prod-kakao-client-secret
 KAKAO_REDIRECT_URI=https://senai.example.com/auth/kakao/callback
+KAKAO_SCOPES=talk_message
 KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 BACKEND_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/backend:test
 FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
@@ -27,6 +29,12 @@ FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
 
 const completeEdgeEnv = `ML_SERVING_PORT=8000
 EDGE_CAMERA_CONFIG=./ml/config/ml-worker.example.yaml
+API_BACKEND_ALERT_URL=https://senai.example.com/ingest/alerts
+API_BACKEND_HEARTBEAT_URL=https://senai.example.com/ingest/heartbeat
+API_INGEST_KEY_ID=edge-prod-key
+API_INGEST_SECRET=edge-prod-secret-minimum-32-chars
+API_EDGE_RELAY_TOKEN=edge-relay-token-minimum-32-chars
+API_CAMERA_INVENTORY=[{"camera_id":"cam-edge-01","facility_id":"facility-prod","resident_id":"resident-prod"}]
 `;
 
 const forbiddenHostFragments = [
@@ -149,7 +157,7 @@ function verify() {
         'edge prod missing env',
         ['-f', 'compose.edge.yaml', 'config'],
         emptyEdgeEnvPath,
-        ['edge requires'],
+        ['requires'],
       );
 
       const hostConfig = requireSuccess(
@@ -164,6 +172,8 @@ function verify() {
         'fall_app',
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
+        'prod-kakao-client-secret',
+        'talk_message',
         'ghcr.io/seniorailab/eldercare-fall-ai/backend:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/front:test',
         'pull_policy: always',
@@ -180,6 +190,13 @@ function verify() {
         'worker.edge_worker',
         '/run/secrets/ml-worker.yaml',
         'ml/config/ml-worker.example.yaml',
+        'API_BACKEND_ALERT_URL: https://senai.example.com/ingest/alerts',
+        'API_BACKEND_HEARTBEAT_URL: https://senai.example.com/ingest/heartbeat',
+        'API_INGEST_KEY_ID: edge-prod-key',
+        'API_INGEST_SECRET: edge-prod-secret-minimum-32-chars',
+        'API_EDGE_RELAY_TOKEN: edge-relay-token-minimum-32-chars',
+        'API_CAMERA_INVENTORY:',
+        'RELAY_TOKEN: edge-relay-token-minimum-32-chars',
       ]);
     },
   );
