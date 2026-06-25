@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,7 +14,18 @@ import {
 } from './kakao.client';
 import { SessionService } from './session.service';
 import { encryptToken } from './token-crypto';
-import { verifyPassword } from './password';
+import { hashPassword, verifyPassword } from './password';
+import { assertValidPassword, requiredPassword } from './password-policy';
+import { createRegisteredFacilityOwner } from './password-registration';
+import { nextFacilityCode } from './facility-code';
+
+export interface RegisterWithPasswordInput {
+  readonly name: unknown;
+  readonly email: unknown;
+  readonly password: unknown;
+  readonly phone: unknown;
+  readonly facilityName: unknown;
+}
 
 @Injectable()
 export class AuthService {
@@ -38,7 +50,7 @@ export class AuthService {
       throw new BadRequestException('Missing Kakao authorization code');
     const kakaoToken = await this.kakao.exchangeCode(code);
     const profile = await this.kakao.getProfile(kakaoToken.access_token);
-    const user = await this.upsertUser(profile, kakaoToken);
+    const user = await this.updateLinkedKakaoUser(profile, kakaoToken);
     const session = await this.sessions.createSession(user);
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
@@ -67,10 +79,39 @@ export class AuthService {
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
 
+  async registerWithPassword(
+    input: RegisterWithPasswordInput,
+  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+    const name = requiredString(input.name, 'name');
+    const normalizedEmail = normalizeEmail(
+      requiredString(input.email, 'email'),
+    );
+    const password = requiredPassword(input.password);
+    assertValidPassword(password);
+    const phone = requiredString(input.phone, 'phone');
+    const facilityName = requiredString(input.facilityName, 'facilityName');
+
+    const existing = await this.prisma.db.user.findFirst({
+      where: { email: normalizedEmail },
+    });
+    if (existing) throw new ConflictException('Email already registered');
+
+    const passwordHash = await hashPassword(password);
+    const user = await createRegisteredFacilityOwner(this.prisma, {
+      facilityName,
+      normalizedEmail,
+      passwordHash,
+      phone,
+      name,
+    });
+
+    const session = await this.sessions.createSession(user);
+    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+  }
+
   async createFacilityForUser(
     userId: string,
     facilityName: string,
-    businessRegistrationNumber: string | null,
   ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
     const name = facilityName.trim();
     if (!name) throw new BadRequestException('facilityName is required');
@@ -91,8 +132,7 @@ export class AuthService {
     const facility = await this.prisma.db.facility.create({
       data: {
         name,
-        code: await this.nextFacilityCode(name),
-        businessRegistrationNumber,
+        code: await nextFacilityCode(this.prisma, name),
       },
     });
 
@@ -122,7 +162,7 @@ export class AuthService {
     return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
   }
 
-  private async upsertUser(
+  private async updateLinkedKakaoUser(
     profile: KakaoProfile,
     kakaoToken: KakaoTokenResponse,
   ): Promise<User> {
@@ -133,17 +173,18 @@ export class AuthService {
       : null;
 
     return this.prisma.db.$transaction(async (tx) => {
-      const user = await tx.user.upsert({
+      const existing = await tx.user.findUnique({
         where: { kakaoId: profile.kakaoId },
-        update: {
+      });
+      if (!existing) {
+        throw new UnauthorizedException('Kakao account is not registered');
+      }
+
+      const user = await tx.user.update({
+        where: { id: existing.id },
+        data: {
           email: profile.email,
           nickname: profile.nickname,
-        },
-        create: {
-          kakaoId: profile.kakaoId,
-          email: profile.email,
-          nickname: profile.nickname,
-          role: 'ADMIN',
         },
       });
 
@@ -169,31 +210,21 @@ export class AuthService {
       return user;
     });
   }
-
-  private async nextFacilityCode(name: string): Promise<string> {
-    const base = slugFacilityName(name);
-    const existing = await this.prisma.db.facility.findMany({
-      where: { code: { startsWith: base } },
-      select: { code: true },
-    });
-    const used = new Set(existing.map((facility) => facility.code));
-    if (!used.has(base)) return base;
-    for (let suffix = 2; ; suffix += 1) {
-      const candidate = `${base}-${suffix}`;
-      if (!used.has(candidate)) return candidate;
-    }
-  }
 }
 
 function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new BadRequestException('email must be valid');
+  }
+  return normalized;
 }
 
-function slugFacilityName(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'facility'
-  );
+function requiredString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`${fieldName} is required`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) throw new BadRequestException(`${fieldName} is required`);
+  return trimmed;
 }

@@ -19,7 +19,9 @@ DATABASE_URL=postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?s
 DIRECT_URL=postgresql://fall_prod_admin:prod-admin-password-32chars@db:5432/fall_prod?schema=public
 SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
 KAKAO_REST_API_KEY=prod-kakao-rest-api-key
+KAKAO_CLIENT_SECRET=prod-kakao-client-secret
 KAKAO_REDIRECT_URI=https://senai.example.com/auth/kakao/callback
+KAKAO_SCOPES=talk_message
 KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 BACKEND_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/backend:test
 FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
@@ -170,6 +172,8 @@ function verify() {
         'fall_app',
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
+        'prod-kakao-client-secret',
+        'talk_message',
         'ghcr.io/seniorailab/eldercare-fall-ai/backend:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/front:test',
         'pull_policy: always',

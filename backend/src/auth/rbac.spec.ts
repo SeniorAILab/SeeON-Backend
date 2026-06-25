@@ -56,17 +56,23 @@ describe('RBAC SSOT', () => {
     expect(prisma.db.serverSession.create).toHaveBeenCalled();
   });
 
-  it('onboards Kakao users as ADMIN, not legacy OWNER', async () => {
+  it('updates only existing Kakao-linked users during Kakao login', async () => {
+    const existingUser = {
+      id: 'user-1',
+      kakaoId: 'kakao-1',
+      email: 'old@example.test',
+      nickname: 'Old',
+      role: 'CAREGIVER',
+      facilityId: 'facility-1',
+      sessionVersion: 0,
+    };
     const tx = {
       user: {
-        upsert: jest.fn().mockResolvedValue({
-          id: 'user-1',
-          kakaoId: 'kakao-1',
+        findUnique: jest.fn().mockResolvedValue(existingUser),
+        update: jest.fn().mockResolvedValue({
+          ...existingUser,
           email: 'a@example.test',
-          nickname: 'Admin',
-          role: 'ADMIN',
-          facilityId: null,
-          sessionVersion: 0,
+          nickname: 'Caregiver',
         }),
       },
       kakaoIdentity: { upsert: jest.fn().mockResolvedValue({}) },
@@ -86,27 +92,24 @@ describe('RBAC SSOT', () => {
 
     await (
       service as unknown as {
-        upsertUser: (
+        updateLinkedKakaoUser: (
           profile: { kakaoId: string; email: string; nickname: string },
           token: { access_token: string; expires_in: number; scope?: string },
         ) => Promise<unknown>;
       }
-    ).upsertUser(
-      { kakaoId: 'kakao-1', email: 'a@example.test', nickname: 'Admin' },
+    ).updateLinkedKakaoUser(
+      { kakaoId: 'kakao-1', email: 'a@example.test', nickname: 'Caregiver' },
       { access_token: 'token', expires_in: 3600 },
     );
 
-    expect(tx.user.upsert).toHaveBeenCalledWith({
+    expect(tx.user.findUnique).toHaveBeenCalledWith({
       where: { kakaoId: 'kakao-1' },
-      update: {
+    });
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: {
         email: 'a@example.test',
-        nickname: 'Admin',
-      },
-      create: {
-        kakaoId: 'kakao-1',
-        email: 'a@example.test',
-        nickname: 'Admin',
-        role: 'ADMIN',
+        nickname: 'Caregiver',
       },
     });
   });
