@@ -11,6 +11,8 @@ type CookieCall = readonly [
 describe('auth cookie utilities', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
+  const originalFrontOrigin = process.env.FRONT_ORIGIN;
+  const originalKakaoRedirectUri = process.env.KAKAO_REDIRECT_URI;
 
   const makeResponse = () =>
     ({
@@ -27,10 +29,21 @@ describe('auth cookie utilities', () => {
     } else {
       process.env.AUTH_COOKIE_SECURE = originalAuthCookieSecure;
     }
+    if (originalFrontOrigin === undefined) {
+      delete process.env.FRONT_ORIGIN;
+    } else {
+      process.env.FRONT_ORIGIN = originalFrontOrigin;
+    }
+    if (originalKakaoRedirectUri === undefined) {
+      delete process.env.KAKAO_REDIRECT_URI;
+    } else {
+      process.env.KAKAO_REDIRECT_URI = originalKakaoRedirectUri;
+    }
   });
 
-  it('marks session cookies secure by default in production', () => {
+  it('marks session cookies secure for HTTPS production origins', () => {
     process.env.NODE_ENV = 'production';
+    process.env.FRONT_ORIGIN = 'https://senai.example.com';
     delete process.env.AUTH_COOKIE_SECURE;
     const response = makeResponse();
 
@@ -40,6 +53,18 @@ describe('auth cookie utilities', () => {
     expect(name).toBe(SESSION_COOKIE_NAME);
     expect(value).toBe('session-token');
     expect(options.secure).toBe(true);
+  });
+
+  it('does not mark cookies secure for the temporary HTTP production origin', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.FRONT_ORIGIN = 'http://<retired-host>';
+    delete process.env.AUTH_COOKIE_SECURE;
+    const response = makeResponse();
+
+    setOAuthStateCookie(response, 'oauth-state', 60);
+
+    const [, , options] = cookieCall(response);
+    expect(options.secure).toBe(false);
   });
 
   it('allows explicit insecure cookies for HTTP-only deployment smoke tests', () => {

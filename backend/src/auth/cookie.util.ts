@@ -5,7 +5,21 @@ function secureCookiesEnabled(): boolean {
   const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
   if (configured === 'true') return true;
   if (configured === 'false') return false;
+  const browserOrigin = cookieSecurityOrigin();
+  if (browserOrigin?.protocol === 'https:') return true;
+  if (browserOrigin?.protocol === 'http:') return false;
   return process.env.NODE_ENV === 'production';
+}
+
+function cookieSecurityOrigin(): URL | undefined {
+  const rawOrigin =
+    process.env.FRONT_ORIGIN?.trim() ?? process.env.KAKAO_REDIRECT_URI?.trim();
+  if (!rawOrigin) return undefined;
+  try {
+    return new URL(rawOrigin);
+  } catch {
+    return undefined;
+  }
 }
 
 export function readCookie(

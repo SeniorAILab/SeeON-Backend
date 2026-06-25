@@ -64,7 +64,11 @@ describe('auth fail-fast config and cookie attributes', () => {
 
   it('sets bounded production cookie attributes for session and OAuth state', () => {
     const originalEnv = process.env.NODE_ENV;
+    const originalFrontOrigin = process.env.FRONT_ORIGIN;
+    const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
     process.env.NODE_ENV = 'production';
+    process.env.FRONT_ORIGIN = 'https://senai.example.com';
+    delete process.env.AUTH_COOKIE_SECURE;
     const sessionCookie = jest.fn();
     const stateCookie = jest.fn();
     try {
@@ -84,6 +88,11 @@ describe('auth fail-fast config and cookie attributes', () => {
       );
     } finally {
       process.env.NODE_ENV = originalEnv;
+      if (originalFrontOrigin === undefined) delete process.env.FRONT_ORIGIN;
+      else process.env.FRONT_ORIGIN = originalFrontOrigin;
+      if (originalAuthCookieSecure === undefined)
+        delete process.env.AUTH_COOKIE_SECURE;
+      else process.env.AUTH_COOKIE_SECURE = originalAuthCookieSecure;
     }
 
     expect(sessionCookie).toHaveBeenCalledWith(
