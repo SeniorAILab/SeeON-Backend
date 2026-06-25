@@ -27,6 +27,12 @@ FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
 
 const completeEdgeEnv = `ML_SERVING_PORT=8000
 EDGE_CAMERA_CONFIG=./ml/config/ml-worker.example.yaml
+API_BACKEND_ALERT_URL=https://senai.example.com/ingest/alerts
+API_BACKEND_HEARTBEAT_URL=https://senai.example.com/ingest/heartbeat
+API_INGEST_KEY_ID=edge-prod-key
+API_INGEST_SECRET=edge-prod-secret-minimum-32-chars
+API_EDGE_RELAY_TOKEN=edge-relay-token-minimum-32-chars
+API_CAMERA_INVENTORY=[{"camera_id":"cam-edge-01","facility_id":"facility-prod","resident_id":"resident-prod"}]
 `;
 
 const forbiddenHostFragments = [
@@ -149,7 +155,7 @@ function verify() {
         'edge prod missing env',
         ['-f', 'compose.edge.yaml', 'config'],
         emptyEdgeEnvPath,
-        ['edge requires'],
+        ['requires'],
       );
 
       const hostConfig = requireSuccess(
@@ -180,6 +186,13 @@ function verify() {
         'worker.edge_worker',
         '/run/secrets/ml-worker.yaml',
         'ml/config/ml-worker.example.yaml',
+        'API_BACKEND_ALERT_URL: https://senai.example.com/ingest/alerts',
+        'API_BACKEND_HEARTBEAT_URL: https://senai.example.com/ingest/heartbeat',
+        'API_INGEST_KEY_ID: edge-prod-key',
+        'API_INGEST_SECRET: edge-prod-secret-minimum-32-chars',
+        'API_EDGE_RELAY_TOKEN: edge-relay-token-minimum-32-chars',
+        'API_CAMERA_INVENTORY:',
+        'RELAY_TOKEN: edge-relay-token-minimum-32-chars',
       ]);
     },
   );
