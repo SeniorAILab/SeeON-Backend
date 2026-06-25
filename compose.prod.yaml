@@ -1,22 +1,42 @@
 # Production overlay for the host stack (db + backend + front[nginx]).
-# Usage: docker compose -f compose.yaml -f compose.prod.yaml up -d --build
 # ML runs on the external edge device — see compose.edge.yaml.
 services:
+  db:
+    ports: !reset []
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required in prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in prod}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required in prod}
+      APP_DB_USER: ${APP_DB_USER:?APP_DB_USER is required in prod}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required in prod}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required in prod} -d ${POSTGRES_DB:?POSTGRES_DB is required in prod}"]
+
   backend:
-    build:
-      target: runner
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required in prod}
+    build: !reset null
+    pull_policy: always
     restart: unless-stopped
     environment:
-      # Fail closed: prod must supply real secrets instead of inheriting the base dev placeholders.
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in prod}
+      DIRECT_URL: ${DIRECT_URL:?DIRECT_URL is required in prod}
+      FRONT_ORIGIN: ${FRONT_ORIGIN:?FRONT_ORIGIN is required in prod}
+      ALERT_DASHBOARD_URL: ${ALERT_DASHBOARD_URL:?ALERT_DASHBOARD_URL is required in prod}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required in prod}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required in prod}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:?KAKAO_TOKEN_ENC_KEY is required in prod}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      DEMO_LOGIN_PASSWORD: ${DEMO_LOGIN_PASSWORD:-}
+      DEMO_SUPER_ADMIN_KAKAO_ID: ${DEMO_SUPER_ADMIN_KAKAO_ID:-}
+      DEMO_SUPER_ADMIN_KAKAO_EMAIL: ${DEMO_SUPER_ADMIN_KAKAO_EMAIL:-}
+    ports: !reset []
 
   front:
-    build:
-      target: runner
+    image: ${FRONT_IMAGE:?FRONT_IMAGE is required in prod}
+    build: !reset null
+    pull_policy: always
     restart: unless-stopped
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
+    ports: !override
+      - "80:3000"

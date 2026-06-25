@@ -3,26 +3,15 @@ import { ConfigService } from '@nestjs/config';
 
 import {
   AlertEventTypes,
-  type AlertEventIngressDto,
-  type PredictionAlertInputDto,
+  type AlertEventRequestDto,
+  type AlertPolicyDecision,
+  type PredictionAlertRequestDto,
 } from '../dto/alert-events.dto.js';
 
 const DEFAULT_POLICY_ENABLED = true;
 const DEFAULT_COOLDOWN_SEC = 60;
 const DEFAULT_HOURLY_CAP = 10;
 const ONE_HOUR_MS = 60 * 60 * 1_000;
-
-export type AlertSuppressedReason =
-  | 'cooldown'
-  | 'hourly_cap'
-  | 'below_threshold';
-
-export type AlertPolicyDecision =
-  | { readonly kind: 'dispatch' }
-  | {
-      readonly kind: 'suppress';
-      readonly suppressed_reason: AlertSuppressedReason;
-    };
 
 export abstract class AlertPolicyClock {
   abstract nowMs(): number;
@@ -45,7 +34,7 @@ export class AlertPolicyService {
     private readonly clock: AlertPolicyClock,
   ) {}
 
-  evaluateIngress(event: AlertEventIngressDto): AlertPolicyDecision {
+  evaluateIngress(event: AlertEventRequestDto): AlertPolicyDecision {
     if (!this.isPolicyEnabled()) {
       return { kind: 'dispatch' };
     }
@@ -68,7 +57,7 @@ export class AlertPolicyService {
     return { kind: 'dispatch' };
   }
 
-  evaluatePrediction(input: PredictionAlertInputDto): AlertPolicyDecision {
+  evaluatePrediction(input: PredictionAlertRequestDto): AlertPolicyDecision {
     const { prediction } = input;
     if (
       !prediction.is_fall ||
@@ -90,7 +79,6 @@ export class AlertPolicyService {
     const cutoffMs = nowMs - ONE_HOUR_MS;
     while (
       this.dispatchTimestampsMs.length > 0 &&
-      this.dispatchTimestampsMs[0] !== undefined &&
       this.dispatchTimestampsMs[0] <= cutoffMs
     ) {
       this.dispatchTimestampsMs.shift();
@@ -127,7 +115,7 @@ export class AlertPolicyService {
   }
 }
 
-function policyKey(event: AlertEventIngressDto): string {
+function policyKey(event: AlertEventRequestDto): string {
   return `${event.source_id}:${event.type}`;
 }
 

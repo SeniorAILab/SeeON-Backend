@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { FloorsRepository } from '../repositories/floors.repository';
+import type { FloorsRepository } from '../repositories/floors.repository';
 import { FloorsService } from './floors.service';
 
 describe('FloorsService', () => {

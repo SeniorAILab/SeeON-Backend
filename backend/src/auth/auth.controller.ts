@@ -19,7 +19,6 @@ import {
   SESSION_COOKIE_NAME,
 } from './auth.constants';
 import { AuthService } from './auth.service';
-import type { CreateFacilityBody } from './auth.types';
 import {
   clearOAuthStateCookie,
   clearSessionCookie,
@@ -27,9 +26,11 @@ import {
   setOAuthStateCookie,
   setSessionCookie,
 } from './cookie.util';
+import type { CreateFacilityRequestDto, LoginRequestDto } from './dto/auth.dto';
 import { SessionService } from './session.service';
 import type { RequestWithAuth } from './session.guard';
 import { RequireFacilityGuard, SessionGuard } from './session.guard';
+import type { AuthenticatedUser } from './auth.types';
 
 @Controller()
 export class AuthController {
@@ -83,7 +84,20 @@ export class AuthController {
     if (valid.rotatedToken) {
       setSessionCookie(response, valid.rotatedToken, valid.maxAgeSeconds);
     }
-    return { user: valid.user };
+    return { user: presentAuthUser(valid.user) };
+  }
+
+  @Post('/auth/login')
+  async login(
+    @Body() body: LoginRequestDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const session = await this.auth.loginWithPassword(
+      typeof body.email === 'string' ? body.email : '',
+      typeof body.password === 'string' ? body.password : '',
+    );
+    setSessionCookie(response, session.token, session.maxAgeSeconds);
+    return { user: presentAuthUser(session.user) };
   }
 
   @Post('/auth/logout')
@@ -100,7 +114,7 @@ export class AuthController {
   @Post('/api/facilities')
   @UseGuards(SessionGuard)
   async createFacility(
-    @Body() body: CreateFacilityBody,
+    @Body() body: CreateFacilityRequestDto,
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ) {
@@ -118,7 +132,7 @@ export class AuthController {
       businessRegistrationNumber,
     );
     setSessionCookie(response, session.token, session.maxAgeSeconds);
-    return { user: session.user };
+    return { user: presentAuthUser(session.user) };
   }
 
   @Get('/api/protected-probe')
@@ -129,7 +143,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     this.refreshRotatedCookie(request, response);
-    return { user: request.user };
+    return { user: request.user ? presentAuthUser(request.user) : null };
   }
 
   @Get('/api/facility-protected-probe')
@@ -155,4 +169,27 @@ export class AuthController {
       );
     }
   }
+}
+
+function presentAuthUser(
+  user: Pick<
+    AuthenticatedUser,
+    | 'id'
+    | 'facilityId'
+    | 'role'
+    | 'kakaoId'
+    | 'email'
+    | 'nickname'
+    | 'sessionVersion'
+  >,
+) {
+  return {
+    id: user.id,
+    facilityId: user.facilityId,
+    role: user.role,
+    kakaoId: user.kakaoId,
+    email: user.email,
+    nickname: user.nickname,
+    sessionVersion: user.sessionVersion,
+  };
 }

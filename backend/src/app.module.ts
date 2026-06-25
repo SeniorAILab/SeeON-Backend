@@ -20,6 +20,8 @@ import { SpaceStatusesModule } from './space-statuses/space-statuses.module.js';
 import { DetectionEventsModule } from './detection-events/detection-events.module.js';
 import { AlertRulesModule } from './alert-rules/alert-rules.module.js';
 import { ResidentRiskSummariesModule } from './resident-risk-summaries/resident-risk-summaries.module.js';
+import { backendEnvFilePaths } from './config/env-files.js';
+import { validateBackendEnv } from './config/env-validation.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
@@ -34,7 +36,8 @@ import { ResidentRiskSummariesModule } from './resident-risk-summaries/resident-
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: `.env.${process.env.NODE_ENV ?? 'development'}`,
+      envFilePath: backendEnvFilePaths(),
+      validate: validateBackendEnv,
     }),
     PrismaModule,
     AuthModule,

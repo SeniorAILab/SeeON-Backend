@@ -4,14 +4,14 @@ import {
   DeliveryAttemptStatus,
   DeliveryChannel,
 } from '@prisma/client';
-import { ConfigService } from '@nestjs/config';
+import type { ConfigService } from '@nestjs/config';
 import { encryptToken } from '../../auth/token-crypto.js';
-import { PrismaService } from '../../prisma/prisma.service.js';
+import type { PrismaService } from '../../prisma/prisma.service.js';
 
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
 import type { ChannelPort } from '../ports/channel.port.js';
 import type { PredictionPort } from '../ports/prediction.port.js';
-import { AlertEventsRepository } from '../repositories/alert-events.repository.js';
+import type { AlertEventsRepository } from '../repositories/alert-events.repository.js';
 import { AlertEventsService } from './alert-events.service.js';
 
 type AlertEventsRepositoryMock = {
@@ -153,15 +153,11 @@ describe('AlertEventsService', () => {
       confidence: 0.1,
     });
 
-    expect(repository.ensureIngestOutbox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: expect.objectContaining({
-          type: AlertEventTypes.bedExit,
-          confidence: 0.1,
-        }),
-        recipientUserIds: [],
-      }),
-    );
+    expect(repository.ensureIngestOutbox).toHaveBeenCalledTimes(1);
+    const [ingestInput] = repository.ensureIngestOutbox.mock.calls[0];
+    expect(ingestInput.event.type).toBe(AlertEventTypes.bedExit);
+    expect(ingestInput.event.confidence).toBe(0.1);
+    expect(ingestInput.recipientUserIds).toEqual([]);
     expect(channel.send).not.toHaveBeenCalled();
     expect(repository.recordDeliveryResult).not.toHaveBeenCalled();
   });

@@ -5,18 +5,29 @@ import {
 } from '@nestjs/common';
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
-import type { CreateSpaceDto, UpdateSpaceDto } from '../dto/space.dto.js';
-import {
-  SpacesRepository,
-  type SpaceFilters,
-} from '../repositories/spaces.repository.js';
+import type {
+  CreateSpaceRequestDto,
+  SpaceTypeValue,
+  UpdateSpaceRequestDto,
+} from '../dto/space.dto.js';
+import { SpacesRepository } from '../repositories/spaces.repository.js';
 
 @Injectable()
 export class SpacesService {
   constructor(private readonly spacesRepository: SpacesRepository) {}
 
-  async list(facilityId: string, filters: SpaceFilters = {}) {
-    const spaces = await this.spacesRepository.list(facilityId, filters);
+  async list(
+    facilityId: string,
+    filters: {
+      floorId?: string;
+      type?: SpaceTypeValue;
+      isActive?: boolean;
+    } = {},
+  ) {
+    const spaces = await this.spacesRepository.list(facilityId, {
+      ...filters,
+      type: filters.type,
+    });
     return spaces.map(presentSpace);
   }
 
@@ -30,7 +41,7 @@ export class SpacesService {
     return presentSpace(space);
   }
 
-  async create(facilityId: string, dto: CreateSpaceDto) {
+  async create(facilityId: string, dto: CreateSpaceRequestDto) {
     const floorId = dto.floorId;
     const name = dto.name?.trim();
     const type = dto.type;
@@ -61,8 +72,6 @@ export class SpacesService {
       name,
       type,
       capacity,
-      cameraId:
-        dto.cameraId !== undefined ? dto.cameraId?.trim() || null : null,
       isActive: dto.isActive,
       assignedStaff:
         dto.assignedStaff !== undefined
@@ -72,7 +81,7 @@ export class SpacesService {
     return presentSpace(space);
   }
 
-  async update(facilityId: string, id: string, dto: UpdateSpaceDto) {
+  async update(facilityId: string, id: string, dto: UpdateSpaceRequestDto) {
     await this.ensureExists(facilityId, id);
     const data = normalizeSpaceUpdate(dto);
     const space = await this.spacesRepository.update(facilityId, id, data);
@@ -95,7 +104,7 @@ export class SpacesService {
   }
 }
 
-function normalizeSpaceUpdate(dto: UpdateSpaceDto) {
+function normalizeSpaceUpdate(dto: UpdateSpaceRequestDto) {
   if (dto.name !== undefined && !dto.name.trim())
     throw new ConflictException({
       error: 'conflict',
@@ -111,8 +120,6 @@ function normalizeSpaceUpdate(dto: UpdateSpaceDto) {
     name: dto.name?.trim(),
     type: dto.type,
     capacity: dto.capacity,
-    cameraId:
-      dto.cameraId !== undefined ? dto.cameraId?.trim() || null : undefined,
     isActive: dto.isActive,
     assignedStaff:
       dto.assignedStaff !== undefined
@@ -129,7 +136,6 @@ export function presentSpace(space: Space) {
     name: space.name,
     type: space.type,
     capacity: space.capacity,
-    cameraId: space.cameraId ?? null,
     isActive: space.isActive,
     assignedStaff: space.assignedStaff,
     createdAt: space.createdAt.toISOString(),

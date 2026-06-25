@@ -11,7 +11,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── package.json                    ← dev:*, build:*, lint, db:*, prisma:* scripts
 ├── pnpm-workspace.yaml             ← workspace: [front, backend]
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
-├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; +compose.gateway.yaml (single-gateway prod-shaped overlay, root nginx.conf); compose.edge.yaml = ML edge (ADR-062/063)
+├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; compose.edge.yaml = ML edge (ADR-062/063)
 │
 ├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
 │   ├── src/
@@ -29,12 +29,12 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │       ├── prisma.module.ts
 │   │       └── prisma.service.ts
 │   ├── prisma/schema.prisma        ← provider=postgresql, url=env("DATABASE_URL")
-│   ├── .env.development            ← DATABASE_URL + ML_SERVING_URL (localhost)
-│   ├── .env.production
-│   └── .env.example
+│   ├── .env.local.example          ← local/native + Compose development contract
+│   ├── .env.host.prod.example      ← host production contract
+│   └── .env.edge.prod.example      ← edge ML production contract
 │
-├── ml/                             ← independent uv project (training + serving + demo)
-│   ├── pyproject.toml              ← uv project; dep groups: serving (default), demo, training
+├── ml/                             ← independent uv project (training + api + demo)
+│   ├── pyproject.toml              ← uv project; dep groups: api (default), demo, training
 │   ├── uv.lock
 │   ├── contracts/                 ← L0 contracts, dataclasses, protocols
 │   ├── features/                  ← L0 pure feature transforms
@@ -44,7 +44,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   ├── domains/                   ← L3 fall/bed-exit/long-lie/risk domain logic
 │   ├── runtime/                   ← L3 edge runtime orchestration and status
 │   ├── events/                    ← L4 alert/event schemas, signing, publishing
-│   ├── serving/                   ← L5 FastAPI: /health, /status, /models, /debug/predict/*
+│   ├── api/                   ← L5 FastAPI: /health, /status, /models, /debug/predict/*
 │   ├── training/                  ← batch lifecycle; pipeline operational
 │   ├── demo/                      ← Streamlit ML-demo (not the product UI)
 │   ├── models/                     ← single model root (ADR-015; gitignored in entirety)
@@ -76,42 +76,42 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. Dashboard UI (monitoring, alerts, residents, admin) currently driven by mock services (`USE_MOCK=true`) behind an apiClient seam; Phase 2 wires these to the backend. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth, `/auth/session`, and `POST /api/facilities`; explicit `VITE_USE_MOCK=true` keeps the mock runtime available only for tests/demo-only surfaces while remaining dashboard/admin service wiring is replaced incrementally. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 ### 2. `backend/` — Product logic, persistence, alert policy
 
-NestJS 11, `@nestjs/config` (env-file per `NODE_ENV`), Prisma 6 (PostgreSQL). Listens on `PORT` (default 3000, configured in `.env.development`).
+NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local default 8080 from `.env.local`).
 
-`AppModule` wires `ConfigModule` (global, reads `.env.${NODE_ENV}`) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md), superseded for the facility rename + placement domain by [ADR-058](decisions/backend/ADR-058-facility-placement-domain-model.md)/[ADR-059](decisions/backend/ADR-059-facility-rls-guc-rename.md)). Placement/resident CRUD is implemented; camera/space-status/detection-event/alert-rule/resident-risk read models are guarded 501 skeletons pending the ML read-model.
+`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC ([ADR-031](decisions/backend/ADR-031-prisma-domain-model.md), superseded for the facility rename + placement domain by [ADR-058](decisions/backend/ADR-058-facility-placement-domain-model.md)/[ADR-059](decisions/backend/ADR-059-facility-rls-guc-rename.md)). Placement/resident CRUD is implemented; camera/space-status/detection-event/alert-rule/resident-risk read models are guarded 501 skeletons pending the ML read-model.
 
 Key responsibilities (all deferred, ownership defined now):
-- Call ML serving (`ML_SERVING_URL=http://localhost:8000`) with a video window
+- Call ML API (`ML_SERVING_URL=http://localhost:8000`) with a video window
 - Apply alert policy (threshold, dedup, rate-limit)
 - Dispatch webhooks (Kakao alert, etc.)
 - Persist all events to PostgreSQL via Prisma
 
 Runs via: `pnpm dev:backend` → `pnpm --filter backend start:dev`
 
-### 3. `ml/` — Training pipeline and prediction serving
+### 3. `ml/` — Training pipeline and prediction api
 
 Independent uv project. Two distinct lifecycles share one project:
 
 | Lifecycle | Entry | Runtime | Trigger |
 |-----------|-------|---------|---------|
-| **Serving** (online) | `serving/main.py` (FastAPI) | milliseconds | HTTP request from backend |
+| **Serving** (online) | `api/main.py` (FastAPI) | milliseconds | HTTP request from backend |
 | **Training** (batch) | `training/` (scaffolded; pipeline operational) | minutes–hours | manual / scheduled job |
 | **Demo** (dev tool) | `demo/app.py` (Streamlit) | interactive | developer |
 
-Serving exposes `GET /health`, `GET /status`, `GET /models`, `POST /debug/predict/window`, and `POST /debug/predict/source`. The temporary `POST /predict` alias is removed. Lifespan boot order is detector model → pose warmup → source registry/pipeline → routes. The `FallDetector` class in `serving/model.py` loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
+Serving exposes `GET /health`, `GET /status`, `GET /models`, `POST /debug/predict/window`, and `POST /debug/predict/source`. The temporary `POST /predict` alias is removed. Lifespan boot order is detector model → pose warmup → source registry/pipeline → routes. The `FallDetector` class in `api/model.py` loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
 
 Dependency ladder: `contracts/features` (L0) → `sources/runners` (L1) →
 `perception` (L2) → `domains/runtime` (L3) → `events` (L4) →
-`serving/demo` (L5). Lower layers never import higher layers; `ml/core/` and
+`api/demo` (L5). Lower layers never import higher layers; `ml/core/` and
 `ml/util/` are removed.
 
-Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --reload --host 0.0.0.0 --port 8000`
+Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
 
 ---
 
@@ -121,7 +121,7 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --re
 [video/camera/source window]
      │
      ▼  sources → runners → perception (FrameObservation)
-[POST /debug/predict/{window,source}] ──► ml/serving/main.py
+[POST /debug/predict/{window,source}] ──► ml/api/main.py
      │                                      │
      │                                      ▼
      │                                  FallDetector.predict(features)
@@ -134,12 +134,12 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn serving.main:app --re
 [PostgreSQL]  +  [outbound webhook / Kakao alert]
 ```
 
-The serving path keeps ML thin and edge-local: source decoding, pose inference,
+The api path keeps ML thin and edge-local: source decoding, pose inference,
 window feature extraction, and fall probability happen in `ml/`; product policy
 and side effects happen in the backend.
 
-The Streamlit demo (`ml/demo/app.py`) exercises the same serving decision seam for
-temporal classifiers through `serving.client.ServingFallClassifier` and
+The Streamlit demo (`ml/demo/app.py`) exercises the same api decision seam for
+temporal classifiers through `api.client.ServingFallClassifier` and
 `/debug/predict/window`. It is a **developer tool**, not the product frontend.
 
 ---
@@ -180,7 +180,7 @@ ml/uv.lock                   ← uv lock; resolved separately from pnpm
 - `dependencies` (always installed): `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `numpy>=1.26`
 - `[dependency-groups.demo]`: `streamlit>=1.38`, `opencv-python-headless>=4.10`, `ultralytics>=8.3`
 - `[dependency-groups.training]`: `torch>=2.3`, `scikit-learn>=1.5`, `joblib>=1.4`, `tqdm>=4.66`, `ultralytics>=8.3`, `opencv-python-headless>=4.10`
-- `[tool.uv] default-groups = ["demo","test","training"]` — bare `uv sync` installs all groups; slim serving image uses `--no-default-groups`
+- `[tool.uv] default-groups = ["demo","test","training"]` — bare `uv sync` installs all groups; slim api image uses `--no-default-groups`
 
 Lock file locations:
 | Lock file | Path | Ecosystem |
@@ -198,20 +198,20 @@ PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into 
 |-------|-----------|--------|
 | Database engine | PostgreSQL 17-alpine (Docker) | `docker-compose.yml` |
 | ORM / migrations | Prisma 6 | `backend/prisma/schema.prisma` |
-| Dev connection | `postgresql://fall:fall@localhost:5432/fall_dev` | `backend/.env.development` |
-| Prod connection | `postgresql://<user>:<pass>@<host>:5432/<db>` | `backend/.env.production` |
+| Dev connection | `postgresql://fall:fall@localhost:5432/fall_dev` | `.env.local` |
+| Prod connection | `postgresql://<user>:<pass>@<host>:5432/<db>` | `.env.host.prod` |
 
 Start the database:
 
 ```bash
 pnpm db:up                    # docker compose up -d db
-pnpm prisma:migrate           # prisma migrate dev (reads .env.development via dotenv-cli)
+pnpm prisma:migrate           # prisma migrate dev (reads .env.local via dotenv-cli)
 pnpm prisma:generate          # regenerate Prisma client after schema changes
 ```
 
-The `docker-compose.yml` mounts a named volume (`pgdata`) so data survives container restarts. Default credentials (`fall`/`fall`) match `.env.development`; override via environment variables before `docker compose up`.
+The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. Default `docker compose up` / `pnpm db:up` is db-only (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:full` (`docker compose --profile full up -d --build`) brings up the whole host stack. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). `compose.gateway.yaml` is an optional prod-shaped overlay (`pnpm compose:gateway`): a single `nginx` gateway (root `nginx.conf`, reusing the front runner image for the baked SPA dist) is the **only** host-published port (`:80`), serving the SPA and reverse-proxying `/api`, `/auth`, `/ingest`, and `/api/sse` (direct, unbuffered) to an internal `backend`, with `backend`/`db` host ports reset to internal-only — verified at L1 (topology + routing + exposure boundary; real login/data/SSE delivery, TLS, and secrets are deferred). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
+**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` + `docs/runbooks/db-backup-restore.md`.
 
 ---
 
@@ -236,12 +236,12 @@ ADRs are organized by active MECE category under `docs/decisions/{ml,backend,fro
 |-----|----------|----------|
 | Repo topology and dependency ownership | [ADR-001 — Polyglot monorepo / per-ecosystem dependency management](decisions/common/ADR-001-polyglot-monorepo.md) | Node (pnpm workspace) and Python (uv) are managed independently; root `package.json` is orchestration-only. |
 | Backend persistence | [ADR-002 — PostgreSQL everywhere](decisions/backend/ADR-002-postgres-everywhere.md) | Single DB engine (Postgres via Docker) in all envs; avoids Prisma provider-lock and SQLite↔Postgres migration divergence. |
-| ML serving/training lifecycle | [ADR-022 — ML serving and training lifecycle boundary](decisions/ml/ADR-022-ml-serving-training-lifecycle.md) | Active lifecycle authority extracted from retired source ADR-003. |
+| ML API/training lifecycle | [ADR-022 — ML API and training lifecycle boundary](decisions/ml/ADR-022-ml-api-training-lifecycle.md) | Active lifecycle authority extracted from retired source ADR-003. |
 | ML ↔ backend prediction boundary | [ADR-023 — ML prediction boundary and backend product-policy ownership](decisions/common/ADR-023-ml-backend-prediction-boundary.md) | ML returns signals; backend owns alert policy, persistence, deduplication, rate limits, and side effects. |
 | ML demo vs product frontend boundary | [ADR-024 — ML demo surface is not the product frontend](decisions/common/ADR-024-ml-demo-product-surface-boundary.md) | `ml/demo/` is an ML observation harness; `front/` is the product UI. |
 | ML data layout and access | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md), [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) (superseded), and [ADR-045 — Streamlit demo is local-only](decisions/common/ADR-045-streamlit-demo-local-only.md) | ADR-012 owns domain-first ML data layout. ADR-028's deploy-time demo-access boundary is superseded by ADR-045: the demo is local-only, so the `FALL_DEMO_MODE` public/operator branching is removed. Retired source ADR-004 is mapped in the README coverage matrix. |
 | Pose framework | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md) | Active framework authority extracted from retired source ADR-005. |
-| Frame, source, and model contracts | [ADR-056 — ML frame intake and source-package layout](decisions/ml/ADR-056-ml-frame-intake-and-source-package-layout.md) and [ADR-057 — FrameObservation, runner contracts, and edge-runtime architecture](decisions/ml/ADR-057-frame-observation-runner-contracts-and-edge-runtime-architecture.md) (current authorities), superseding [ADR-050](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026](decisions/ml/ADR-026-frame-model-seam-architecture.md), and [ADR-006](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) (historical) | `FrameSource` intake lives under `ml/sources/` (ADR-056); `FrameObservation`, runner contracts, `ModelRegistry`, and the L0→serving dependency ladder are defined by ADR-057. ADR-006/026/050 are retained only as historical references. |
+| Frame, source, and model contracts | [ADR-056 — ML frame intake and source-package layout](decisions/ml/ADR-056-ml-frame-intake-and-source-package-layout.md) and [ADR-057 — FrameObservation, runner contracts, and edge-runtime architecture](decisions/ml/ADR-057-frame-observation-runner-contracts-and-edge-runtime-architecture.md) (current authorities), superseding [ADR-050](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026](decisions/ml/ADR-026-frame-model-seam-architecture.md), and [ADR-006](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) (historical) | `FrameSource` intake lives under `ml/sources/` (ADR-056); `FrameObservation`, runner contracts, `ModelRegistry`, and the L0→api dependency ladder are defined by ADR-057. ADR-006/026/050 are retained only as historical references. |
 | Inference output and baselines | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md) | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from retired source ADR-005. |
 | ML local generated/model paths | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md) | Current model and data roots supersede retired source ADR-007. |
 | Issue/worktree enforcement | [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/common/ADR-008-issue-driven-worktree-enforcement.md) | One issue → one branch/worktree through `git wt`; guard scripts are shared enforcement source. |

@@ -1,20 +1,30 @@
-import { SpaceType } from '@prisma/client';
-export interface CreateSpaceDto {
+export type SpaceTypeValue =
+  | 'ROOM'
+  | 'HALLWAY'
+  | 'PROGRAM_ROOM'
+  | 'REHAB_ROOM'
+  | 'DINING'
+  | 'LOBBY'
+  | 'NURSE_STATION'
+  | 'ENTRANCE'
+  | 'OFFICE'
+  | 'STORAGE'
+  | 'STAFF_LOUNGE'
+  | 'ETC';
+export interface CreateSpaceRequestDto {
   floorId?: string;
   name?: string;
-  type?: SpaceType;
+  type?: SpaceTypeValue;
   capacity?: number;
-  cameraId?: string | null;
   isActive?: boolean;
   assignedStaff?: string | null;
   facilityId?: string;
 }
-export interface UpdateSpaceDto {
+export interface UpdateSpaceRequestDto {
   floorId?: string;
   name?: string;
-  type?: SpaceType;
+  type?: SpaceTypeValue;
   capacity?: number;
-  cameraId?: string | null;
   isActive?: boolean;
   assignedStaff?: string | null;
   facilityId?: string;

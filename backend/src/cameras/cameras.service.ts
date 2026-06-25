@@ -7,16 +7,10 @@ import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-
-export interface CreateCameraDto {
-  label: string;
-  residentId?: string;
-}
-
-export interface UpdateCameraDto {
-  label?: string;
-  residentId?: string | null;
-}
+import type {
+  CreateCameraRequestDto,
+  UpdateCameraRequestDto,
+} from './dto/camera.dto.js';
 
 @Injectable()
 export class CamerasService {
@@ -40,28 +34,33 @@ export class CamerasService {
     return toCameraDto(cam);
   }
 
-  async create(facilityId: string, dto: CreateCameraDto) {
+  async create(facilityId: string, dto: CreateCameraRequestDto) {
     if (!dto.label.trim()) throw new ConflictException('label is required');
+    if (!dto.spaceId.trim()) throw new ConflictException('spaceId is required');
     const ingestKeyId = `cam-${crypto.randomBytes(8).toString('hex')}`;
-    // The HMAC secret is not returned from this service; Camera DTOs expose only the selector key id.
-    const ingestSecretHash = crypto.randomBytes(32).toString('hex');
-    const camera = await this.prisma.withFacilityContext(
-      facilityId,
-      (tx: Prisma.TransactionClient) =>
-        tx.camera.create({
-          data: {
-            facilityId,
-            label: dto.label.trim(),
-            residentId: dto.residentId ?? null,
-            ingestKeyId,
-            ingestSecretHash,
-          },
-        }),
-    );
-    return toCameraDto(camera);
+    const ingestSecret = crypto.randomBytes(24).toString('hex');
+    const ingestSecretHash = sha256(ingestSecret);
+    try {
+      const camera = await this.prisma.withFacilityContext(
+        facilityId,
+        (tx: Prisma.TransactionClient) =>
+          tx.camera.create({
+            data: {
+              facilityId,
+              label: dto.label.trim(),
+              spaceId: dto.spaceId,
+              ingestKeyId,
+              ingestSecretHash,
+            },
+          }),
+      );
+      return { ...toCameraDto(camera), ingestSecret };
+    } catch (err: unknown) {
+      throwCameraWriteConflict(err);
+    }
   }
 
-  async update(facilityId: string, id: string, dto: UpdateCameraDto) {
+  async update(facilityId: string, id: string, dto: UpdateCameraRequestDto) {
     const existing = await this.prisma.withFacilityContext(
       facilityId,
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
@@ -70,19 +69,29 @@ export class CamerasService {
     if (dto.label !== undefined && !dto.label.trim()) {
       throw new ConflictException('label is required');
     }
-    const camera = await this.prisma.withFacilityContext(
-      facilityId,
-      (tx: Prisma.TransactionClient) =>
-        tx.camera.update({
-          where: { id },
-          data: {
-            label: dto.label?.trim(),
-            residentId:
-              dto.residentId === undefined ? undefined : dto.residentId,
-          },
-        }),
-    );
-    return toCameraDto(camera);
+    if (
+      dto.spaceId !== undefined &&
+      (typeof dto.spaceId !== 'string' || !dto.spaceId.trim())
+    ) {
+      throw new ConflictException('spaceId is required');
+    }
+    try {
+      const camera = await this.prisma.withFacilityContext(
+        facilityId,
+        (tx: Prisma.TransactionClient) =>
+          tx.camera.update({
+            where: { id },
+            data: {
+              label: dto.label?.trim(),
+              spaceId:
+                dto.spaceId === undefined ? undefined : dto.spaceId.trim(),
+            },
+          }),
+      );
+      return toCameraDto(camera);
+    } catch (err: unknown) {
+      throwCameraWriteConflict(err);
+    }
   }
 
   async remove(facilityId: string, id: string) {
@@ -124,13 +133,35 @@ function toCameraDto(camera: Camera) {
   return {
     id: camera.id,
     facilityId: camera.facilityId,
-    residentId: camera.residentId,
+    spaceId: camera.spaceId,
     label: camera.label,
     ingestKeyId: camera.ingestKeyId,
     lastSeenAt: camera.lastSeenAt,
     online: camera.online,
     createdAt: camera.createdAt,
   };
+}
+
+function sha256(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function throwCameraWriteConflict(err: unknown): never {
+  if (isUniqueConstraintError(err)) {
+    throw new ConflictException(
+      'Camera label, ingest key, or space already exists',
+    );
+  }
+  if (isReferenceConstraintError(err)) {
+    throw new ConflictException('Camera space must belong to the facility');
+  }
+  throw err;
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
 }
 
 function isReferenceConstraintError(err: unknown): boolean {

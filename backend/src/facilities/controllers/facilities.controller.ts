@@ -13,7 +13,7 @@ import {
 } from '../../auth/session.guard.js';
 import type { RequestWithAuth } from '../../auth/session.guard.js';
 import { FacilitiesService } from '../services/facilities.service.js';
-import type { UpdateFacilityDto } from '../dto/facility.dto.js';
+import type { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 
 @Controller('api/facilities')
 @UseGuards(SessionGuard, RequireFacilityGuard)
@@ -26,7 +26,7 @@ export class FacilitiesController {
   }
 
   @Patch('current')
-  update(@Req() req: RequestWithAuth, @Body() body: UpdateFacilityDto) {
+  update(@Req() req: RequestWithAuth, @Body() body: UpdateFacilityRequestDto) {
     return this.service.update(requireFacilityId(req), body);
   }
 }

@@ -112,12 +112,50 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       ],
     });
 
+    await direct.floor.createMany({
+      data: [
+        {
+          id: 'floor-a',
+          facilityId: 'facility-a',
+          name: 'Floor A',
+          orderIndex: 1,
+        },
+        {
+          id: 'floor-b',
+          facilityId: 'facility-b',
+          name: 'Floor B',
+          orderIndex: 1,
+        },
+      ],
+    });
+
+    await direct.space.createMany({
+      data: [
+        {
+          id: 'space-a',
+          facilityId: 'facility-a',
+          floorId: 'floor-a',
+          name: 'Room A',
+          type: 'ROOM',
+          capacity: 1,
+        },
+        {
+          id: 'space-b',
+          facilityId: 'facility-b',
+          floorId: 'floor-b',
+          name: 'Room B',
+          type: 'ROOM',
+          capacity: 1,
+        },
+      ],
+    });
+
     await direct.camera.createMany({
       data: [
         {
           id: 'cam-a',
           facilityId: 'facility-a',
-          residentId: 'res-a',
+          spaceId: 'space-a',
           label: 'Camera A',
           ingestKeyId: 'key-a',
           ingestSecretHash: 'hash-a',
@@ -125,7 +163,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         {
           id: 'cam-b',
           facilityId: 'facility-b',
-          residentId: 'res-b',
+          spaceId: 'space-b',
           label: 'Camera B',
           ingestKeyId: 'key-b',
           ingestSecretHash: 'hash-b',
@@ -140,6 +178,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           facilityId: 'facility-a',
           residentId: 'res-a',
           cameraId: 'cam-a',
+          spaceId: 'space-a',
           type: 'fall',
           probability: 0.91,
           detectedAt: new Date('2026-06-13T00:00:00.000Z'),
@@ -150,6 +189,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           facilityId: 'facility-b',
           residentId: 'res-b',
           cameraId: 'cam-b',
+          spaceId: 'space-b',
           type: 'fall',
           probability: 0.92,
           detectedAt: new Date('2026-06-13T00:01:00.000Z'),
@@ -177,8 +217,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
   });
 
   afterAll(async () => {
-    await prisma?.onModuleDestroy();
-    await direct?.$disconnect();
+    await prisma.onModuleDestroy();
+    await direct.$disconnect();
   });
 
   it('uses a dedicated runtime role without superuser or BYPASSRLS privileges', async () => {
@@ -273,9 +313,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         SELECT id FROM residents WHERE facility_id = 'facility-b'
       `;
         const rawCrossFacilityUpdate = await tx.$executeRaw`
-        UPDATE residents SET room = 'hacked' WHERE facility_id = 'facility-b'
+        UPDATE residents SET name = name WHERE facility_id = 'facility-b'
       `;
-
         return {
           residentIds: residents.map((resident) => resident.id),
           rawResidentIds: rawResidents.map((resident) => resident.id),
@@ -370,7 +409,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         data: {
           id: 'bad-camera',
           facilityId: 'facility-b',
-          residentId: 'res-a',
+          spaceId: 'space-a',
           label: 'Bad Camera',
           ingestKeyId: 'bad-camera-key',
           ingestSecretHash: 'bad-camera-hash',
@@ -386,6 +425,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           facilityId: 'facility-b',
           residentId: 'res-b',
           cameraId: 'cam-a',
+          spaceId: 'space-b',
           type: 'fall',
           probability: 0.99,
           detectedAt: new Date('2026-06-13T00:02:00.000Z'),

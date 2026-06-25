@@ -1,7 +1,8 @@
+import { BadRequestException, Logger } from '@nestjs/common';
 import { ResidentState } from '@prisma/client';
 import { AlertEventTypes } from './dto/alert-events.dto';
 
-import { PrismaService } from '../prisma/prisma.service';
+import type { PrismaService } from '../prisma/prisma.service';
 import {
   AlertWriterService,
   type AlertEvent,
@@ -17,6 +18,7 @@ function setup() {
           id: 'a1',
           status: 'NEW',
           resident: null,
+          space: { name: 'Room 101' },
           ...data,
         }),
       ),
@@ -36,6 +38,7 @@ function input(probability: number) {
     facilityId: 'facility-1',
     residentId: 'r1',
     cameraId: 'c1',
+    spaceId: 'space-1',
     type: AlertEventTypes.fall,
     probability,
     snapshotKey: null,
@@ -53,8 +56,47 @@ describe('AlertWriterService', () => {
     const event = await service.writeAlert(input(0.9));
     expect(event.id).toBe('a1');
     expect(event.residentId).toBe('r1');
+    expect(event.spaceId).toBe('space-1');
+    expect(event.room).toBe('Room 101');
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
+  });
+  it('persists empty-room alerts without creating ResidentStatus, status events, or PII logs', async () => {
+    const logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    const { service, tx } = setup();
+    const statuses: StatusEvent[] = [];
+    service.subscribeStatus('facility-1', (e) => statuses.push(e));
+
+    const event = await service.writeAlert({ ...input(0.9), residentId: null });
+
+    expect(event.residentId).toBeNull();
+    expect(event.room).toBe('Room 101');
+    expect(tx.residentStatus.upsert).not.toHaveBeenCalled();
+    expect(statuses).toHaveLength(0);
+    expect(logSpy).toHaveBeenCalledWith({
+      event: 'alert.empty_room_written',
+      facilityId: 'facility-1',
+      spaceId: 'space-1',
+      cameraId: 'c1',
+      alertId: 'a1',
+      alertSeq: '1',
+    });
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain('Resident');
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain('Room 101');
+  });
+
+  it('rejects roomless writes before touching the database', async () => {
+    const { service, tx } = setup();
+
+    await expect(
+      service.writeAlert({ ...input(0.9), spaceId: null } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.writeAlert({ ...input(0.9), spaceId: '  ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.alert.create).not.toHaveBeenCalled();
   });
 
   it.each([

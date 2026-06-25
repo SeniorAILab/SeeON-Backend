@@ -1,4 +1,4 @@
-import { SpacesRepository } from '../repositories/spaces.repository';
+import type { SpacesRepository } from '../repositories/spaces.repository';
 import { SpacesService } from './spaces.service';
 
 describe('SpacesService', () => {
@@ -9,7 +9,6 @@ describe('SpacesService', () => {
     name: '201',
     type: 'ROOM',
     capacity: 2,
-    cameraId: null,
     isActive: true,
     assignedStaff: null,
     createdAt: new Date('2026-06-21T00:00:00.000Z'),
@@ -24,7 +23,7 @@ describe('SpacesService', () => {
     };
   }
 
-  it('creates spaces under the session facility and returns nullable cameraId', async () => {
+  it('creates spaces under the session facility without legacy cameraId', async () => {
     const { service, repository } = serviceWith({
       create: jest.fn().mockResolvedValue(space),
     });
@@ -35,10 +34,8 @@ describe('SpacesService', () => {
         name: '201',
         type: 'ROOM',
         capacity: 2,
-        cameraId: '',
       }),
     ).resolves.toMatchObject({
-      cameraId: null,
       facilityId: 'facility-session',
     });
     expect(repository.create).toHaveBeenCalledWith('facility-session', {
@@ -47,7 +44,6 @@ describe('SpacesService', () => {
       name: '201',
       type: 'ROOM',
       capacity: 2,
-      cameraId: null,
       isActive: undefined,
       assignedStaff: undefined,
     });

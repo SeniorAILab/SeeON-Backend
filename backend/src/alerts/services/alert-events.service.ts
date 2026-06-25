@@ -11,7 +11,7 @@ import { decryptToken } from '../../auth/token-crypto.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   AlertEventTypes,
-  type AlertEventIngressDto,
+  type AlertEventRequestDto,
 } from '../dto/alert-events.dto.js';
 import {
   ALERT_CHANNEL_PORT,
@@ -30,7 +30,7 @@ export type EnsureOutboxForIngestInput = {
   readonly facilityId: string;
   readonly sourceId: string;
   readonly externalEventId: string;
-  readonly type: AlertEventIngressDto['type'];
+  readonly type: AlertEventRequestDto['type'];
   readonly detectedAt: Date;
   readonly confidence?: number;
   readonly residentName?: string;
@@ -61,7 +61,7 @@ export class AlertEventsService {
   async ensureOutboxForIngest(
     input: EnsureOutboxForIngestInput,
   ): Promise<void> {
-    const event: AlertEventIngressDto = {
+    const event: AlertEventRequestDto = {
       type: input.type,
       source_id: input.sourceId,
       external_event_id: input.externalEventId,
@@ -110,7 +110,7 @@ export class AlertEventsService {
   }
 
   private async dispatchRecipient(
-    event: AlertEventIngressDto,
+    event: AlertEventRequestDto,
     eventId: string,
     deliveryAttempt: DeliveryAttempt,
     recipient: KakaoRecipient,

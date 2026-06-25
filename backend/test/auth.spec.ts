@@ -1,5 +1,7 @@
-import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
+import { ServiceUnavailableException } from '@nestjs/common';
+import type { TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
@@ -220,7 +222,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const facilityCreateBody =
       facilityCreate.body as unknown as AuthResponseBody;
     expect(facilityCreateBody.user.facilityId).toBeTruthy();
-    expect(facilityCreateBody.user.role).toBe('OWNER');
+    expect(facilityCreateBody.user.role).toBe('ADMIN');
     const kakaoIdentity = await direct.kakaoIdentity.findUniqueOrThrow({
       where: { userId: facilityCreateBody.user.id },
     });
@@ -235,9 +237,16 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBe(facilityCreateBody.user.facilityId);
 
     const activeSession = await direct.serverSession.findFirstOrThrow({
-      where: { userId: facilityCreateBody.user.id, revokedAt: null },
+      where: {
+        userId: facilityCreateBody.user.id,
+        facilityId: facilityCreateBody.user.facilityId,
+        revokedAt: null,
+      },
       orderBy: { createdAt: 'desc' },
     });
+    const sessionSecret = app
+      .get(ConfigService)
+      .getOrThrow<string>('SESSION_JWT_SECRET');
     const nowSeconds = Math.floor(Date.now() / 1000);
     const oldToken = createSignedSessionToken(
       {
@@ -248,7 +257,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds - 700,
         exp: nowSeconds + 1800,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const expiredToken = createSignedSessionToken(
       {
@@ -259,7 +268,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds - 3600,
         exp: nowSeconds - 1,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const staleVersionToken = createSignedSessionToken(
       {
@@ -270,7 +279,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         iat: nowSeconds,
         exp: nowSeconds + 1800,
       },
-      TEST_SECRET,
+      sessionSecret,
     );
     const tamperedToken = `${oldToken.slice(0, -1)}${oldToken.endsWith('a') ? 'b' : 'a'}`;
 

@@ -9,6 +9,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 # One in-flight run per PR; cancel superseded pushes.
 concurrency:
@@ -27,6 +29,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       ml: ${{ steps.filter.outputs.ml }}
+      env_contract: ${{ steps.filter.outputs.env_contract }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -35,6 +38,7 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'scripts/backend-guard/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
@@ -47,6 +51,12 @@ jobs:
               - '.github/workflows/ci.yml'
             ml:
               - 'ml/**'
+              - '.github/workflows/ci.yml'
+            env_contract:
+              - 'compose*.yaml'
+              - '.env*.example'
+              - 'scripts/env/**'
+              - 'package.json'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -102,6 +112,8 @@ jobs:
       - name: Backend lint guard (warn-first; non-blocking — see ADR-064)
         continue-on-error: true
         run: pnpm --filter backend run lint
+      - name: Backend DTO contract guard
+        run: pnpm --filter backend run dto:check
       - name: Typecheck
         run: pnpm --filter backend exec tsc --noEmit
       - name: Build
@@ -144,9 +156,19 @@ jobs:
         run: uvx ruff@0.15.17 check .
         working-directory: ml
 
+  env-contract:
+    name: Env contract
+    needs: changes
+    if: needs.changes.outputs.env_contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify production env contract
+        run: node scripts/env/verify-compose-env-contract.mjs
+
   ci-gate:
     name: CI gate
-    needs: [backend, frontend, ml]
+    needs: [backend, frontend, ml, env-contract]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -155,8 +177,9 @@ jobs:
           be='${{ needs.backend.result }}'
           fe='${{ needs.frontend.result }}'
           ml='${{ needs.ml.result }}'
-          echo "backend=$be frontend=$fe ml=$ml"
-          for r in "$be" "$fe" "$ml"; do
+          env_contract="${{ needs['env-contract'].result }}"
+          echo "backend=$be frontend=$fe ml=$ml env_contract=$env_contract"
+          for r in "$be" "$fe" "$ml" "$env_contract"; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "::error::a required package job did not pass"
               exit 1

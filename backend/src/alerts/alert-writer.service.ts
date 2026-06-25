@@ -12,7 +12,7 @@
  * so SSE streams can deliver `event: status` frames to connected clients
  * (AC5/AC6 live resident status badge).
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -22,14 +22,17 @@ export interface AlertEvent {
   alertSeq: bigint;
   id: string;
   facilityId: string;
-  residentId: string;
+  residentId: string | null;
   cameraId: string | null;
+  spaceId: string | null;
   type: string;
   probability: number;
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
-  resident?: { name: string; room: string | null } | null;
+  resident?: { name: string } | null;
+  space?: { name: string } | null;
+  room: string | null;
 }
 
 /** Emitted after each committed alert; carries the new ResidentStatus state. */
@@ -44,8 +47,9 @@ export interface StatusEvent {
 
 export interface WriteAlertInput {
   facilityId: string;
-  residentId: string;
+  residentId: string | null;
   cameraId: string | null;
+  spaceId: string;
   type: string;
   probability: number;
   snapshotKey: string | null;
@@ -63,6 +67,7 @@ export class AlertWriterService {
   private readonly _listeners = new Map<string, Set<Listener>>();
   private readonly _statusListeners = new Map<string, Set<StatusListener>>();
   private _queue: Promise<unknown> = Promise.resolve();
+  private readonly logger = new Logger(AlertWriterService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -100,6 +105,9 @@ export class AlertWriterService {
    * F3: assign alertSeq + commit + emit happen in causal order.
    */
   writeAlert(input: WriteAlertInput): Promise<AlertEvent> {
+    if (typeof input.spaceId !== 'string' || !input.spaceId.trim()) {
+      return Promise.reject(new BadRequestException('spaceId is required'));
+    }
     const next = this._queue.then(() => this._doWrite(input));
     // Swallow queue errors to prevent one failure from blocking the chain.
     this._queue = next.catch(() => undefined);
@@ -111,6 +119,7 @@ export class AlertWriterService {
       facilityId,
       residentId,
       cameraId,
+      spaceId,
       type,
       probability,
       snapshotKey,
@@ -140,37 +149,52 @@ export class AlertWriterService {
             facilityId,
             residentId,
             cameraId: cameraId ?? undefined,
+            spaceId: spaceId.trim(),
             type,
             probability,
             snapshotKey,
             detectedAt,
             idempotencyKey,
           },
-          include: { resident: { select: { name: true, room: true } } },
+          include: {
+            resident: { select: { name: true } },
+            space: { select: { name: true } },
+          },
         });
 
-        // Upsert ResidentStatus.
-        await tx.residentStatus.upsert({
-          where: { residentId },
-          update: {
-            state: newState,
-            lastSeenAt: detectedAt,
-            cameraOnline,
-            sourceId: cameraId ?? undefined,
-          },
-          create: {
-            residentId,
-            facilityId,
-            state: newState,
-            lastSeenAt: detectedAt,
-            cameraOnline,
-            sourceId: cameraId ?? undefined,
-          },
-        });
+        if (residentId) {
+          await tx.residentStatus.upsert({
+            where: { residentId },
+            update: {
+              state: newState,
+              lastSeenAt: detectedAt,
+              cameraOnline,
+              sourceId: cameraId ?? undefined,
+            },
+            create: {
+              residentId,
+              facilityId,
+              state: newState,
+              lastSeenAt: detectedAt,
+              cameraOnline,
+              sourceId: cameraId ?? undefined,
+            },
+          });
+        }
 
         return created;
       },
     );
+    if (!residentId) {
+      this.logger.log({
+        event: 'alert.empty_room_written',
+        facilityId,
+        spaceId: alert.spaceId,
+        cameraId: alert.cameraId,
+        alertId: alert.id,
+        alertSeq: alert.alertSeq.toString(),
+      });
+    }
 
     const event: AlertEvent = {
       alertSeq: alert.alertSeq,
@@ -178,27 +202,31 @@ export class AlertWriterService {
       facilityId: alert.facilityId,
       residentId: alert.residentId,
       cameraId: alert.cameraId,
+      spaceId: alert.spaceId,
       type: alert.type,
       probability: alert.probability,
       snapshotKey: alert.snapshotKey,
       detectedAt: alert.detectedAt,
       status: alert.status,
       resident: alert.resident,
+      space: alert.space,
+      room: alert.space.name,
     };
 
     // Emit alert AFTER commit (F3).
     this._emit(facilityId, event);
 
-    // Emit status event (AC5/AC6) — same causal order, same alertSeq.
-    const statusEvent: StatusEvent = {
-      alertSeq: alert.alertSeq,
-      facilityId,
-      residentId,
-      state: newState,
-      cameraOnline,
-      lastSeenAt: detectedAt,
-    };
-    this._emitStatus(facilityId, statusEvent);
+    if (residentId) {
+      const statusEvent: StatusEvent = {
+        alertSeq: alert.alertSeq,
+        facilityId,
+        residentId,
+        state: newState,
+        cameraOnline,
+        lastSeenAt: detectedAt,
+      };
+      this._emitStatus(facilityId, statusEvent);
+    }
 
     return event;
   }

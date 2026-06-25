@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
@@ -28,7 +28,7 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await app.close();
   });
 
   it('boots the full provider graph (no dangling / unregistered modules)', () => {
@@ -42,12 +42,18 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
     '/api/guardians',
     '/api/cameras',
   ])('mounts guarded route %s (401, not 404)', async (path) => {
-    const res = await request(app.getHttpServer()).get(path);
+    const server = app.getHttpServer() as unknown as Parameters<
+      typeof request
+    >[0];
+    const res = await request(server).get(path);
     expect(res.status).toBe(401);
   });
 
   it('serializes BigInt (Alert.alertSeq) in JSON instead of throwing', () => {
     expect(() => JSON.stringify({ alertSeq: 1n })).not.toThrow();
-    expect(JSON.parse(JSON.stringify({ alertSeq: 7n })).alertSeq).toBe('7');
+    const parsed = JSON.parse(JSON.stringify({ alertSeq: 7n })) as {
+      alertSeq: string;
+    };
+    expect(parsed.alertSeq).toBe('7');
   });
 });

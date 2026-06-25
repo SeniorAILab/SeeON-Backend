@@ -7,7 +7,7 @@ import {
   DeliveryFailureClass,
 } from '@prisma/client';
 
-import { PrismaService } from '../../prisma/prisma.service.js';
+import type { PrismaService } from '../../prisma/prisma.service.js';
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
 import {
   AlertEventsRepository,

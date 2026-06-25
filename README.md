@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python **FastAPI** serving layer (managed by uv) that classifies video frames and returns fall-probability predictions. Product-level decisions — alert policy, deduplication, and Kakao webhook dispatch — belong exclusively to the backend; the ML layer returns predictions only. The repo is at PoC stage: front and backend are runnable skeletons with realtime transport and full feature implementation deliberately deferred.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> backend /ingest/*`: the worker owns camera capture, model/domain evaluation, heartbeats, and signed ingest facts. `ml-api` is a private/local FastAPI health, status, models, debug, and control surface; live camera ownership, frame relay, and backend ingest side effects stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
 
 ## Prerequisites
 
@@ -22,11 +22,9 @@ pnpm install
 # 2. Install Python dependencies (ml)
 cd ml && uv sync && cd ..
 
-# 3. Copy environment templates
-#    Root .env feeds Docker Compose ${VAR} interpolation; backend/.env.development
-#    is what the native NestJS dev server reads (PORT, DATABASE_URL/DIRECT_URL, auth).
-cp .env.example .env
-cp backend/.env.example backend/.env.development
+# 3. Copy the single local environment file
+#    .env.local feeds native backend, Vite frontend, Prisma, and local Compose.
+cp .env.local.example .env.local
 
 # 4. Start PostgreSQL via Docker
 pnpm db:up
@@ -36,14 +34,17 @@ pnpm prisma:generate
 
 # 6. Start app services in separate terminals
 pnpm dev:backend  # http://localhost:8080
-pnpm dev:ml       # http://localhost:8000
+pnpm dev:ml-api       # ml-api / FastAPI private-local surface on http://localhost:8000
+pnpm dev:ml-worker --config config/ml-worker.local.yaml
 pnpm dev:front    # http://localhost:3000
 
 # 7. Register git hooks + git wt alias (run once per clone)
 bash scripts/git-guard/setup-hooks.sh
 ```
 
-> Real `.env.*` files (`.env`, `.env.development`, `.env.production`) are gitignored. Never commit secrets.
+> Real `.env.local`, `.env.host.prod`, and `.env.edge.prod` files are gitignored.
+> Never commit secrets. Do not create package-local env files under `backend/`,
+> `front/`, or `ml/`.
 
 ## Standard ports
 
@@ -51,20 +52,35 @@ bash scripts/git-guard/setup-hooks.sh
 |---|---|---:|
 | `front` | `http://localhost:3000` | `3000` |
 | `backend` | `http://localhost:8080` | `8080` |
-| `ml-serving` | `http://localhost:8000` | `8000` |
+| `ml-api` | `http://localhost:8000` | `8000` |
 | `db` | `localhost:5432` | `5432` |
 
-Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, backend uses `http://ml-serving:8000` inside Compose, and a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables.
+Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers reach backend production ingest through `/ingest/*`; RTSP/video transport stays inside the worker.
 
 For container parity and production-shaped runs:
 
 ```bash
-pnpm compose:full      # full host stack (db+backend+front[nginx], runner) via --profile full
-pnpm compose:prod:up   # compose.yaml + compose.prod.yaml, runner targets
-pnpm compose:gateway   # prod-shaped overlay: single nginx gateway on :80, backend/db internal
+pnpm compose:local:up  # full local host stack via .env.local + --profile full
+pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
 ```
 
-On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:full`) builds runner images for parity/deploy shaping, not hot-reload dev — there is no `compose.override.yaml` container-dev overlay (ADR-063).
+Edge Compose is separate from the host stack and runs the two ML edge services:
+
+```bash
+EDGE_CAMERA_CONFIG=./ml/config/ml-worker.local.yaml \
+  docker compose -f compose.edge.yaml up -d --build
+```
+
+`EDGE_CAMERA_CONFIG` points to a gitignored per-camera YAML file with RTSP URLs,
+backend `/ingest/*` endpoints, key IDs, signing secrets, and the LSTM fall-model
+artifact contract. For development without a live camera, run
+`pnpm dev:rtsp -- /path/to/video.mp4` to publish that video forever as RTSP at
+`rtsp://127.0.0.1:8554/nursing-home`, then point `ml-worker.local.yaml` at that
+URL. Use `scripts/ml-worker-nursing-home-backend-e2e.sh` for a production-shaped
+RTSP worker run against the real backend ingest implementation; it reuses the
+same video-to-RTSP publisher.
+
+On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
 ## Commands
 
@@ -72,16 +88,18 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 |--------|-------------|
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
-| `pnpm dev:ml` | FastAPI serving on `:8000` via uvicorn (`ml/serving/`) |
+| `pnpm dev:ml-api` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
+| `pnpm dev:ml-worker` | `ml-worker` RTSP worker; pass `--config config/ml-worker.local.yaml` because the script runs inside `ml/` |
+| `pnpm dev:rtsp -- /path/to/video.mp4` | Loop a local video as RTSP for worker development (`rtsp://127.0.0.1:8554/nursing-home`) |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
 | `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
 | `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
 | `pnpm db:down` | `docker compose down` — stop all Compose services |
-| `pnpm compose:full` | Full host stack (db+backend+front[nginx], `--profile full`) |
-| `pnpm compose:prod:up` | Production-shaped Compose stack (`compose.yaml` + `compose.prod.yaml`) |
-| `pnpm compose:gateway` | Prod-shaped gateway overlay: single nginx on `:80`, `backend`/`db` internal (`compose.yaml` + `compose.gateway.yaml`) |
+| `pnpm compose:local:up` | Full local host stack (db+backend+front[nginx], `.env.local`, `--profile full`) |
+| `pnpm compose:prod:up` | Production full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod` image pins) |
+| `pnpm release:prod -- vX.Y.Z` | Create the non-prerelease GitHub Release that triggers production deploy |
 | `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
 | `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 
@@ -91,24 +109,24 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 eldercare-fall-ai/
 ├── front/          # Vite + React + TypeScript (frontend SSOT)
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
-├── ml/             # 9-package layered edge runtime (ADR-056/057); see ml/README.md
+├── ml/             # 9-package layered edge runtime (ADR-056/057/067/068); see ml/README.md
 │   ├── contracts/  # L0 pure contracts (frame/observation/model/artifacts/event)
 │   ├── features/   # L0 pure feature math
-│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp)
+│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp; OpenCV current backend)
 │   ├── runners/    # L1 model runners + ModelRegistry
 │   ├── perception/ # L2 observation assembly
 │   ├── domains/    # L3 domain interpreters (fall, bed_exit)
-│   ├── runtime/    # L3 edge orchestration (camera manager/worker)
-│   ├── events/     # L4 alert signing/outbox/publisher (→ POST /ingest/alerts)
-│   ├── serving/    # FastAPI: /health, /debug/predict/window
-│   ├── demo/       # Streamlit demo UI (fall classification via serving)
+│   ├── runtime/    # L3 edge orchestration for ml-worker
+│   ├── events/     # L4 alert signing/outbox/publisher (-> POST /ingest/alerts)
+│   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
+│   ├── demo/       # Streamlit demo UI (fall classification via api)
 │   ├── training/   # Batch training pipeline
 │   ├── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
 │   └── models/     # Model single root (gitignored; ADR-015)
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
 │   └── decisions/        # Architecture Decision Records (ADRs)
-└── compose*.yaml    # Compose base/dev override/prod overlay
+└── compose*.yaml    # host Compose plus compose.edge.yaml for ML edge services
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for ADRs covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.

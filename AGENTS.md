@@ -7,7 +7,7 @@
 
 ```
 .
-├── docs/
+├── docs/                    # documentation ontology/lifecycle rules → docs/AGENTS.md
 │   ├── research/            # Fact collection — what I found (sources, comparisons), pre-decision
 │   ├── exec-plan/           # All work-scoped plans (active + archive)
 │   │   ├── active/{slug}/   #   spec.md + plan.md while work is in progress
@@ -20,7 +20,7 @@
 │   ├── architecture.md      # System overview
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
-├── scripts/
+├── scripts/                 # repo guard/deploy/release automation → scripts/AGENTS.md
 │   ├── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
 │   └── backend-guard/       # backend layering/DTO enforcement: schema↔migration guard — ADR-064
 ├── ml/                      # Python/uv edge runtime — L0→L4 layers, guards, run → ml/AGENTS.md (ADR-057)
@@ -47,11 +47,11 @@
 | front (Vite + React) | `http://localhost:3000` | `pnpm dev:front` |
 | ml demo (Streamlit) | — | `pnpm dev:demo` |
 
-First-time: `pnpm install` → `cd ml && uv sync` → `cp backend/.env.example backend/.env.development` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
+First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .env.local` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
 
-- **Env 위치**: 네이티브 dev(`pnpm dev:*`)는 `backend/.env.development`를 읽는다. 루트 `.env`는 Docker Compose `${VAR}` 전용. 비밀키 커밋 금지(`.env*` gitignored).
+- **Env 위치**: local/native/Prisma/Compose는 루트 `.env.local`, host prod는 루트 `.env.host.prod`, edge prod는 루트 `.env.edge.prod`를 읽는다. 실제 `.env*`는 gitignored, tracked 계약은 `.env.local.example`/`.env.host.prod.example`/`.env.edge.prod.example`. `backend/.env*`/`front/.env*`/`ml/.env*`는 만들지 않는다.
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
-- **Compose**: db만 `pnpm db:up` / 풀 호스트 스택 `pnpm compose:full` (`--profile full`) / prod `pnpm compose:prod:up`. 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
+- **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod` image pins). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없음(ADR-063).
 - **Demo 런북**: [docs/runbooks/thursday-mvp-demo.md](docs/runbooks/thursday-mvp-demo.md) (라이브 낙상→카카오 fan-out E2E).
 
 ## Development Flow
@@ -181,6 +181,13 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 - 최소 변경: 목표 달성에 필요한 가장 작은 diff만 만든다 — 인접 리팩터·포맷·스코프 확장 금지.
 - 불필요한 주석 금지: 코드로 자명한 것은 주석으로 달지 않고, 스테일·장식 주석은 추가·잔존시키지 않는다.
 
+### E2E verification integrity
+- **E2E는 production code path를 실제로 관통해야 한다.** Backend ingest, ML worker, frontend, 외부 연동 등 사용자가 요구한 표면을 검증할 때 stub/fake/mock 서버·레지스트리·탐지기·DB 대체물을 끼워 넣은 실행은 E2E로 부르지 않는다.
+- Stub/mock harness는 unit, contract, smoke, local fixture 검증으로만 명명한다. 필요하면 별도 보조 증거로 남길 수 있지만, 최종 E2E acceptance evidence를 대체할 수 없다.
+- Production backend ingest를 검증한다고 말하려면 실제 backend process와 실제 persistence side effect를 확인한다. ML RTSP 흐름을 검증한다고 말하려면 worker가 실제 stream consumer 경로와 실제 model/domain pipeline을 지나야 한다.
+- **Mock/stub/fake 스크립트는 E2E/acceptance/test-runner로 만들지 않는다.** Test double은 unit/contract test code 안에서만 기본 허용된다. 개발 편의를 위한 fixture publisher가 필요하면 `mock`, `stub`, `fake`, `e2e` 명칭을 피하고, 실제 production consumer가 읽는 입력을 공급하는 fixture로만 둔다.
+- Nursing-home RTSP 검증은 녹화 영상을 MediaMTX 등 실제 RTSP endpoint로 반복 송출하고 `ml-worker -> backend /ingest/* -> DB side effect`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
+
 ### plan-first mandate
 Every *meaningful* change must have a `docs/exec-plan/active/{slug}/` entry **before** any code is
 modified. Enforcement is convention-level (no hook-based hard gate this cycle).
@@ -257,7 +264,7 @@ Branch protection / required status checks are **unavailable** on this plan (pri
 - **Never merge on a pending/red CI.** Because nothing is required, `gh pr merge --auto` merges the instant a PR is mergeable — even while `ci.yml` (Backend/Frontend/ML) is still running or red. Wait for the `ci-gate` job green (or re-run the equivalent checks locally) before merging. "A check exists" never means "a check gated".
 
 ### Backend architecture lint & guard
-백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064 · ADR-065. 명령: `pnpm --filter backend run lint`.
+백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064 · ADR-070. 명령: `pnpm --filter backend run lint`.
 
 ### ADR lifecycle (cross-reference)
 ADRs follow `PROPOSED -> ACCEPTED -> (SUPERSEDED | PARTIALLY SUPERSEDED | DEPRECATED)`. When a decision changes or an active ADR is non-atomic, write successor ADR(s) that reference and supersede the old one. A fully superseded non-MECE source ADR may be retired from the visible corpus only when `docs/decisions/README.md` maps every clause to active successors and the exact source body remains recoverable from git history.

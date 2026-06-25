@@ -21,7 +21,12 @@ describe('placement RLS tenant isolation', () => {
     await direct.$connect();
     await app.$connect();
 
+    await direct.alert.deleteMany();
+    await direct.residentStatus.deleteMany();
     await direct.residentAssignment.deleteMany();
+    await direct.camera.deleteMany();
+    await direct.guardian.deleteMany();
+    await direct.resident.deleteMany();
     await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
@@ -38,6 +43,12 @@ describe('placement RLS tenant isolation', () => {
       data: [
         { id: 'floor-a', facilityId: 'rls-a', name: 'A Floor', orderIndex: 1 },
         { id: 'floor-b', facilityId: 'rls-b', name: 'B Floor', orderIndex: 1 },
+      ],
+    });
+    await direct.resident.createMany({
+      data: [
+        { id: 'resident-a', facilityId: 'rls-a', name: 'A Resident' },
+        { id: 'resident-b', facilityId: 'rls-b', name: 'B Resident' },
       ],
     });
     await direct.space.createMany({
@@ -57,6 +68,26 @@ describe('placement RLS tenant isolation', () => {
           name: 'B Room',
           type: 'ROOM',
           capacity: 1,
+        },
+      ],
+    });
+    await direct.camera.createMany({
+      data: [
+        {
+          id: 'camera-a',
+          facilityId: 'rls-a',
+          spaceId: 'space-a',
+          label: 'A Camera',
+          ingestKeyId: 'camera-a-key',
+          ingestSecretHash: 'secret',
+        },
+        {
+          id: 'camera-b',
+          facilityId: 'rls-b',
+          spaceId: 'space-b',
+          label: 'B Camera',
+          ingestKeyId: 'camera-b-key',
+          ingestSecretHash: 'secret',
         },
       ],
     });
@@ -83,8 +114,8 @@ describe('placement RLS tenant isolation', () => {
   });
 
   afterAll(async () => {
-    await app?.$disconnect();
-    await direct?.$disconnect();
+    await app.$disconnect();
+    await direct.$disconnect();
   });
 
   it('returns zero rows without app.facility_id', async () => {
@@ -94,10 +125,14 @@ describe('placement RLS tenant isolation', () => {
         SELECT 'floors' AS table_name, COUNT(*) AS count FROM floors
         UNION ALL SELECT 'spaces', COUNT(*) FROM spaces
         UNION ALL SELECT 'zones', COUNT(*) FROM zones
+        UNION ALL SELECT 'cameras', COUNT(*) FROM cameras
+        UNION ALL SELECT 'alerts', COUNT(*) FROM alerts
       ) denied_counts
       ORDER BY table_name
     `;
     expect(rows).toEqual([
+      { table_name: 'alerts', count: 0 },
+      { table_name: 'cameras', count: 0 },
       { table_name: 'floors', count: 0 },
       { table_name: 'spaces', count: 0 },
       { table_name: 'zones', count: 0 },
@@ -111,6 +146,8 @@ describe('placement RLS tenant isolation', () => {
         SELECT id FROM floors WHERE facility_id = 'rls-b'
         UNION ALL SELECT id FROM spaces WHERE facility_id = 'rls-b'
         UNION ALL SELECT id FROM zones WHERE facility_id = 'rls-b'
+        UNION ALL SELECT id FROM cameras WHERE facility_id = 'rls-b'
+        UNION ALL SELECT id FROM alerts WHERE facility_id = 'rls-b'
       `;
     });
     expect(rows).toEqual([]);
@@ -133,6 +170,52 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`
           INSERT INTO zones (id, facility_id, space_id, name, type, order_index)
           VALUES ('zone-cross', 'rls-a', 'space-b', 'Cross Bed', 'BED', 1)
+        `;
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      app.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
+        await tx.$executeRaw`
+          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
+          VALUES ('camera-cross', 'rls-a', 'space-b', 'Cross Camera', 'camera-cross-key', 'secret')
+        `;
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      app.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
+        await tx.$executeRaw`
+          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('alert-cross-space', 'rls-a', 'resident-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key')
+        `;
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      app.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
+        await tx.$executeRaw`
+          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('alert-cross-camera', 'rls-a', 'resident-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key')
+        `;
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a second camera for the same facility space', async () => {
+    await expect(
+      app.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
+        await tx.$executeRaw`
+          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
+          VALUES ('camera-a1', 'rls-a', 'space-a', 'A Camera 1', 'camera-a1-key', 'secret')
+        `;
+        await tx.$executeRaw`
+          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
+          VALUES ('camera-a2', 'rls-a', 'space-a', 'A Camera 2', 'camera-a2-key', 'secret')
         `;
       }),
     ).rejects.toThrow();
