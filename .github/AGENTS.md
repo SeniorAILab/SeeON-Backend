@@ -14,15 +14,17 @@ Naver Cloud deploy trigger.
 ## Conventions
 - Keep workflow permissions minimal per job. Raise scopes only for the job that
   needs them.
-- Production deploy runs only when a non-prerelease GitHub Release is published,
-  or through explicit `workflow_dispatch` with a concrete ref.
+- Production deploy currently runs through the local manual path
+  (`pnpm deploy:prod:manual -- <release-or-sha>`), which builds and pushes
+  SHA-tagged images from the operator machine and then invokes the VM pull-only
+  deploy script.
+- The Deploy Naver Cloud workflow keeps `workflow_dispatch` for explicit
+  operator use, and its release trigger is preserved as commented YAML for
+  future Actions-backed CD re-enable.
 - Prefer `pnpm release:prod -- vX.Y.Z` for production release creation so the
   release target and tag format stay consistent.
-- Normal production deploy images are built in GitHub Actions and pushed to GHCR
-  with the exact commit SHA tag.
-- If Actions quota prevents image builds, use the documented local manual path
-  (`pnpm deploy:prod:manual -- <release-or-sha>`) instead of adding workflow
-  fallback logic.
+- Do not add workflow fallback logic. The current cost-control path is the
+  documented local manual deploy command.
 - Workflow inputs and secrets must fail validation before SSH starts. Do not
   echo private keys, tokens, `.env` content, or passwords.
 - Advisory checks still matter: never treat a pending or red `ci-gate` as safe
