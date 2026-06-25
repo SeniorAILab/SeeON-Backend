@@ -6,13 +6,13 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
-import { KakaoClient } from '../src/auth/kakao.client';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
+const SKELETON_ADMIN_EMAIL = 'ml-skeleton-owner@example.test';
+const SKELETON_ADMIN_PASSWORD = 'care2026';
 
 const SKELETON_FACILITY = {
   name: 'ML Skeleton E2E Facility',
-  businessRegistrationNumber: '990-00-00001',
 };
 
 describe('ML skeleton controllers (e2e)', () => {
@@ -39,7 +39,7 @@ describe('ML skeleton controllers (e2e)', () => {
     await direct.kakaoIdentity.deleteMany();
     await direct.serverSession.deleteMany();
     await direct.user.deleteMany({
-      where: { kakaoId: 'kakao-ml-skeleton-user' },
+      where: { email: SKELETON_ADMIN_EMAIL },
     });
     await direct.facility.deleteMany({
       where: { name: SKELETON_FACILITY.name },
@@ -47,23 +47,7 @@ describe('ML skeleton controllers (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    })
-      .overrideProvider(KakaoClient)
-      .useValue({
-        buildAuthorizeUrl: (state: string) =>
-          `https://kauth.kakao.test/oauth?state=${state}`,
-        exchangeCode: jest.fn().mockResolvedValue({
-          access_token: 'test-access-token',
-          expires_in: 3600,
-        }),
-        getProfile: jest.fn().mockResolvedValue({
-          kakaoId: 'kakao-ml-skeleton-user',
-          email: 'ml-skeleton@example.test',
-          nickname: 'ML Skeleton Owner',
-        }),
-        resolveScopes: () => 'talk_message',
-      })
-      .compile();
+    }).compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
@@ -150,31 +134,18 @@ function performRequest(
 async function createFacilitySessionCookie(
   app: INestApplication<App>,
 ): Promise<string> {
-  const login = await request(app.getHttpServer())
-    .get('/auth/kakao/login')
-    .expect(302);
-  const stateCookie = login.headers['set-cookie'][0];
-  const state = /kakao_oauth_state=([^;]+)/.exec(stateCookie)?.[1];
-  expect(state).toBeTruthy();
-
-  const callback = await request(app.getHttpServer())
-    .get(`/auth/kakao/callback?code=test-code&state=${state}`)
-    .set('cookie', stateCookie)
-    .expect(302);
-  const onboardingSessionCookie = extractSessionCookie(
-    callback.headers['set-cookie'],
-  );
-
-  const facilityCreate = await request(app.getHttpServer())
-    .post('/api/facilities')
-    .set('cookie', onboardingSessionCookie)
+  const registered = await request(app.getHttpServer())
+    .post('/auth/register')
     .send({
+      name: 'ML Skeleton Owner',
+      email: SKELETON_ADMIN_EMAIL,
+      phone: '010-5555-0101',
       facilityName: SKELETON_FACILITY.name,
-      businessRegistrationNumber: SKELETON_FACILITY.businessRegistrationNumber,
+      password: SKELETON_ADMIN_PASSWORD,
     })
     .expect(201);
 
-  return extractSessionCookie(facilityCreate.headers['set-cookie']);
+  return extractSessionCookie(registered.headers['set-cookie']);
 }
 
 function extractSessionCookie(cookies: string | string[] | undefined): string {
