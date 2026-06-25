@@ -68,7 +68,7 @@ plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가�
 4. **PR** — 하나의 리뷰 가능한 변경; 큰 작업은 한 이슈 → fan-out PR로 분해. → [`docs/rules/pr-decomposition-and-review.md`](docs/rules/pr-decomposition-and-review.md)
 5. **Review + CI** — 모든 PR은 리뷰를 거치고, size/base/draft 게이트가 CI에서 돈다. → [`.github/workflows/pr-check.yml`](.github/workflows/pr-check.yml)
 6. **Merge → archive → ADR** — merge 후 plan archive, expensive-to-reverse 결정은 ADR로 distill. → [`docs/decisions/README.md`](docs/decisions/README.md)
-7. **Document** — 마지막 단계로 `/skill:documentation-and-adrs`를 돌려 변경이 `docs/rules/` 컨벤션과 `docs/decisions/` ADR를 준수했는지(위반 없음) 검증하고, spec/plan이 `docs/exec-plan/`에 누적·아카이브됐는지 확인한다(ADR distill 자체는 6단계 소관). → [`docs/rules/README.md`](docs/rules/README.md) · [`docs/decisions/README.md`](docs/decisions/README.md)
+7. **Document** — 마지막 단계로 craft-skills의 `/skill:documents`를 돌려 변경이 `docs/rules/` 컨벤션과 `docs/decisions/` ADR를 준수했는지(위반 없음) 검증하고, spec/plan이 `docs/exec-plan/`에 누적·아카이브됐는지 확인한다(ADR distill 자체는 6단계 소관). → [`docs/rules/README.md`](docs/rules/README.md) · [`docs/decisions/README.md`](docs/decisions/README.md)
 
 ## Artifact Ontology
 
@@ -79,7 +79,7 @@ Four artifact types with non-overlapping responsibilities:
 | **research** | *What did I find* — facts, sources, comparisons (pre-decision) | Topic-scoped; superseded as evidence evolves | deep-research / research passes | `docs/research/{slug}.md` |
 | **spec** | *What* is this work / are requirements clear? | Work-scoped, one-shot | deep-interview skill | `docs/exec-plan/active/{slug}/spec.md` |
 | **plan** | *How* to implement (steps, files, order) | Work-scoped, body immutable; lifecycle = folder position | omc-plan / omo / omx | `docs/exec-plan/active/{slug}/plan.md` |
-| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; current ADRs persist, while fully superseded non-MECE source bundles may be retired from the visible corpus with coverage-matrix proof and git-history recovery | documentation-and-adrs | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
+| **ADR** | One expensive-to-reverse decision: ecosystem-local (`ml`, `backend`, `frontend`) or strict `common` after split | Work-independent; current ADRs persist, while fully superseded non-MECE source bundles may be retired from the visible corpus with coverage-matrix proof and git-history recovery | craft-skills documents skill | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 **The decision pipeline:** `research` (facts I found) → `ADR` (decision I made) → `plan` (implementation I built).
 Research collects evidence; it does **not** decide. A decision distilled from research is an **ADR**; how to
@@ -100,7 +100,7 @@ Plans and ADRs answer different questions with different lifespans. Never confla
 | Scope | One feature / task (work-scoped) | Ecosystem-local (`ml`, `backend`, `frontend`) or strict common if it still constrains multiple domains after attempted split |
 | Lifespan | Archivable when work ends | Permanent as current authority; fully superseded non-MECE source files may be retired only after successor coverage is proven |
 | Body | Immutable after finalize; scope change → new slug | Superseded by successor ADR(s); retired source bodies must remain recoverable from git history and mapped in the coverage matrix |
-| Author | omc-plan / omo / omx agents | documentation-and-adrs skill |
+| Author | omc-plan / omo / omx agents | craft-skills documents skill |
 | Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/{ml,backend,frontend,common}/ADR-NNN-*.md` |
 
 #### Distill rule
@@ -240,12 +240,13 @@ symlink in both `.claude/skills/` and `.codex/skills/`. Never create a real skil
 under `.claude/skills/` or `.codex/skills/` — that reintroduces the duplicate-copy drift this
 layout exists to prevent.
 
-**Enabling GJC skill discovery (per checkout).** Discovery is off by default. To call
-repo skills (e.g. `/skill:documentation-and-adrs`) from a GJC session, enable it locally
+**Enabling GJC repo skill discovery (per checkout).** Discovery is off by default. To call
+repo-local skills (e.g. `/skill:technical-report`) from a GJC session, enable it locally
 in `.gjc/settings.json` (gitignored — per checkout, not committed):
 `{"skills":{"enabled":true,"enableClaudeProject":true}}`. `.claude/skills` symlinks resolve
-to `.agents/skills`, so the single source is exposed without duplication. Invoke skills
-manually on-demand (e.g. distill ADRs with `/skill:documentation-and-adrs` when work lands);
+to `.agents/skills`, so the single source is exposed without duplication. The documentation
+workflow uses the external craft-skills `/skill:documents`, not a repo-local copy. Invoke
+skills manually on-demand (e.g. distill ADRs with `/skill:documents` when work lands);
 no automatic hooks or cron.
 
 ### Worktree workflow
