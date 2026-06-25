@@ -185,8 +185,8 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 - **E2E는 production code path를 실제로 관통해야 한다.** Backend ingest, ML worker, frontend, 외부 연동 등 사용자가 요구한 표면을 검증할 때 stub/fake/mock 서버·레지스트리·탐지기·DB 대체물을 끼워 넣은 실행은 E2E로 부르지 않는다.
 - Stub/mock harness는 unit, contract, smoke, local fixture 검증으로만 명명한다. 필요하면 별도 보조 증거로 남길 수 있지만, 최종 E2E acceptance evidence를 대체할 수 없다.
 - Production backend ingest를 검증한다고 말하려면 실제 backend process와 실제 persistence side effect를 확인한다. ML RTSP 흐름을 검증한다고 말하려면 worker가 실제 stream consumer 경로와 실제 model/domain pipeline을 지나야 한다.
-- **Mock/stub/fake 스크립트는 E2E/acceptance/test-runner로 만들지 않는다.** Test double은 unit/contract test code 안에서만 기본 허용된다. 개발 편의를 위한 fixture publisher가 필요하면 `mock`, `stub`, `fake`, `e2e` 명칭을 피하고, 실제 production consumer가 읽는 입력을 공급하는 fixture로만 둔다.
-- Nursing-home RTSP 검증은 녹화 영상을 MediaMTX 등 실제 RTSP endpoint로 반복 송출하고 `ml-worker -> ml-api -> backend /ingest/* -> DB side effect (ADR-067/029)`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
+- **Mock/stub/fake 스크립트는 E2E/acceptance/test-runner로 만들지 않는다.** Test double은 unit/contract test code 안에서만 기본 허용된다. 개발 편의를 위한 synthetic RTSP 입력은 이 repo 안에 MediaMTX/FFmpeg/video-to-RTSP publisher를 만들지 말고, 실제 카메라나 external `SeniorAILab/rtsp-generator`가 노출한 worker-reachable RTSP URL로 공급한다.
+- Nursing-home RTSP 검증은 녹화 영상을 external `SeniorAILab/rtsp-generator` 또는 실제 카메라 endpoint로 반복 송출하고 `ml-worker -> ml-api -> backend /ingest/* -> DB side effect (ADR-067/029)`를 확인한다. canned detector, fake backend, in-memory DB, stub ingest는 낙상 탐지 E2E 증거가 아니다.
 
 ### plan-first mandate
 Every *meaningful* change must have a `docs/exec-plan/active/{slug}/` entry **before** any code is
