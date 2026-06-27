@@ -125,6 +125,7 @@ export class AuthController {
 
   @Version(VERSION_NEUTRAL)
   @Post('/auth/login')
+  @HttpCode(200)
   async login(
     @Body() body: LoginRequestDto,
     @Res({ passthrough: true }) response: Response,

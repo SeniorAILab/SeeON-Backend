@@ -232,6 +232,32 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(409);
   });
 
+  it('logs in an existing password user and returns 200 (not 201)', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        name: '로그인 원장',
+        email: 'login-200@example.test',
+        password: 'care2026',
+        phone: '010-5555-6666',
+        facilityName: '로그인 요양원',
+      })
+      .expect(201);
+
+    const loggedIn = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'login-200@example.test', password: 'care2026' })
+      .expect(200);
+    expect(extractSessionCookie(loggedIn.headers['set-cookie'])).toContain(
+      'HttpOnly',
+    );
+    expect((loggedIn.body as unknown as AuthResponseBody).user).toMatchObject({
+      email: 'login-200@example.test',
+      role: 'ADMIN',
+    });
+    expect(JSON.stringify(loggedIn.body)).not.toContain('passwordHash');
+  });
+
   it('rejects signup when required fields are missing', async () => {
     await request(app.getHttpServer())
       .post('/auth/register')
