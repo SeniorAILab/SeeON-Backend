@@ -1,5 +1,4 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import * as crypto from 'crypto';
 import {
   NOKYANG_ADMIN_EMAIL,
   NOKYANG_FACILITY_ID,
@@ -24,23 +23,6 @@ if (!directUrl) {
 const prisma = new PrismaClient({
   datasources: { db: { url: directUrl } },
 });
-
-type CameraSecret = {
-  readonly hash: string;
-  readonly keyId: string;
-  readonly secret: string;
-};
-
-function sha256(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
-function makeCameraSecret(label: string, fixed?: string): CameraSecret {
-  const keyId = `demo-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}-keyid`;
-  const secret =
-    fixed && fixed.length > 0 ? fixed : crypto.randomBytes(24).toString('hex');
-  return { hash: sha256(secret), keyId, secret };
-}
 
 async function upsertFacility(tx: Prisma.TransactionClient): Promise<void> {
   await tx.facility.upsert({
@@ -178,16 +160,8 @@ async function upsertResidents(tx: Prisma.TransactionClient): Promise<void> {
   }
 }
 
-async function upsertCameras(
-  tx: Prisma.TransactionClient,
-): Promise<readonly CameraSecret[]> {
-  const secrets: CameraSecret[] = [];
+async function upsertCameras(tx: Prisma.TransactionClient): Promise<void> {
   for (const camera of nokyangCameras) {
-    const cameraSecret = makeCameraSecret(
-      camera.label,
-      process.env.DEMO_INGEST_SECRET,
-    );
-    secrets.push(cameraSecret);
     await tx.camera.upsert({
       where: {
         facilityId_id: {
@@ -196,21 +170,16 @@ async function upsertCameras(
         },
       },
       update: {
-        ingestKeyId: cameraSecret.keyId,
-        ingestSecretHash: cameraSecret.hash,
         label: camera.label,
         online: true,
         spaceId: camera.spaceId,
       },
       create: {
         ...camera,
-        ingestKeyId: cameraSecret.keyId,
-        ingestSecretHash: cameraSecret.hash,
         online: true,
       },
     });
   }
-  return secrets;
 }
 
 async function upsertStatuses(tx: Prisma.TransactionClient): Promise<void> {
@@ -228,35 +197,24 @@ async function upsertStatuses(tx: Prisma.TransactionClient): Promise<void> {
   }
 }
 
-async function seedNokyangDemo(): Promise<readonly CameraSecret[]> {
+async function seedNokyangDemo(): Promise<void> {
   verifyNokyangFixture();
   return prisma.$transaction(async (tx) => {
     await upsertFacility(tx);
     await upsertAdmin(tx);
     await upsertFacilityGraph(tx);
     await upsertResidents(tx);
-    const secrets = await upsertCameras(tx);
+    await upsertCameras(tx);
     await upsertStatuses(tx);
-    return secrets;
   });
 }
 
 async function main(): Promise<void> {
   console.log('Seeding 녹양역점 demo data...');
-  const cameraSecrets = await seedNokyangDemo();
+  await seedNokyangDemo();
   console.log(
     `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} role=ADMIN Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Zones=${nokyangZones.length} Residents=${nokyangResidents.length} Cameras=${nokyangCameras.length}`,
   );
-  console.log('Camera secrets (save these; only hashes are stored):');
-  for (const [index, camera] of nokyangCameras.entries()) {
-    const secret = cameraSecrets[index];
-    if (!secret) {
-      continue;
-    }
-    console.log(
-      `  ${camera.label}: secret=${secret.secret} keyId=${secret.keyId}`,
-    );
-  }
   console.log('Seed complete.');
 }
 

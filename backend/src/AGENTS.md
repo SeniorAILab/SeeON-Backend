@@ -9,7 +9,7 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | Task | Location | Notes |
 | --- | --- | --- |
 | Bootstrap composition | `app.module.ts`, `main.ts` | Process wiring and global Nest setup. |
-| Alert ingestion | `ingest/` | HMAC-guarded ML alert intake. |
+| Event ingestion | `events/` | Versioned Event API intake. |
 | Alert policy | `alerts/` | Policy, repositories, ports, Kakao fan-out. |
 | Auth/session | `auth/`, `guardians/` | Email/password, Kakao, guardian domain. |
 | Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs. |
@@ -32,7 +32,7 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 
 ## Anti-patterns
 
-- No bypass of `ingest/hmac.guard.ts` for `POST /ingest/alerts`.
+- Do not reintroduce legacy machine-ingest routes; ML ingress is the no-HMAC Event API: `POST /api/v1/events` and `POST /api/v1/events/heartbeat`.
 - No inline DTO interfaces/types in controllers or services.
 - No controller-to-repository or controller-to-Prisma shortcuts.
 - No repository imports from HTTP/Nest controller concerns.

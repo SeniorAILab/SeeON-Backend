@@ -28,7 +28,7 @@ with a single source module.
 
 ## Anti-patterns
 
-- No weakening guards, auth, HMAC, or RLS assumptions to make e2e setup easier.
+- No weakening guards, auth, Event API, or RLS assumptions to make e2e setup easier; the ML Event API itself is no-HMAC by design.
 - No hidden dependency on production `.env*` files.
 - No broad sleeps for async behavior; wait on observable state or explicit
   promises.

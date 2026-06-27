@@ -14,6 +14,7 @@ import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
 import type { RequestWithAuth } from '../auth/session.guard.js';
+import { AlertEventTypes } from '../alerts/dto/alert-events.dto.js';
 import type {
   EventResponseDto,
   RecordEventRequestDto,
@@ -24,6 +25,9 @@ import type {
 import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
 import { EventRecorderService } from './event-recorder.service.js';
+
+const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
+const ALLOWED_EVENT_TYPE_SET = new Set(ALLOWED_EVENT_TYPES.map((type) => type.toLowerCase()));
 
 @Controller({ path: 'events', version: '1' })
 export class EventsController {
@@ -63,7 +67,10 @@ export class EventsController {
 
 function parseRecordEventRequest(body: RecordEventRequestDto) {
   const cameraId = requireString(body?.camera_id, 'camera_id');
-  const type = requireString(body?.type, 'type');
+  const type = requireString(body?.type, 'type').trim();
+  if (!ALLOWED_EVENT_TYPE_SET.has(type.toLowerCase())) {
+    throw new BadRequestException(`type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`);
+  }
   const detectedAtRaw = requireString(body?.detected_at, 'detected_at');
   const detectedAt = new Date(detectedAtRaw);
   if (Number.isNaN(detectedAt.getTime())) {
