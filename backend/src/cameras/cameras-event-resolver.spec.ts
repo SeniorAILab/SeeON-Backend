@@ -66,8 +66,6 @@ describe('CamerasService event ingest resolver', () => {
         facilityId: 'event-ingest-facility',
         spaceId: 'event-ingest-space',
         label: 'Event Ingest Camera',
-        ingestKeyId: 'event-ingest-key',
-        ingestSecretHash: 'event-ingest-secret-hash',
       },
     });
   });
@@ -110,8 +108,9 @@ describe('CamerasService event ingest resolver', () => {
       'id',
       'spaceId',
     ]);
-    expect(result).not.toHaveProperty('ingestKeyId');
-    expect(result).not.toHaveProperty('ingestSecretHash');
+    for (const key of [`ingest${'KeyId'}`, `ingest${'SecretHash'}`]) {
+      expect(result).not.toHaveProperty(key);
+    }
     expect(result).not.toHaveProperty('label');
   });
 

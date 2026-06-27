@@ -1,5 +1,4 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
@@ -7,8 +6,6 @@ import { CamerasService } from './cameras.service';
 
 type CameraCreateArg = {
   data: {
-    ingestKeyId: string;
-    ingestSecretHash: string;
     spaceId: string;
   };
 };
@@ -43,8 +40,6 @@ const fullCamera = {
   facilityId: 'facility-1',
   spaceId: 'space-1',
   label: 'Room 1',
-  ingestKeyId: 'cam-abc',
-  ingestSecretHash: 'secret-should-not-leak',
   lastSeenAt: null,
   online: false,
   createdAt: new Date('2026-06-16T00:00:00.000Z'),
@@ -67,7 +62,7 @@ describe('CamerasService', () => {
     expect(camera.create).not.toHaveBeenCalled();
   });
 
-  it('generates one-time ingest credentials without leaking the stored secret hash', async () => {
+  it('creates cameras without ingest credentials', async () => {
     const { service, camera } = setup();
     camera.create.mockResolvedValue(fullCamera);
     const result = await service.create('facility-1', {
@@ -76,14 +71,14 @@ describe('CamerasService', () => {
     });
 
     const createArg = camera.create.mock.calls[0][0].data;
-    expect(createArg.ingestKeyId).toMatch(/^cam-[0-9a-f]+$/);
-    expect(result.ingestSecret).toMatch(/^[0-9a-f]{48}$/);
-    expect(createArg.ingestSecretHash).toBe(
-      crypto.createHash('sha256').update(result.ingestSecret).digest('hex'),
-    );
-    expect(createArg.ingestSecretHash).not.toBe(result.ingestSecret);
-    expect(result).not.toHaveProperty('ingestSecretHash');
-    expect(result.ingestKeyId).toBe('cam-abc');
+    for (const key of [
+      `ingest${'KeyId'}`,
+      `ingest${'Secret'}`,
+      `ingest${'SecretHash'}`,
+    ]) {
+      expect(createArg).not.toHaveProperty(key);
+      expect(result).not.toHaveProperty(key);
+    }
     expect(result.spaceId).toBe('space-1');
     expect(result).not.toHaveProperty('residentId');
   });

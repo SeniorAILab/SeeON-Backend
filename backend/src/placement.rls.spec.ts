@@ -78,16 +78,12 @@ describe('placement RLS tenant isolation', () => {
           facilityId: 'rls-a',
           spaceId: 'space-a',
           label: 'A Camera',
-          ingestKeyId: 'camera-a-key',
-          ingestSecretHash: 'secret',
         },
         {
           id: 'camera-b',
           facilityId: 'rls-b',
           spaceId: 'space-b',
           label: 'B Camera',
-          ingestKeyId: 'camera-b-key',
-          ingestSecretHash: 'secret',
         },
       ],
     });
@@ -178,8 +174,8 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
-          VALUES ('camera-cross', 'rls-a', 'space-b', 'Cross Camera', 'camera-cross-key', 'secret')
+          INSERT INTO cameras (id, facility_id, space_id, label)
+          VALUES ('camera-cross', 'rls-a', 'space-b', 'Cross Camera')
         `;
       }),
     ).rejects.toThrow();
@@ -210,12 +206,12 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
-          VALUES ('camera-a1', 'rls-a', 'space-a', 'A Camera 1', 'camera-a1-key', 'secret')
+          INSERT INTO cameras (id, facility_id, space_id, label)
+          VALUES ('camera-a1', 'rls-a', 'space-a', 'A Camera 1')
         `;
         await tx.$executeRaw`
-          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
-          VALUES ('camera-a2', 'rls-a', 'space-a', 'A Camera 2', 'camera-a2-key', 'secret')
+          INSERT INTO cameras (id, facility_id, space_id, label)
+          VALUES ('camera-a2', 'rls-a', 'space-a', 'A Camera 2')
         `;
       }),
     ).rejects.toThrow();

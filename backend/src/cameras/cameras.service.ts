@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -51,9 +50,6 @@ export class CamerasService {
   async create(facilityId: string, dto: CreateCameraRequestDto) {
     if (!dto.label.trim()) throw new ConflictException('label is required');
     if (!dto.spaceId.trim()) throw new ConflictException('spaceId is required');
-    const ingestKeyId = `cam-${crypto.randomBytes(8).toString('hex')}`;
-    const ingestSecret = crypto.randomBytes(24).toString('hex');
-    const ingestSecretHash = sha256(ingestSecret);
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
@@ -63,12 +59,10 @@ export class CamerasService {
               facilityId,
               label: dto.label.trim(),
               spaceId: dto.spaceId,
-              ingestKeyId,
-              ingestSecretHash,
             },
           }),
       );
-      return { ...toCameraDto(camera), ingestSecret };
+      return toCameraDto(camera);
     } catch (err: unknown) {
       throwCameraWriteConflict(err);
     }
@@ -149,22 +143,15 @@ function toCameraDto(camera: Camera) {
     facilityId: camera.facilityId,
     spaceId: camera.spaceId,
     label: camera.label,
-    ingestKeyId: camera.ingestKeyId,
     lastSeenAt: camera.lastSeenAt,
     online: camera.online,
     createdAt: camera.createdAt,
   };
 }
 
-function sha256(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
 function throwCameraWriteConflict(err: unknown): never {
   if (isUniqueConstraintError(err)) {
-    throw new ConflictException(
-      'Camera label, ingest key, or space already exists',
-    );
+    throw new ConflictException('Camera label or space already exists');
   }
   if (isReferenceConstraintError(err)) {
     throw new ConflictException('Camera space must belong to the facility');

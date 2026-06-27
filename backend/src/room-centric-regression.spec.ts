@@ -90,16 +90,12 @@ describe('room-centric cross-slice regression invariants', () => {
           facilityId: 'regression-a',
           spaceId: 'regression-space-a',
           label: 'A Camera',
-          ingestKeyId: 'regression-camera-a-key',
-          ingestSecretHash: 'secret',
         },
         {
           id: 'regression-camera-b',
           facilityId: 'regression-b',
           spaceId: 'regression-space-b',
           label: 'B Camera',
-          ingestKeyId: 'regression-camera-b-key',
-          ingestSecretHash: 'secret',
         },
       ],
     });
@@ -153,8 +149,8 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO cameras (id, facility_id, space_id, label, ingest_key_id, ingest_secret_hash)
-          VALUES ('regression-camera-cross', 'regression-a', 'regression-space-b', 'Cross Camera', 'regression-camera-cross-key', 'secret')
+          INSERT INTO cameras (id, facility_id, space_id, label)
+          VALUES ('regression-camera-cross', 'regression-a', 'regression-space-b', 'Cross Camera')
         `;
       }),
     ).rejects.toThrow();

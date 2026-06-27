@@ -34,10 +34,6 @@ enum ResidentState {
   FALL
 }
 
-enum CameraIngestMode {
-  LEGACY_ALERTS
-  EVENT_API
-}
 
 enum SpaceType {
   ROOM
@@ -215,20 +211,15 @@ model Guardian {
   @@map("guardians")
 }
 
-/// Ingest-capable camera. Composite unique (facilityId, id) to support composite FK
-/// references from Alert. ingestKeyId is a selector (no auth value alone).
+/// Camera. Composite unique (facilityId, id) supports composite FK
+/// references from Alert and Event rows.
 model Camera {
   id               String    @id @default(cuid())
   facilityId       String    @map("facility_id")
   spaceId          String    @map("space_id")
   label            String
-  /// Selector-only key identifier sent in X-Ingest-KeyId header.
-  ingestKeyId      String    @map("ingest_key_id")
-  /// SHA-256 hash of the HMAC secret (never store plaintext).
-  ingestSecretHash String    @map("ingest_secret_hash")
   lastSeenAt       DateTime?        @map("last_seen_at")
   online           Boolean          @default(false)
-  ingestMode       CameraIngestMode @default(LEGACY_ALERTS) @map("ingest_mode")
   createdAt        DateTime         @default(now()) @map("created_at")
 
   facility         Facility         @relation(fields: [facilityId], references: [id])
@@ -239,7 +230,6 @@ model Camera {
 
   @@unique([facilityId, id])
   @@unique([facilityId, label])
-  @@unique([facilityId, ingestKeyId])
   @@unique([facilityId, spaceId])
   @@map("cameras")
 }

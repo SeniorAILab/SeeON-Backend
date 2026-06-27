@@ -189,7 +189,7 @@ describe('Events API (e2e)', () => {
     ).resolves.toBe(1);
   });
   it('dispatches concurrent EVENT_API duplicate first-writes to one Alert and one SSE notification', async () => {
-    const seeded = await seedFacilityGraph('dispatch', 'EVENT_API');
+    const seeded = await seedFacilityGraph('dispatch');
     const received: unknown[] = [];
     app.get(AlertWriterService).subscribe(seeded.facilityId, (event) => received.push(event));
     const body = {
@@ -218,8 +218,8 @@ describe('Events API (e2e)', () => {
   });
 
   it('emits an Alert for every valid Event (no per-camera ingest-mode suppression)', async () => {
-    const first = await seedFacilityGraph('single-path-1', 'EVENT_API');
-    const second = await seedFacilityGraph('single-path-2', 'EVENT_API');
+    const first = await seedFacilityGraph('single-path-1');
+    const second = await seedFacilityGraph('single-path-2');
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
@@ -236,7 +236,7 @@ describe('Events API (e2e)', () => {
   });
 
   it('collapses repeated EVENT_API submissions through shared idempotency', async () => {
-    const seeded = await seedFacilityGraph('event-idempotency', 'EVENT_API');
+    const seeded = await seedFacilityGraph('event-idempotency');
     const received: unknown[] = [];
     app.get(AlertWriterService).subscribe(seeded.facilityId, (event) => received.push(event));
 
@@ -256,7 +256,7 @@ describe('Events API (e2e)', () => {
     expect(received).toHaveLength(1);
   });
 
-  async function seedFacilityGraph(suffix: string, ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' = 'LEGACY_ALERTS') {
+  async function seedFacilityGraph(suffix: string) {
     const facility = await direct.facility.create({
       data: { name: `${PREFIX}-facility-${suffix}`, code: `${PREFIX}-${suffix}` },
     });
@@ -278,12 +278,9 @@ describe('Events API (e2e)', () => {
         facilityId: facility.id,
         spaceId: space.id,
         label: `${PREFIX}-camera-${suffix}`,
-        ingestKeyId: `${PREFIX}-key-${suffix}`,
-        ingestSecretHash: `${PREFIX}-secret-hash-${suffix}`,
-        ingestMode,
       },
     });
-    return { facilityId: facility.id, spaceId: space.id, cameraId: camera.id, ingestKeyId: camera.ingestKeyId, ingestMode };
+    return { facilityId: facility.id, spaceId: space.id, cameraId: camera.id };
   }
 
 
