@@ -116,7 +116,7 @@ eldercare-fall-ai/
 │   ├── runners/    # L1 model runners + ModelRegistry
 │   ├── perception/ # L2 observation assembly
 │   ├── domains/    # L3 domain interpreters (fall, bed_exit)
-│   ├── runtime/    # L3 edge orchestration for ml-worker
+│   ├── worker/     # ml-worker process + worker-owned live orchestration/state
 │   ├── events/     # L4 alert signing/outbox/publisher (-> POST /ingest/alerts)
 │   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
 │   ├── demo/       # Streamlit demo UI (fall classification via api)

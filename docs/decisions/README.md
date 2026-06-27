@@ -110,6 +110,7 @@ Every ADR ends with a `## Changelog` section (one line per change). Optional `Re
 | [ADR-057](./ml/ADR-057-frame-observation-runner-contracts-and-edge-runtime-architecture.md) | FrameObservation runner contracts and edge-runtime package architecture | Accepted | 2026-06-20 | Updates ADR-050 and ADR-026's active architecture with runner contracts, `FrameObservation`, `ModelRegistry`, dependency ladder, and API serving/lifespan boot order. |
 | [ADR-067](./ml/ADR-067-ml-api-worker-service-split.md) | ML edge API and camera worker service split | Accepted | 2026-06-23 | Defines the worker↔ml-api relay contract: worker owns RTSP/inference/domain facts; ml-api owns backend credentials, HMAC, outbox/retry, and backend egress. |
 | [ADR-068](./ml/ADR-068-ml-worker-portable-video-runtime.md) | ML edge worker portable video runtime | Accepted | 2026-06-23 | Keeps the portable live path as `RTSP -> ml-worker -> ml-api -> backend /ingest/*`; OpenCV is current, GStreamer/DeepStream/Triton are future adapters only, Jetson Nano is hardware-gated legacy/constrained, and dGPU support requires release-matrix pinning. |
+| [ADR-074](./ml/ADR-074-ml-edge-central-state-and-config-distribution.md) | ML edge/central state and config-distribution responsibility split | Accepted | 2026-06-25 | 3-state model (policy CONFIG backend-owned snapshot-pull; events edge→relay→ingest; runtime/flow state process-local); zero cross-boundary shared mutable state between ml-api and ml-worker; edge last-known-good autonomy. Follow-up #382. |
 
 ## Provider review stance
 
