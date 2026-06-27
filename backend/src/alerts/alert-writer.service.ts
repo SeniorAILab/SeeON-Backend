@@ -13,7 +13,7 @@
  * (AC5/AC6 live resident status badge).
  */
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertEventTypes } from './dto/alert-events.dto.js';
@@ -34,6 +34,10 @@ export interface AlertEvent {
   space?: { name: string } | null;
   room: string | null;
 }
+export interface WriteAlertResult extends AlertEvent {
+  created: boolean;
+}
+
 
 /** Emitted after each committed alert; carries the new ResidentStatus state. */
 export interface StatusEvent {
@@ -55,6 +59,7 @@ export interface WriteAlertInput {
   snapshotKey: string | null;
   detectedAt: Date;
   idempotencyKey: string;
+  originEventId?: string | null;
 }
 
 const CAMERA_ONLINE_TIMEOUT_MS = 30_000;
@@ -104,7 +109,7 @@ export class AlertWriterService {
    * Serialized: each call runs only after the previous one has committed.
    * F3: assign alertSeq + commit + emit happen in causal order.
    */
-  writeAlert(input: WriteAlertInput): Promise<AlertEvent> {
+  writeAlert(input: WriteAlertInput): Promise<WriteAlertResult> {
     if (typeof input.spaceId !== 'string' || !input.spaceId.trim()) {
       return Promise.reject(new BadRequestException('spaceId is required'));
     }
@@ -114,7 +119,7 @@ export class AlertWriterService {
     return next;
   }
 
-  private async _doWrite(input: WriteAlertInput): Promise<AlertEvent> {
+  private async _doWrite(input: WriteAlertInput): Promise<WriteAlertResult> {
     const {
       facilityId,
       residentId,
@@ -125,6 +130,7 @@ export class AlertWriterService {
       snapshotKey,
       detectedAt,
       idempotencyKey,
+      originEventId,
     } = input;
 
     // Determine new resident state from backend-owned alert policy.
@@ -141,7 +147,7 @@ export class AlertWriterService {
     const cameraOnline =
       now.getTime() - detectedAt.getTime() < CAMERA_ONLINE_TIMEOUT_MS;
 
-    const alert = await this.prisma.withFacilityContext(
+    const writeResult = await this.prisma.withFacilityContext(
       facilityId,
       async (tx: Prisma.TransactionClient) => {
         const created = await tx.alert.create({
@@ -155,6 +161,7 @@ export class AlertWriterService {
             snapshotKey,
             detectedAt,
             idempotencyKey,
+            originEventId: originEventId ?? undefined,
           },
           include: {
             resident: { select: { name: true } },
@@ -182,9 +189,20 @@ export class AlertWriterService {
           });
         }
 
-        return created;
+        return { alert: created, created: true };
       },
-    );
+    ).catch(async (err: unknown) => {
+      if (!isAlertConflict(err)) throw err;
+      const existing = await this.findExistingAlert(facilityId, idempotencyKey, originEventId);
+      if (!existing) throw err;
+      return { alert: existing, created: false };
+    });
+
+    const { alert, created } = writeResult;
+    if (!created) {
+      return { ...toAlertEvent(alert), created: false };
+    }
+
     if (!residentId) {
       this.logger.log({
         event: 'alert.empty_room_written',
@@ -196,22 +214,7 @@ export class AlertWriterService {
       });
     }
 
-    const event: AlertEvent = {
-      alertSeq: alert.alertSeq,
-      id: alert.id,
-      facilityId: alert.facilityId,
-      residentId: alert.residentId,
-      cameraId: alert.cameraId,
-      spaceId: alert.spaceId,
-      type: alert.type,
-      probability: alert.probability,
-      snapshotKey: alert.snapshotKey,
-      detectedAt: alert.detectedAt,
-      status: alert.status,
-      resident: alert.resident,
-      space: alert.space,
-      room: alert.space.name,
-    };
+    const event: AlertEvent = toAlertEvent(alert);
 
     // Emit alert AFTER commit (F3).
     this._emit(facilityId, event);
@@ -228,7 +231,32 @@ export class AlertWriterService {
       this._emitStatus(facilityId, statusEvent);
     }
 
-    return event;
+    return { ...event, created: true };
+  }
+
+  private async findExistingAlert(
+    facilityId: string,
+    idempotencyKey: string,
+    originEventId: string | null | undefined,
+  ) {
+    return this.prisma.withFacilityContext(
+      facilityId,
+      (tx: Prisma.TransactionClient) =>
+        tx.alert.findFirst({
+          where: {
+            facilityId,
+            OR: [
+              { idempotencyKey },
+              ...(originEventId ? [{ originEventId }] : []),
+            ],
+          },
+          include: {
+            resident: { select: { name: true } },
+            space: { select: { name: true } },
+          },
+          orderBy: { alertSeq: 'asc' },
+        }),
+    );
   }
 
   private _emit(facilityId: string, event: AlertEvent): void {
@@ -254,4 +282,50 @@ export class AlertWriterService {
       }
     }
   }
+}
+
+function toAlertEvent(alert: {
+  alertSeq: bigint;
+  id: string;
+  facilityId: string;
+  residentId: string | null;
+  cameraId: string | null;
+  spaceId: string;
+  type: string;
+  probability: number;
+  snapshotKey: string | null;
+  detectedAt: Date;
+  status: string;
+  resident: { name: string } | null;
+  space: { name: string };
+}): AlertEvent {
+  return {
+    alertSeq: alert.alertSeq,
+    id: alert.id,
+    facilityId: alert.facilityId,
+    residentId: alert.residentId,
+    cameraId: alert.cameraId,
+    spaceId: alert.spaceId,
+    type: alert.type,
+    probability: alert.probability,
+    snapshotKey: alert.snapshotKey,
+    detectedAt: alert.detectedAt,
+    status: alert.status,
+    resident: alert.resident,
+    space: alert.space,
+    room: alert.space.name,
+  };
+}
+
+function isAlertConflict(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  return (
+    target === null ||
+    typeof target === 'string' ||
+    (Array.isArray(target) &&
+      target.includes('facility_id') &&
+      (target.includes('idempotency_key') || target.includes('origin_event_id')))
+  );
 }

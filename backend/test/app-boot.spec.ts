@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { configureVersionedTestApp } from './helpers/versioned-app';
 
 /**
  * Boot + wiring smoke (real DB, full AppModule — no provider overrides).
@@ -14,7 +15,7 @@ import { AppModule } from '../src/app.module';
  *  - guarded domain/auth routes must be MOUNTED: unauthenticated requests get
  *    401, NOT 404. A 404 here means the owning module isn't registered.
  *  - Alert.alertSeq (BigInt) must serialize in JSON responses via the global
- *    toJSON shim installed on AppModule load; without it /api/alerts 500s.
+ *    toJSON shim installed on AppModule load; without it /api/v1/alerts 500s.
  */
 describe('AppModule boot + wiring smoke (e2e)', () => {
   let app: INestApplication;
@@ -24,6 +25,7 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
       imports: [AppModule],
     }).compile();
     app = moduleRef.createNestApplication();
+    configureVersionedTestApp(app);
     await app.init();
   });
 
@@ -37,10 +39,10 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
 
   it.each([
     '/auth/session',
-    '/api/alerts',
-    '/api/residents',
-    '/api/guardians',
-    '/api/cameras',
+    '/api/v1/alerts',
+    '/api/v1/residents',
+    '/api/v1/guardians',
+    '/api/v1/cameras',
   ])('mounts guarded route %s (401, not 404)', async (path) => {
     const server = app.getHttpServer() as unknown as Parameters<
       typeof request

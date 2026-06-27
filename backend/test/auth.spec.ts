@@ -11,6 +11,7 @@ import { KakaoClient } from '../src/auth/kakao.client';
 import { setOAuthStateCookie, setSessionCookie } from '../src/auth/cookie.util';
 import { SessionService } from '../src/auth/session.service';
 import { createSignedSessionToken } from '../src/auth/signed-token';
+import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 
@@ -172,6 +173,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureVersionedTestApp(app);
     await app.init();
   });
 
@@ -185,7 +187,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects unauthenticated protected requests with 401', async () => {
     await request(app.getHttpServer()).get('/auth/session').expect(401);
-    await request(app.getHttpServer()).get('/api/protected-probe').expect(401);
+    await request(app.getHttpServer()).get('/api/v1/protected-probe').expect(401);
   });
 
   it('registers a password owner, restores the session, and rejects duplicate signup', async () => {
@@ -320,12 +322,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBe('CAREGIVER');
 
     await request(app.getHttpServer())
-      .get('/api/facility-protected-probe')
+      .get('/api/v1/facility-protected-probe')
       .set('cookie', firstSessionCookie)
       .expect(403);
 
     const facilityCreate = await request(app.getHttpServer())
-      .post('/api/facilities')
+      .post('/api/v1/facilities')
       .set('cookie', firstSessionCookie)
       .send({
         facilityName: 'E2E Facility',
@@ -344,7 +346,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     expect(JSON.stringify(kakaoIdentity)).not.toContain('test-access-token');
 
     const facilityProbe = await request(app.getHttpServer())
-      .get('/api/facility-protected-probe')
+      .get('/api/v1/facility-protected-probe')
       .set('cookie', facilitySessionCookie)
       .expect(200);
     expect(
@@ -443,12 +445,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/api/protected-probe')
+      .get('/api/v1/protected-probe')
       .set('cookie', rotatedCookie)
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/api/facility-protected-probe')
+      .get('/api/v1/facility-protected-probe')
       .set('cookie', rotatedCookie)
       .expect(401);
   });

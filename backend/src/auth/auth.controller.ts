@@ -13,6 +13,8 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
+  VERSION_NEUTRAL,
+  Version,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -49,6 +51,7 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
+  @Version(VERSION_NEUTRAL)
   @Get('/auth/kakao/login')
   kakaoLogin(@Res() response: Response): void {
     const state = this.auth.createOAuthState();
@@ -69,6 +72,7 @@ export class AuthController {
     response.redirect(authorizeUrl);
   }
 
+  @Version(VERSION_NEUTRAL)
   @Get('/auth/kakao/callback')
   async kakaoCallback(
     @Query('code') code: string | undefined,
@@ -104,6 +108,7 @@ export class AuthController {
     );
   }
 
+  @Version(VERSION_NEUTRAL)
   @Get('/auth/session')
   @Header('cache-control', 'no-store')
   async sessionForServerRender(
@@ -118,6 +123,7 @@ export class AuthController {
     return { user: presentAuthUser(valid.user) };
   }
 
+  @Version(VERSION_NEUTRAL)
   @Post('/auth/login')
   async login(
     @Body() body: LoginRequestDto,
@@ -131,6 +137,7 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
+  @Version(VERSION_NEUTRAL)
   @Post('/auth/register')
   async register(
     @Body() body: RegisterRequestDto,
@@ -147,6 +154,7 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
+  @Version(VERSION_NEUTRAL)
   @Post('/auth/logout')
   @UseGuards(SessionGuard)
   @HttpCode(204)
@@ -158,7 +166,7 @@ export class AuthController {
     clearSessionCookie(response);
   }
 
-  @Post('/api/facilities')
+  @Post('facilities')
   @UseGuards(SessionGuard)
   async createFacility(
     @Body() body: CreateFacilityRequestDto,
@@ -176,7 +184,7 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
-  @Get('/api/protected-probe')
+  @Get('protected-probe')
   @UseGuards(SessionGuard)
   @Header('cache-control', 'no-store')
   protectedProbe(
@@ -187,7 +195,7 @@ export class AuthController {
     return { user: request.user ? presentAuthUser(request.user) : null };
   }
 
-  @Get('/api/facility-protected-probe')
+  @Get('facility-protected-probe')
   @UseGuards(SessionGuard, RequireFacilityGuard)
   @Header('cache-control', 'no-store')
   facilityProtectedProbe(

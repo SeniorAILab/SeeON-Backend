@@ -44,6 +44,6 @@ import { AlertWriterService } from './alert-writer.service.js';
     AlertsService,
     AlertWriterService,
   ],
-  exports: [AlertsService, AlertWriterService, AlertEventsService],
+  exports: [AlertsService, AlertWriterService, AlertEventsService, AlertPolicyService],
 })
 export class AlertsModule {}

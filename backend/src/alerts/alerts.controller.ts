@@ -31,13 +31,13 @@ const SNAPSHOT_EXTENSIONS = new Map<string, string>([
   ['multipart/form-data', 'bin'],
 ]);
 
-@Controller()
+@Controller({ path: 'alerts', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class AlertsController {
   constructor(private readonly service: AlertsService) {}
 
-  @Get('api/alerts')
+  @Get()
   list(
     @Req() req: RequestWithAuth,
     @Query('residentId') residentId?: string,
@@ -56,12 +56,12 @@ export class AlertsController {
     });
   }
 
-  @Get('api/alerts/:id')
+  @Get(':id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.getOne(requireFacilityId(req), id);
   }
 
-  @Patch('api/alerts/:id/ack')
+  @Patch(':id/ack')
   @HttpCode(200)
   ack(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.ack(requireFacilityId(req), id);
@@ -71,7 +71,7 @@ export class AlertsController {
    * PUT /api/alerts/:alertId/snapshot — authenticated snapshot upload.
    * Stores bytes locally under a server-derived key; payload URLs are never fetched.
    */
-  @Put('api/alerts/:alertId/snapshot')
+  @Put(':alertId/snapshot')
   @HttpCode(201)
   async uploadSnapshot(
     @Req() req: RequestWithAuth,
@@ -106,7 +106,7 @@ export class AlertsController {
    * Verifies alert.facilityId == req.user.facilityId, then streams file from local disk.
    * Backend never dereferences edge URLs (SSRF-safe).
    */
-  @Get('api/alerts/:alertId/snapshot')
+  @Get(':alertId/snapshot')
   async snapshot(
     @Req() req: RequestWithAuth,
     @Param('alertId') alertId: string,

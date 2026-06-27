@@ -18,6 +18,7 @@ const TENANT_MODELS = new Set([
   'Guardian',
   'Camera',
   'Alert',
+  'Event',
   'ResidentStatus',
   'Floor',
   'Space',

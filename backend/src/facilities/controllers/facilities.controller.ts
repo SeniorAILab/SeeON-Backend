@@ -15,7 +15,7 @@ import type { RequestWithAuth } from '../../auth/session.guard.js';
 import { FacilitiesService } from '../services/facilities.service.js';
 import type { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 
-@Controller('api/facilities')
+@Controller({ path: 'facilities', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 export class FacilitiesController {
   constructor(private readonly service: FacilitiesService) {}

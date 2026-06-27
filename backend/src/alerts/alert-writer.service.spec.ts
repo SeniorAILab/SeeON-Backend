@@ -54,6 +54,7 @@ describe('AlertWriterService', () => {
     service.subscribe('facility-1', (e) => received.push(e));
 
     const event = await service.writeAlert(input(0.9));
+    expect(event.created).toBe(true);
     expect(event.id).toBe('a1');
     expect(event.residentId).toBe('r1');
     expect(event.spaceId).toBe('space-1');

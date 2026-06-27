@@ -6,6 +6,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
+import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 const SKELETON_ADMIN_EMAIL = 'ml-skeleton-owner@example.test';
@@ -50,6 +51,7 @@ describe('ML skeleton controllers (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    configureVersionedTestApp(app);
     await app.init();
     facilitySessionCookie = await createFacilitySessionCookie(app);
   });
@@ -63,40 +65,37 @@ describe('ML skeleton controllers (e2e)', () => {
   });
 
   it.each([
-    ['GET', '/api/alert-rules'],
-    ['POST', '/api/alert-rules'],
-    ['PATCH', '/api/alert-rules/rule-1'],
-    ['DELETE', '/api/alert-rules/rule-1'],
-    ['GET', '/api/space-statuses'],
-    ['GET', '/api/detection-events'],
-    ['PATCH', '/api/detection-events/det-1'],
-    ['GET', '/api/resident-risk-summaries'],
+    ['GET', '/api/v1/space-statuses'],
+    ['GET', '/api/v1/resident-risk-summaries'],
   ] as const)(
-    'requires auth before returning skeleton 501 for %s %s',
+    'requires auth before returning skeleton 501 for retained %s %s',
     async (method, path) => {
       await performRequest(app, method, path).expect(401);
     },
   );
 
   it.each([
-    ['GET', '/api/alert-rules', 'alert-rules is not implemented yet'],
-    ['POST', '/api/alert-rules', 'alert-rules is not implemented yet'],
-    ['PATCH', '/api/alert-rules/rule-1', 'alert-rules is not implemented yet'],
-    ['DELETE', '/api/alert-rules/rule-1', 'alert-rules is not implemented yet'],
-    ['GET', '/api/space-statuses', 'space-statuses is not implemented yet'],
-    ['GET', '/api/detection-events', 'detection-events is not implemented yet'],
-    [
-      'PATCH',
-      '/api/detection-events/det-1',
-      'detection-events is not implemented yet',
-    ],
+    ['GET', '/api/v1/alert-rules'],
+    ['POST', '/api/v1/alert-rules'],
+    ['PATCH', '/api/v1/alert-rules/rule-1'],
+    ['DELETE', '/api/v1/alert-rules/rule-1'],
+    ['GET', '/api/v1/detection-events'],
+    ['PATCH', '/api/v1/detection-events/det-1'],
+  ] as const)('returns 404 for removed %s %s', async (method, path) => {
+    await performRequest(app, method, path)
+      .set('cookie', facilitySessionCookie)
+      .expect(404);
+  });
+
+  it.each([
+    ['GET', '/api/v1/space-statuses', 'space-statuses is not implemented yet'],
     [
       'GET',
-      '/api/resident-risk-summaries',
+      '/api/v1/resident-risk-summaries',
       'resident-risk-summaries is not implemented yet',
     ],
   ] as const)(
-    'returns guarded 501 for facility-scoped %s %s',
+    'returns guarded 501 for retained facility-scoped %s %s',
     async (method, path, message) => {
       const res = await performRequest(app, method, path)
         .set('cookie', facilitySessionCookie)

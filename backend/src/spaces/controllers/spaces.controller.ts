@@ -25,7 +25,7 @@ import type {
 } from '../dto/space.dto.js';
 import { SpacesService } from '../services/spaces.service.js';
 
-@Controller('api/spaces')
+@Controller({ path: 'spaces', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class SpacesController {
