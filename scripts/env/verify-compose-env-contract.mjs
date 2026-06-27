@@ -158,7 +158,7 @@ function verify() {
         'edge prod missing env',
         ['-f', 'compose.edge.yaml', 'config'],
         emptyEdgeEnvPath,
-        ['requires'],
+        ['require'],
       );
 
       const hostConfig = requireSuccess(
