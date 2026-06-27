@@ -156,7 +156,7 @@ move entire folder:  active/{slug}/  -->  archive/{slug}/
      |
      v  plan contained an expensive-to-reverse ecosystem-local or strict-common decision?
      |
-distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (ADRs are never deleted)
+distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (ADRs not deleted, except folding same-domain ADRs into one)
 ```
 
 ## Locations
@@ -166,7 +166,7 @@ distill  -->  docs/decisions/{ml,backend,frontend,common}/ADR-NNN-{topic}.md   (
 | `docs/research/` | Fact collection — findings, sources, comparisons (pre-decision) | Yes |
 | `docs/exec-plan/active/{slug}/` | In-progress spec + plan | Yes |
 | `docs/exec-plan/archive/{slug}/` | Completed / discarded spec + plan | Yes |
-| `docs/decisions/{ml,backend,frontend,common}/` | ADRs (permanent, active MECE by category) | Yes |
+| `docs/decisions/{ml,backend,frontend,common}/` | ADRs (active MECE by category; same-domain folding is the one sanctioned ADR-file deletion) | Yes |
 | `docs/rules/` | Standing conventions (ongoing constraints, not work-scoped) | Yes |
 | `.omc/specs/` | deep-interview scratch output | No — scratch only |
 | `.omc/plans/` | omc tool scratch / drafts | No — scratch only |
@@ -249,26 +249,20 @@ workflow uses the external craft-skills `/skill:documents`, not a repo-local cop
 skills manually on-demand (e.g. distill ADRs with `/skill:documents` when work lands);
 no automatic hooks or cron.
 
-### Worktree workflow
-Every task must be developed on a dedicated worktree off a `<type>/<issue#>-<slug>` branch.
-Use `git wt <issue#>` — never branch directly from `main` or hand-roll `git worktree add`.
-The `git wt` alias is registered by `scripts/git-guard/setup-hooks.sh` (run once per clone).
-
-Standing rule: `docs/rules/worktree-workflow.md`.
-Enforcement layer: `scripts/git-guard/` + `.githooks/` (via `core.hooksPath`).
-
-PR decomposition rule: `docs/rules/pr-decomposition-and-review.md` — split `size/L`/`size/XL` work into reviewable `size/M`-or-smaller PR slices and record per-PR review evidence.
-
-### CI gate & merge discipline
-Branch protection / required status checks are **unavailable** on this plan (private + free → `/branches/main/protection` returns 403), so `ci.yml` runs on PRs but is **advisory only** — it cannot block a merge. Two consequences every actor (agent or human) must honor:
-- **Local gate is the real gate.** `pre-push` runs `scripts/git-guard/check-lint.sh` (lint + typecheck on changed packages, mirroring `ci.yml`: frontend lint/type block, backend type blocks + `lint` warn-first per ADR-064, ml `ruff` blocks). Do not push lint/type failures. Bypass only intentionally with `GIT_GUARD_SKIP_LINT=1` (or `--no-verify`), never to dodge a real failure.
-- **Never merge on a pending/red CI.** Because nothing is required, `gh pr merge --auto` merges the instant a PR is mergeable — even while `ci.yml` (Backend/Frontend/ML) is still running or red. Wait for the `ci-gate` job green (or re-run the equivalent checks locally) before merging. "A check exists" never means "a check gated".
+### Version control
+Branch & worktree, issue labeling, commit, and PR/review/merge are one domain with a single
+entry point: **[`docs/rules/version-control.md`](docs/rules/version-control.md)** (hub →
+4 facet SSOTs). The *why* is
+[ADR-008](docs/decisions/common/ADR-008-issue-driven-worktree-enforcement.md) (enforcement
+timing principle: ADR-016). All rule bodies — branch/worktree invariant, size gate, merge
+discipline, lane-pool mode, label taxonomy, commit format, and git-native enforcement — live
+in the facet docs, not here.
 
 ### Backend architecture lint & guard
 백엔드 계층(controller→service→repository)·DTO 경계는 warn-first 내장 ESLint로, 스키마↔마이그레이션 결합 계약은 단일소스 `scripts/backend-guard/`로 강제한다(전 벤더·CI 공통 호출, ADR-016 warn-tier 훅 금지 준수). 상세: `docs/rules/backend-architecture-lint-and-guard.md` · ADR-064 · ADR-070. 명령: `pnpm --filter backend run lint`.
 
 ### ADR lifecycle (cross-reference)
-ADRs follow `PROPOSED -> ACCEPTED -> DEPRECATED`. An ADR is the single current decision for one topic, stated self-complete and MECE. When that decision changes, edit the ADR body in place and add one `## Changelog` line (`- YYYY-MM-DD: what changed`); git holds the full history. Relationships between distinct atomic ADRs use `References`/`Refines` links — never supersede chains, coverage matrices, or retired-source tracking. ADR numbers are stable topic anchors and are not reused.
+ADRs follow `PROPOSED -> ACCEPTED -> DEPRECATED`. An ADR is the single current decision for one topic, stated self-complete and MECE. A **topic may be a cohesive domain**: one ADR can hold several small, tightly-related same-domain decisions when they are only meaningful together (e.g. ADR-008 owns the whole version-control domain) — MECE is tested *between* ADRs, not as one-decision-per-file. When a decision changes, edit the ADR body in place and add one `## Changelog` line (`- YYYY-MM-DD: what changed`); git holds the full history. Same-domain ADRs may be **folded** into one (move content, repoint references, record the fold in the owner's Changelog) — the only sanctioned ADR-file deletion. Relationships between distinct atomic ADRs use `References`/`Refines` links — never supersede chains, coverage matrices, or retired-source tracking. ADR numbers are stable topic anchors and are never reused (a folded number is retired, its anchor forwarded by the absorbing ADR).
 
 ### Provider review lanes
 
