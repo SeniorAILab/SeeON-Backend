@@ -21,13 +21,13 @@ See `src/AGENTS.md` before changing Nest application code. See
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.
 - See `prisma/AGENTS.md` before changing schema, migrations, runtime DB roles, or
   deploy-time database replay.
-- Event API (`POST /api/v1/events`) is the only ML ingress; do not reintroduce legacy `/ingest/*`.
+- Event API (`POST /api/v1/events` + `POST /api/v1/events/heartbeat`) is the only ML ingress; do not reintroduce legacy machine-ingest routes, HMAC camera credentials, or `Camera.ingestMode`.
 - Never commit real `.env*`; native dev reads the repo-root `.env.local` SSOT.
 
 
 ## Event ingest rollout contract (issue #388 cutover)
-- `POST /api/v1/events` is the only live ML ingress.
-- Legacy `/ingest/alerts` and `/ingest/heartbeat` must remain removed rather than lingering as compatibility aliases.
+- `POST /api/v1/events` and `POST /api/v1/events/heartbeat` are the only live ML ingress endpoints.
+- Removed machine-ingest routes, camera HMAC credentials, and `Camera.ingestMode` must stay removed rather than lingering as compatibility aliases.
 - `CamerasService.recordHeartbeat` remains used by `EventsController.heartbeat`.
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).

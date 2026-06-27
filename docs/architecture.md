@@ -88,7 +88,7 @@ NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local def
 
 Key responsibilities (all deferred, ownership defined now):
 
-- Call ML API (`ML_SERVING_URL=http://localhost:8000`) with a video window — dormant ADR-048 pull seam; the live path is edge-push (`ml-worker` → `ml-api` → backend `/ingest/*`, ADR-029/067)
+- Call ML API (`ML_SERVING_URL=http://localhost:8000`) with a video window — dormant ADR-048 pull seam; the live path is edge-push (`ml-worker` → `ml-api` `/api/v1/relay/*` → backend `POST /api/v1/events`, ADR-029/067)
 - Apply alert policy (threshold, dedup, rate-limit)
 - Dispatch webhooks (Kakao alert, etc.)
 - Persist all events to PostgreSQL via Prisma
@@ -213,7 +213,7 @@ pnpm prisma:generate          # regenerate Prisma client after schema changes
 
 The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api`, `/auth`, and `/ingest` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes signed events to the backend `/ingest` endpoint (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
+**Compose topology (ADR-062, ADR-063).** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml` (the container-dev overlay was removed in ADR-063). `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` and `/auth` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`, then pushes no-HMAC events to backend `POST /api/v1/events` through the single `API_BACKEND_EVENTS_URL` setting (ADR-029); the backend `ML_SERVING_URL` pull seam stays dormant (ADR-048). DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
 
 ---
 

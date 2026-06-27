@@ -32,7 +32,7 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 
 ## Anti-patterns
 
-- Do not reintroduce legacy `ingest/` HMAC routes; ML ingress is `POST /api/v1/events`.
+- Do not reintroduce legacy machine-ingest routes; ML ingress is the no-HMAC Event API: `POST /api/v1/events` and `POST /api/v1/events/heartbeat`.
 - No inline DTO interfaces/types in controllers or services.
 - No controller-to-repository or controller-to-Prisma shortcuts.
 - No repository imports from HTTP/Nest controller concerns.
