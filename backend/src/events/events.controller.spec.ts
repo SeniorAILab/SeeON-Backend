@@ -1,9 +1,56 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventsController } from './events.controller.js';
 import type { EventAlarmService } from './event-alarm.service.js';
 import type { EventRecorderService } from './event-recorder.service.js';
 import type { CamerasService } from '../cameras/cameras.service.js';
 
+describe('EventsController record', () => {
+  it('rejects unsupported event types before recording', async () => {
+    const eventAlarm = {
+      record: jest.fn(),
+    } as unknown as jest.Mocked<EventAlarmService>;
+    const recorder = {} as EventRecorderService;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.record({
+        camera_id: 'camera-1',
+        type: 'foo',
+        detected_at: '2026-06-26T01:02:03.456Z',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(eventAlarm.record).not.toHaveBeenCalled();
+  });
+
+  it('passes valid event types through to record', async () => {
+    const eventAlarm = {
+      record: jest.fn().mockResolvedValue({
+        event: { id: 'event-1' },
+        duplicate: false,
+      }),
+    } as unknown as jest.Mocked<EventAlarmService>;
+    const recorder = {} as EventRecorderService;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.record({
+        camera_id: 'camera-1',
+        type: 'detection-lost',
+        detected_at: '2026-06-26T01:02:03.456Z',
+      }),
+    ).resolves.toEqual({ id: 'event-1', status: 'created' });
+
+    expect(eventAlarm.record).toHaveBeenCalledWith({
+      cameraId: 'camera-1',
+      type: 'detection-lost',
+      detectedAt: new Date('2026-06-26T01:02:03.456Z'),
+      confidence: undefined,
+    });
+  });
+});
 describe('EventsController heartbeat', () => {
   it('resolves the camera through event ingest and records a heartbeat', async () => {
     const eventAlarm = {} as EventAlarmService;

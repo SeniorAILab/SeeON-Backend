@@ -150,6 +150,44 @@ describe('Events API (e2e)', () => {
   });
 
 
+  it('rejects unsupported event types without persisting an Event row', async () => {
+    const seeded = await seedFacilityGraph('invalid-type');
+    const before = await direct.event.count({ where: { facilityId: seeded.facilityId } });
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'foo',
+        detected_at: '2026-06-26T02:00:00.000Z',
+        confidence: 0.5,
+      })
+      .expect(400);
+
+    await expect(
+      direct.event.count({ where: { facilityId: seeded.facilityId } }),
+    ).resolves.toBe(before);
+  });
+
+  it('accepts detection-lost events', async () => {
+    const seeded = await seedFacilityGraph('detection-lost');
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'detection-lost',
+        detected_at: '2026-06-26T02:01:00.000Z',
+      })
+      .expect(201);
+
+    expect(created.body).toMatchObject({ status: 'created' });
+    await expect(
+      direct.event.count({
+        where: { facilityId: seeded.facilityId, type: 'detection-lost' },
+      }),
+    ).resolves.toBe(1);
+  });
   it('dispatches concurrent EVENT_API duplicate first-writes to one Alert and one SSE notification', async () => {
     const seeded = await seedFacilityGraph('dispatch', 'EVENT_API');
     const received: unknown[] = [];
