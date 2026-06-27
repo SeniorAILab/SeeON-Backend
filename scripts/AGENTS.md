@@ -20,7 +20,7 @@ scripts/
 
 | Task | Location | Notes |
 | --- | --- | --- |
-| Worktree helper | `git-guard/wt.sh` | Backing implementation for `git wt <issue#>`. |
+| Protected-branch guard | `git-guard/assert-not-main.sh` | Refuses commit/push on `main` (the one hard invariant). |
 | Local lint gate | `git-guard/check-lint.sh` | Mirrors changed-package lint/type checks. |
 | Freshness guard | `git-guard/check-freshness.sh` | Protects stale protected-branch work. |
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL. |

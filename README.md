@@ -38,7 +38,7 @@ pnpm dev:ml-api       # ml-api / FastAPI private-local surface on http://localho
 pnpm dev:ml-worker --config config/ml-worker.local.yaml
 pnpm dev:front    # http://localhost:3000
 
-# 7. Register git hooks + git wt alias (run once per clone)
+# 7. Register git hooks (core.hooksPath + guard scripts; run once per clone)
 bash scripts/git-guard/setup-hooks.sh
 ```
 

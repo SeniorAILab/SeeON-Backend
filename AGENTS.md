@@ -20,7 +20,7 @@
 │   └── Tools.md             # MCP tooling notes
 ├── .githooks/               # committed git hooks; activated by core.hooksPath
 ├── scripts/                 # repo guard/deploy/release automation → scripts/AGENTS.md
-│   ├── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, wt) — ADR-008/016
+│   ├── git-guard/           # shared enforcement scripts (assert-not-main, check-freshness, deny-assets, sync-main) — ADR-008/016
 │   └── backend-guard/       # backend layering/DTO enforcement: schema↔migration guard — ADR-064
 ├── ml/                      # Python/uv edge runtime — L0→L4 layers, guards, run → ml/AGENTS.md (ADR-057)
 ├── backend/                 # NestJS alert policy / KakaoTalk webhooks → backend/AGENTS.md (ADR-001)
@@ -59,12 +59,12 @@ First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .en
 > Issue-driven 루프. AGENTS.md는 라우팅만 담고, 실제 메커니즘은 링크된 rules에 위임한다(SSOT).
 
 ```
-plan/spec → issue(`type:` 라벨 1개) → `git wt <issue#>` → PR(리뷰가능·필요시 fan-out) → 리뷰 + CI → merge → plan archive + ADR distill → docs 준수검증
+plan/spec → issue(`type:` 라벨 1개) → idle lane에서 `git switch -c <type>/<issue#>-<slug> origin/main` → PR(리뷰가능·필요시 fan-out) → 리뷰 + CI → merge → plan archive + ADR distill → docs 준수검증
 ```
 
 1. **Plan** — 먼저 spec/plan 작성 (아래 [Lifecycle](#lifecycle) · [Conventions](#conventions) › plan-first mandate).
 2. **Issue** — GitHub 이슈에 정확히 하나의 `type:` 라벨 부여(branch `<type>`를 결정). → [`docs/rules/github-labels.md`](docs/rules/github-labels.md)
-3. **Worktree** — `git wt <issue#>`로 worktree/브랜치 생성 (절대 `main`에서 직접 분기 금지). → [`docs/rules/worktree-workflow.md`](docs/rules/worktree-workflow.md) · ADR-008
+3. **Worktree** — 미리 만들어 둔 idle lane에서 `git switch -c <type>/<issue#>-<slug> origin/main`로 브랜치 생성 (절대 `main`에서 직접 작업 금지; lane은 재사용, 삭제 금지). → [`docs/rules/worktree-workflow.md`](docs/rules/worktree-workflow.md) · ADR-008
 4. **PR** — 하나의 리뷰 가능한 변경; 큰 작업은 한 이슈 → fan-out PR로 분해. → [`docs/rules/pr-decomposition-and-review.md`](docs/rules/pr-decomposition-and-review.md)
 5. **Review + CI** — 모든 PR은 리뷰를 거치고, size/base/draft 게이트가 CI에서 돈다. → [`.github/workflows/pr-check.yml`](.github/workflows/pr-check.yml)
 6. **Merge → archive → ADR** — merge 후 plan archive, expensive-to-reverse 결정은 ADR로 distill. → [`docs/decisions/README.md`](docs/decisions/README.md)

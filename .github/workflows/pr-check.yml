@@ -172,7 +172,7 @@ jobs:
             if (sameRepo && head === 'main') {
               core.setFailed(
                 `PR head가 보호 브랜치 \`main\` 입니다. ` +
-                `작업 브랜치는 \`git wt <issue#>\` 로 만든 \`<type>/<issue#>-<slug>\` 형태를 사용하세요.`
+                `작업 브랜치는 idle lane에서 \`git switch -c <type>/<issue#>-<slug> origin/main\` 로 만들어 사용하세요.`
               );
             }
 

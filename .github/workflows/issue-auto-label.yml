@@ -1,7 +1,7 @@
 name: Issue Auto-Label
 
 # 신규/수정 이슈의 폼 "Type" 드롭다운을 정확히 하나의 `type:` 라벨로 매핑한다.
-# 이 라벨은 `git wt <issue#>` 의 branch `<type>` 결정에 쓰인다(docs/rules/worktree-workflow.md).
+# 이 라벨은 수동으로 만드는 branch `<type>/<issue#>-<slug>` 의 `<type>` 결정에 쓰인다(docs/rules/worktree-workflow.md).
 # fail-closed: Type 이 없거나/알 수 없으면 라벨을 부여하지 않고 명시적으로 notice/warning 만 남긴다.
 # 절대 `type: feat` 등 기본값으로 폴백하지 않는다.
 
