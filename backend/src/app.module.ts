@@ -9,7 +9,7 @@ import { ResidentsModule } from './residents/residents.module.js';
 import { GuardiansModule } from './guardians/guardians.module.js';
 import { CamerasModule } from './cameras/cameras.module.js';
 import { StatusModule } from './status/status.module.js';
-import { IngestModule } from './ingest/ingest.module.js';
+
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { FacilitiesModule } from './facilities/facilities.module.js';
 import { FloorsModule } from './floors/floors.module.js';
@@ -45,7 +45,6 @@ import { validateBackendEnv } from './config/env-validation.js';
     CamerasModule,
     StatusModule,
     AlertsModule,
-    IngestModule,
     DashboardModule,
     FacilitiesModule,
     FloorsModule,

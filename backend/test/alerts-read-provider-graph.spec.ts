@@ -12,10 +12,10 @@ import { AlertEventsService } from '../src/alerts/services/alert-events.service'
  * compile() proves the #105 read-model providers/controllers AND the retained
  * outbox/prediction seam co-resolve in one module with no dangling tokens.
  *
- * The legacy /api.alerts/events AlertEventsController was removed (ADR-047
- * single-ingress cleanup); /ingest/alerts is the only live alert ingress.
- * AlertEventsService is retained for ensureOutboxForIngest + the D2-O1 future
- * prediction seam (ADR-048), so it must still resolve with its prediction port.
+ * The legacy /api.alerts/events AlertEventsController and /ingest/alerts surface
+ * were removed; /api/v1/events is the only live ML ingress. AlertEventsService
+ * is retained for the persisted outbox + Kakao fan-out seam, so it must still
+ * resolve with its prediction port.
  */
 describe('provider graph — alerts module (read-model + outbox/prediction seam)', () => {
   it('resolves the read AlertsController/Service and the retained AlertEventsService seam', async () => {

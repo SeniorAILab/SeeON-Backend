@@ -10,8 +10,7 @@ import { createSignedSessionToken } from '../src/auth/signed-token';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AlertWriterService } from '../src/alerts/alert-writer.service';
-import { IngestAlertService } from '../src/ingest/ingest-alert.service';
-import type { AlertEventType } from '../src/alerts/dto/alert-events.dto';
+
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -180,50 +179,43 @@ describe('Events API (e2e)', () => {
     expect(received).toHaveLength(1);
   });
 
-  it('keeps LEGACY_ALERTS events event-only and blocks legacy alert writes for EVENT_API cameras', async () => {
+  it('keeps LEGACY_ALERTS events event-only and emits alerts for EVENT_API cameras', async () => {
     const legacy = await seedFacilityGraph('legacy-event-only', 'LEGACY_ALERTS');
-    const eventApi = await seedFacilityGraph('event-api-block-legacy', 'EVENT_API');
+    const eventApi = await seedFacilityGraph('event-api-alert', 'EVENT_API');
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
       .send({ camera_id: legacy.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:00.000Z', confidence: 0.9 })
       .expect(201);
-    await expect(legacyIngest(eventApi, new Date(), 'fall')).rejects.toMatchObject({ response: { statusCode: 409 } });
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({ camera_id: eventApi.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:01.000Z', confidence: 0.9 })
+      .expect(201);
 
     expect(await direct.event.count({ where: { facilityId: legacy.facilityId } })).toBe(1);
     expect(await direct.alert.count({ where: { facilityId: legacy.facilityId } })).toBe(0);
-    expect(await direct.alert.count({ where: { facilityId: eventApi.facilityId } })).toBe(0);
+    expect(await direct.alert.count({ where: { facilityId: eventApi.facilityId } })).toBe(1);
   });
 
-  it('collapses dual-submit in both orders through shared idempotency', async () => {
-    const legacyFirst = await seedFacilityGraph('dual-legacy-first', 'LEGACY_ALERTS');
-    const eventFirst = await seedFacilityGraph('dual-event-first', 'EVENT_API');
-    const writer = app.get(AlertWriterService);
-    const receivedLegacyFirst: unknown[] = [];
-    const receivedEventFirst: unknown[] = [];
-    writer.subscribe(legacyFirst.facilityId, (event) => receivedLegacyFirst.push(event));
-    writer.subscribe(eventFirst.facilityId, (event) => receivedEventFirst.push(event));
+  it('collapses repeated EVENT_API submissions through shared idempotency', async () => {
+    const seeded = await seedFacilityGraph('event-idempotency', 'EVENT_API');
+    const received: unknown[] = [];
+    app.get(AlertWriterService).subscribe(seeded.facilityId, (event) => received.push(event));
 
-    const detectedAtA = new Date();
-    await legacyIngest(legacyFirst, detectedAtA, 'fall');
-    await direct.camera.update({ where: { id: legacyFirst.cameraId }, data: { ingestMode: 'EVENT_API' } });
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({ camera_id: legacyFirst.cameraId, type: 'fall', detected_at: detectedAtA.toISOString(), confidence: 0.9 })
-      .expect(201);
+    const detectedAt = new Date();
+    const body = {
+      camera_id: seeded.cameraId,
+      type: 'fall',
+      detected_at: detectedAt.toISOString(),
+      confidence: 0.9,
+    };
 
-    const detectedAtB = new Date(detectedAtA.getTime() + 1000);
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({ camera_id: eventFirst.cameraId, type: 'fall', detected_at: detectedAtB.toISOString(), confidence: 0.9 })
-      .expect(201);
-    await direct.camera.update({ where: { id: eventFirst.cameraId }, data: { ingestMode: 'LEGACY_ALERTS' } });
-    await legacyIngest(eventFirst, detectedAtB, 'fall', 'LEGACY_ALERTS');
+    await request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201);
+    await request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201);
 
-    expect(await direct.alert.count({ where: { facilityId: legacyFirst.facilityId } })).toBe(1);
-    expect(await direct.alert.count({ where: { facilityId: eventFirst.facilityId } })).toBe(1);
-    expect(receivedLegacyFirst).toHaveLength(1);
-    expect(receivedEventFirst).toHaveLength(1);
+    expect(await direct.event.count({ where: { facilityId: seeded.facilityId } })).toBe(1);
+    expect(await direct.alert.count({ where: { facilityId: seeded.facilityId } })).toBe(1);
+    expect(received).toHaveLength(1);
   });
 
   async function seedFacilityGraph(suffix: string, ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' = 'LEGACY_ALERTS') {
@@ -256,29 +248,6 @@ describe('Events API (e2e)', () => {
     return { facilityId: facility.id, spaceId: space.id, cameraId: camera.id, ingestKeyId: camera.ingestKeyId, ingestMode };
   }
 
-  async function legacyIngest(
-    seeded: Awaited<ReturnType<typeof seedFacilityGraph>>,
-    detectedAt: Date,
-    type: string,
-    ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' = seeded.ingestMode,
-  ) {
-    return app.get(IngestAlertService).ingestAlert(
-      {
-        id: seeded.cameraId,
-        facilityId: seeded.facilityId,
-        spaceId: seeded.spaceId,
-        ingestKeyId: seeded.ingestKeyId,
-        ingestMode,
-      },
-      {
-        resident_id: null,
-        facility_id: seeded.facilityId,
-        type: type as AlertEventType,
-        probability: 0.9,
-        detectedAt,
-      },
-    );
-  }
 
   async function seedSessionCookie(facilityId: string, suffix: string) {
     const user = await direct.user.create({

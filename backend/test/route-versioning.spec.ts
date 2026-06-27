@@ -68,9 +68,9 @@ describe('global api/v1 route matrix (e2e)', () => {
     await request(app.getHttpServer()).post('/api/facilities').expect(404);
   });
 
-  it('keeps legacy ingest routes unprefixed and unversioned', async () => {
-    await request(app.getHttpServer()).post('/ingest/alerts').expect(401);
-    await request(app.getHttpServer()).post('/ingest/heartbeat').expect(401);
+  it('legacy ingest routes are removed (404)', async () => {
+    await request(app.getHttpServer()).post('/ingest/alerts').expect(404);
+    await request(app.getHttpServer()).post('/ingest/heartbeat').expect(404);
     await request(app.getHttpServer()).post('/api/v1/ingest/alerts').expect(404);
   });
 

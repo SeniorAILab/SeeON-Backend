@@ -6,7 +6,6 @@ export function configureVersionedTestApp(app: INestApplication): void {
     exclude: [
       { path: '/', method: RequestMethod.ALL },
       { path: 'auth/(.*)', method: RequestMethod.ALL },
-      { path: 'ingest/(.*)', method: RequestMethod.ALL },
     ],
   });
   app.enableVersioning({

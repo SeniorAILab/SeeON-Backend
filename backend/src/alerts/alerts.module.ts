@@ -20,8 +20,8 @@ import { AlertWriterService } from './alert-writer.service.js';
 
 /**
  * AlertsModule bounds the live alert domain:
- *  - /ingest/alerts is the only live alert ingress; AlertEventsService owns the
- *    persisted outbox + Kakao channel fan-out used by that ingress.
+ *  - /api/v1/events is the live ML ingress; AlertEventsService owns the
+ *    persisted outbox + Kakao channel fan-out used by the Event API.
  *  - ALERT_PREDICTION_PORT remains wired as the D2-O1 future seam for
  *    backend-owned alert policy over ML predictions, but no legacy prediction
  *    route is exposed here.
