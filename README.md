@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> ml-api -> backend /ingest/*` (ADR-067/029): the worker owns camera capture, model/domain evaluation, heartbeats, and alert facts. `ml-api` is a private/local FastAPI health, status, models, debug, and control surface plus the single backend ingest gateway; live camera ownership and raw frame relay stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> ml-api -> backend POST /api/v1/events` plus heartbeat (`POST /api/v1/events/heartbeat`) (ADR-067/029): the worker owns camera capture, model/domain evaluation, heartbeats, and alert facts. `ml-api` is a private/local FastAPI health, status, models, debug, and relay surface plus the single backend Event API gateway; live camera ownership and raw frame relay stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
 
 ## Prerequisites
 
@@ -55,7 +55,7 @@ bash scripts/git-guard/setup-hooks.sh
 | `ml-api` | `http://localhost:8000` | `8000` |
 | `db` | `localhost:5432` | `5432` |
 
-Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers relay production ingest facts to `ml-api`, which reaches backend `/ingest/*`; RTSP/video transport stays inside the worker.
+Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers relay production facts to `ml-api`, which reaches backend `POST /api/v1/events` and `POST /api/v1/events/heartbeat`; RTSP/video transport stays inside the worker.
 
 For container parity and production-shaped runs:
 
@@ -73,8 +73,7 @@ EDGE_CAMERA_CONFIG=./ml/config/ml-worker.local.yaml \
 
 `EDGE_CAMERA_CONFIG` points to a gitignored per-camera YAML file with RTSP URLs,
 relay URL/token, camera identity, and the LSTM fall-model artifact contract.
-Backend `/ingest/*` endpoints, key IDs, and signing secrets live in `ml-api`
-per ADR-067/029.
+Backend Event API URL (`API_BACKEND_EVENTS_URL`) and the worker→ml-api relay token live in edge `ml-api`/Compose configuration per ADR-067/029.
 
 On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR-063).
 
@@ -112,7 +111,7 @@ eldercare-fall-ai/
 │   ├── perception/ # L2 observation assembly
 │   ├── domains/    # L3 domain interpreters (fall, bed_exit)
 │   ├── worker/     # ml-worker process + worker-owned live orchestration/state
-│   ├── events/     # L4 alert signing/outbox/publisher (-> POST /ingest/alerts)
+│   ├── events/     # L4 alert/event schemas and publisher (-> POST /api/v1/events)
 │   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
 │   ├── demo/       # Streamlit demo UI (fall classification via api)
 │   ├── training/   # Batch training pipeline
