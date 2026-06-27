@@ -51,7 +51,7 @@ export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
 
 const HEARTBEAT_MS = 20_000;
 
-@Controller()
+@Controller({ path: 'sse', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 export class SseController {
   constructor(
@@ -63,7 +63,7 @@ export class SseController {
     private readonly reAuthIntervalMs: number,
   ) {}
 
-  @Get('api/sse')
+  @Get()
   @Header('content-type', 'text/event-stream')
   @Header('cache-control', 'no-cache')
   @Header('connection', 'keep-alive')

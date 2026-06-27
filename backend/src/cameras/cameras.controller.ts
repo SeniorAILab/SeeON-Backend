@@ -20,7 +20,7 @@ import type {
   UpdateCameraRequestDto,
 } from './dto/camera.dto.js';
 
-@Controller('api/cameras')
+@Controller({ path: 'cameras', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class CamerasController {

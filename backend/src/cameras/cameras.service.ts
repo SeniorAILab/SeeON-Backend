@@ -16,6 +16,20 @@ import type {
 export class CamerasService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async resolveForEventIngest(
+    cameraId: string,
+  ): Promise<{ id: string; facilityId: string; spaceId: string; ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' }> {
+    const rows = await this.prisma.$queryRaw<
+      { id: string; facilityId: string; spaceId: string; ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' }[]
+    >`SELECT id, facility_id AS "facilityId", space_id AS "spaceId", ingest_mode AS "ingestMode"
+       FROM get_camera_for_event_ingest(${cameraId})`;
+
+    const camera = rows[0];
+    if (!camera) throw new NotFoundException('unknown_camera');
+
+    return camera;
+  }
+
   async list(facilityId: string) {
     const cameras = await this.prisma.withFacilityContext(
       facilityId,
@@ -138,6 +152,7 @@ function toCameraDto(camera: Camera) {
     ingestKeyId: camera.ingestKeyId,
     lastSeenAt: camera.lastSeenAt,
     online: camera.online,
+    ingestMode: camera.ingestMode,
     createdAt: camera.createdAt,
   };
 }

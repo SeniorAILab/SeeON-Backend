@@ -26,7 +26,7 @@ export class SystemAlertPolicyClock extends AlertPolicyClock {
 
 @Injectable()
 export class AlertPolicyService {
-  private readonly dispatchTimestampsMs: number[] = [];
+  private readonly dispatchTimestampsMsByFacility = new Map<string, number[]>();
   private readonly cooldownUntilMsByKey = new Map<string, number>();
 
   constructor(
@@ -34,30 +34,35 @@ export class AlertPolicyService {
     private readonly clock: AlertPolicyClock,
   ) {}
 
-  evaluateIngress(event: AlertEventRequestDto): AlertPolicyDecision {
+  evaluateIngress(facilityId: string, event: AlertEventRequestDto): AlertPolicyDecision {
     if (!this.isPolicyEnabled()) {
       return { kind: 'dispatch' };
     }
 
     const nowMs = this.clock.nowMs();
-    this.pruneDispatches(nowMs);
+    const dispatchTimestampsMs = this.dispatchTimestampsForFacility(facilityId);
+    this.pruneDispatches(dispatchTimestampsMs, nowMs);
 
-    const cooldownUntilMs = this.cooldownUntilMsByKey.get(policyKey(event));
+    const key = policyKey(facilityId, event);
+    const cooldownUntilMs = this.cooldownUntilMsByKey.get(key);
     if (cooldownUntilMs !== undefined && nowMs < cooldownUntilMs) {
       return { kind: 'suppress', suppressed_reason: 'cooldown' };
     }
 
     const hourlyCap = this.hourlyCap();
-    if (this.dispatchTimestampsMs.length >= hourlyCap) {
+    if (dispatchTimestampsMs.length >= hourlyCap) {
       return { kind: 'suppress', suppressed_reason: 'hourly_cap' };
     }
 
-    this.dispatchTimestampsMs.push(nowMs);
-    this.cooldownUntilMsByKey.set(policyKey(event), nowMs + this.cooldownMs());
+    dispatchTimestampsMs.push(nowMs);
+    this.cooldownUntilMsByKey.set(key, nowMs + this.cooldownMs());
     return { kind: 'dispatch' };
   }
 
-  evaluatePrediction(input: PredictionAlertRequestDto): AlertPolicyDecision {
+  evaluatePrediction(
+    facilityId: string,
+    input: PredictionAlertRequestDto,
+  ): AlertPolicyDecision {
     const { prediction } = input;
     if (
       !prediction.is_fall ||
@@ -66,7 +71,7 @@ export class AlertPolicyService {
       return { kind: 'suppress', suppressed_reason: 'below_threshold' };
     }
 
-    return this.evaluateIngress({
+    return this.evaluateIngress(facilityId, {
       type: AlertEventTypes.fall,
       source_id: input.source_id,
       external_event_id: input.external_event_id,
@@ -75,13 +80,23 @@ export class AlertPolicyService {
     });
   }
 
-  private pruneDispatches(nowMs: number): void {
+  private dispatchTimestampsForFacility(facilityId: string): number[] {
+    const key = facilityId.trim();
+    let timestamps = this.dispatchTimestampsMsByFacility.get(key);
+    if (!timestamps) {
+      timestamps = [];
+      this.dispatchTimestampsMsByFacility.set(key, timestamps);
+    }
+    return timestamps;
+  }
+
+  private pruneDispatches(dispatchTimestampsMs: number[], nowMs: number): void {
     const cutoffMs = nowMs - ONE_HOUR_MS;
     while (
-      this.dispatchTimestampsMs.length > 0 &&
-      this.dispatchTimestampsMs[0] <= cutoffMs
+      dispatchTimestampsMs.length > 0 &&
+      dispatchTimestampsMs[0] <= cutoffMs
     ) {
-      this.dispatchTimestampsMs.shift();
+      dispatchTimestampsMs.shift();
     }
   }
 
@@ -115,8 +130,8 @@ export class AlertPolicyService {
   }
 }
 
-function policyKey(event: AlertEventRequestDto): string {
-  return `${event.source_id}:${event.type}`;
+function policyKey(facilityId: string, event: AlertEventRequestDto): string {
+  return `${facilityId.trim()}|${event.source_id}|${event.type}`;
 }
 
 function readNonNegativeIntegerConfig(

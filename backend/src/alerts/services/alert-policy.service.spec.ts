@@ -32,7 +32,7 @@ const fallIngress = {
 describe('AlertPolicyService', () => {
   it('dispatches the first event under the hourly cap', () => {
     const service = new AlertPolicyService(config({}), new FakeClock(0));
-    expect(service.evaluateIngress(fallIngress)).toEqual({ kind: 'dispatch' });
+    expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({ kind: 'dispatch' });
   });
 
   it('suppresses a repeat within the cooldown window', () => {
@@ -41,9 +41,9 @@ describe('AlertPolicyService', () => {
       config({ ALERT_COOLDOWN_SEC: 60 }),
       clock,
     );
-    expect(service.evaluateIngress(fallIngress).kind).toBe('dispatch');
+    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
     clock.set(30_000);
-    expect(service.evaluateIngress(fallIngress)).toEqual({
+    expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({
       kind: 'suppress',
       suppressed_reason: 'cooldown',
     });
@@ -55,11 +55,26 @@ describe('AlertPolicyService', () => {
       config({ ALERT_HOURLY_CAP: 1, ALERT_COOLDOWN_SEC: 0 }),
       clock,
     );
-    expect(service.evaluateIngress(fallIngress).kind).toBe('dispatch');
+    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
     clock.set(1_000);
-    expect(service.evaluateIngress(fallIngress)).toEqual({
+    expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({
       kind: 'suppress',
       suppressed_reason: 'hourly_cap',
     });
+  });
+
+  it('scopes cooldown and hourly caps by facility', () => {
+    const clock = new FakeClock(0);
+    const service = new AlertPolicyService(
+      config({ ALERT_HOURLY_CAP: 1, ALERT_COOLDOWN_SEC: 60 }),
+      clock,
+    );
+    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
+    clock.set(1_000);
+    expect(service.evaluateIngress('facility-a', { ...fallIngress, source_id: 'cam-2' })).toEqual({
+      kind: 'suppress',
+      suppressed_reason: 'hourly_cap',
+    });
+    expect(service.evaluateIngress('facility-b', fallIngress)).toEqual({ kind: 'dispatch' });
   });
 });

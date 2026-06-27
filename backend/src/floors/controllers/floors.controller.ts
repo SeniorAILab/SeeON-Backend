@@ -24,7 +24,7 @@ import type {
 } from '../dto/floor.dto.js';
 import { FloorsService } from '../services/floors.service.js';
 
-@Controller('api/floors')
+@Controller({ path: 'floors', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class FloorsController {

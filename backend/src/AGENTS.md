@@ -10,7 +10,7 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | --- | --- | --- |
 | Bootstrap composition | `app.module.ts`, `main.ts` | Process wiring and global Nest setup. |
 | Alert ingestion | `ingest/` | HMAC-guarded ML alert intake. |
-| Alert policy | `alerts/`, `alert-rules/` | Policy, repositories, ports, Kakao fan-out. |
+| Alert policy | `alerts/` | Policy, repositories, ports, Kakao fan-out. |
 | Auth/session | `auth/`, `guardians/` | Email/password, Kakao, guardian domain. |
 | Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs. |
 | Resident domain | `residents/`, `resident-assignments/`, `resident-risk-summaries/` | Resident read/write surfaces. |

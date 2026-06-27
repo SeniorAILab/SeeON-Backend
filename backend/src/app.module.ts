@@ -17,9 +17,8 @@ import { SpacesModule } from './spaces/spaces.module.js';
 import { ZonesModule } from './zones/zones.module.js';
 import { ResidentAssignmentsModule } from './resident-assignments/resident-assignments.module.js';
 import { SpaceStatusesModule } from './space-statuses/space-statuses.module.js';
-import { DetectionEventsModule } from './detection-events/detection-events.module.js';
-import { AlertRulesModule } from './alert-rules/alert-rules.module.js';
 import { ResidentRiskSummariesModule } from './resident-risk-summaries/resident-risk-summaries.module.js';
+import { EventsModule } from './events/events.module.js';
 import { backendEnvFilePaths } from './config/env-files.js';
 import { validateBackendEnv } from './config/env-validation.js';
 
@@ -54,9 +53,8 @@ import { validateBackendEnv } from './config/env-validation.js';
     ZonesModule,
     ResidentAssignmentsModule,
     SpaceStatusesModule,
-    DetectionEventsModule,
-    AlertRulesModule,
     ResidentRiskSummariesModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
