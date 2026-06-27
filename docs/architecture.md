@@ -76,7 +76,11 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `/auth/session`, and `POST /api/v1/facilities`; explicit `VITE_USE_MOCK=true` keeps the mock runtime available only for tests/demo-only surfaces while remaining dashboard/admin service wiring is replaced incrementally. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `/auth/session`, and `POST /api/v1/facilities`. Realtime transport strategy (SSE / WebSocket / polling) is not yet finalized.
+
+**Demo vs runtime (canonical).** The front-only mock runtime (`VITE_USE_MOCK=true` with `realtimeEngine`, `mockData`, and `DemoMode`) is the front-alone "demo" path — it exists only to run the frontend by itself without a backend. dev and prod run on the real backend + real DB (demo content is seeded via `backend/prisma/demo-nokyang.fixture.ts`); there is no mock at runtime in dev/prod. The mock survives only for automated tests. The front-only mock ("demo") is therefore being retired; removing the mock-runtime code is a tracked follow-up.
+
+**Frontend overview.** Three UI modes: staff (`StaffLayout`: `/now` `/rooms` `/alerts`), admin (`AppLayout` sidebar: `/admin/*`), monitor (fullscreen TV: `/monitor`). Service seam: components/pages call `src/services/*`; backend endpoint mappers live in `src/services/api/*`; UI never consumes backend DTOs directly. Key frontend domain entities (`front/src/types/index.ts`, the FE domain SSOT until Phase 2): Facility, Floor, Space, Zone, SpaceStatus, DetectionEvent, ActionLog, Resident, ResidentAssignment, ResidentRiskSummary, ResidentAction, VideoClip, VideoAccessLog, AlertRule, User, MonitorSettings, DemoMode. The frontend domain model is a UI/domain view and currently diverges from the backend DB model; alignment is tracked in a dedicated FE↔BE issue.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
