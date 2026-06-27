@@ -9,6 +9,7 @@
 **/__pycache__
 **/*.pyc
 ml/data
+ml/*.zip
 ml/models
 **/*.pt
 **/*.pth
