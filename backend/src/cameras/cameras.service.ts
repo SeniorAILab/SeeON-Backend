@@ -18,10 +18,10 @@ export class CamerasService {
 
   async resolveForEventIngest(
     cameraId: string,
-  ): Promise<{ id: string; facilityId: string; spaceId: string; ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' }> {
+  ): Promise<{ id: string; facilityId: string; spaceId: string }> {
     const rows = await this.prisma.$queryRaw<
-      { id: string; facilityId: string; spaceId: string; ingestMode: 'LEGACY_ALERTS' | 'EVENT_API' }[]
-    >`SELECT id, facility_id AS "facilityId", space_id AS "spaceId", ingest_mode AS "ingestMode"
+      { id: string; facilityId: string; spaceId: string }[]
+    >`SELECT id, facility_id AS "facilityId", space_id AS "spaceId"
        FROM get_camera_for_event_ingest(${cameraId})`;
 
     const camera = rows[0];
@@ -152,7 +152,6 @@ function toCameraDto(camera: Camera) {
     ingestKeyId: camera.ingestKeyId,
     lastSeenAt: camera.lastSeenAt,
     online: camera.online,
-    ingestMode: camera.ingestMode,
     createdAt: camera.createdAt,
   };
 }

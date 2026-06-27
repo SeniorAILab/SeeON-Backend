@@ -93,7 +93,6 @@ describe('CamerasService event ingest resolver', () => {
       id: 'event-ingest-camera',
       facilityId: 'event-ingest-facility',
       spaceId: 'event-ingest-space',
-      ingestMode: 'LEGACY_ALERTS',
     });
   });
 
@@ -109,7 +108,6 @@ describe('CamerasService event ingest resolver', () => {
     expect(Object.keys(result).sort()).toEqual([
       'facilityId',
       'id',
-      'ingestMode',
       'spaceId',
     ]);
     expect(result).not.toHaveProperty('ingestKeyId');

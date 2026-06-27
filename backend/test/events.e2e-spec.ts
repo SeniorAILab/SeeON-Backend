@@ -217,22 +217,22 @@ describe('Events API (e2e)', () => {
     expect(received).toHaveLength(1);
   });
 
-  it('keeps LEGACY_ALERTS events event-only and emits alerts for EVENT_API cameras', async () => {
-    const legacy = await seedFacilityGraph('legacy-event-only', 'LEGACY_ALERTS');
-    const eventApi = await seedFacilityGraph('event-api-alert', 'EVENT_API');
+  it('emits an Alert for every valid Event (no per-camera ingest-mode suppression)', async () => {
+    const first = await seedFacilityGraph('single-path-1', 'EVENT_API');
+    const second = await seedFacilityGraph('single-path-2', 'EVENT_API');
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: legacy.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:00.000Z', confidence: 0.9 })
+      .send({ camera_id: first.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:00.000Z', confidence: 0.9 })
       .expect(201);
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: eventApi.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:01.000Z', confidence: 0.9 })
+      .send({ camera_id: second.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:01.000Z', confidence: 0.9 })
       .expect(201);
 
-    expect(await direct.event.count({ where: { facilityId: legacy.facilityId } })).toBe(1);
-    expect(await direct.alert.count({ where: { facilityId: legacy.facilityId } })).toBe(0);
-    expect(await direct.alert.count({ where: { facilityId: eventApi.facilityId } })).toBe(1);
+    expect(await direct.event.count({ where: { facilityId: first.facilityId } })).toBe(1);
+    expect(await direct.alert.count({ where: { facilityId: first.facilityId } })).toBe(1);
+    expect(await direct.alert.count({ where: { facilityId: second.facilityId } })).toBe(1);
   });
 
   it('collapses repeated EVENT_API submissions through shared idempotency', async () => {
