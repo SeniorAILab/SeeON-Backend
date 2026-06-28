@@ -75,14 +75,14 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   ├── uv.lock
 │   ├── contracts/                 ← L0 contracts, dataclasses, protocols
 │   ├── features/                  ← L0 pure feature transforms
-│   ├── sources/                   ← L1 frame intake, camera probe, source registry
-│   ├── runners/                   ← L1 model/runtime adapters and warmup
-│   ├── perception/                ← L2 observation building, tracking, bed detection
-│   ├── domains/                   ← L3 fall/bed-exit/long-lie/risk domain logic
-│   ├── worker/                    ← ml-worker process + worker-owned live orchestration/state
-│   ├── events/                    ← L4 alert/event schemas, signing, publishing
-│   ├── api/                       ← L5 FastAPI: /health/*, /api/v1/status, /api/v1/models, /api/v1/debug/predict/*, /api/v1/relay/*
-│   ├── training/                  ← batch lifecycle; pipeline operational
+│   ├── events/                    ← alert/event schemas, signing, publishing
+│   ├── api/                       ← ML-free FastAPI gateway: /health/*, /api/v1/status, /api/v1/models, /api/v1/relay/*
+│   ├── worker/                    ← ml-worker process + worker-owned live ML/orchestration/state
+│   │   ├── sources/               ← frame intake, camera probe, source registry
+│   │   ├── runners/               ← model/runtime adapters and warmup
+│   │   ├── perception/            ← observation building, tracking, bed detection
+│   │   └── domains/               ← fall/bed-exit/long-lie/risk domain logic
+│   ├── training/                  ← batch lifecycle; self-contained pose extraction + model artifacts
 │   ├── demo/                      ← Streamlit ML-demo (not the product UI)
 │   ├── models/                     ← single model root (ADR-015; gitignored in entirety)
 │   │   ├── pose/                   ← YOLO26-pose weight cache (re-downloadable)
@@ -131,28 +131,26 @@ NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local def
 Key responsibilities:
 
 - Own auth/session, facility-scoped RLS (`app.facility_id`), dashboard read models, and admin CRUD.
-- Receive edge facts through backend Event API (`POST /api/v1/events` and `POST /api/v1/events/heartbeat`); the dormant `ML_SERVING_URL` backend-pull seam from ADR-048/062 is not part of the live path.
+- Receive edge facts through backend Event API (`POST /api/v1/events` and `POST /api/v1/events/heartbeat`); the former `ML_SERVING_URL` backend-pull seam from ADR-048/062 was dormant and removed; it is not part of the live path.
 - Apply alert policy (threshold, dedup key, rate-limit), persist immutable events and derived alerts, and publish SSE dashboard frames.
 - Dispatch Kakao delivery through the outbox/delivery adapter layer.
 
 Runs via: `pnpm dev:backend` → `pnpm --filter backend start:dev`
 
-### 3. `ml/` — Training pipeline and prediction api
+### 3. `ml/` — Training pipeline, live worker, and gateway api
 
 Independent uv project. Two distinct lifecycles share one project:
 
 | Lifecycle            | Entry                                          | Runtime       | Trigger                   |
 | -------------------- | ---------------------------------------------- | ------------- | ------------------------- |
-| **Serving** (online) | `api/main.py` (FastAPI)                        | milliseconds  | edge relay + debug HTTP (`backend` pull dormant, ADR-048/062) |
-| **Training** (batch) | `training/` (pipeline operational) | minutes–hours | manual / scheduled job    |
+| **API gateway** (online) | `api/main.py` (FastAPI)                        | milliseconds  | edge relay/status HTTP (`backend` pull removed, ADR-048/062) |
+| **Worker** (live ML) | `worker/edge_worker.py` | long-running | RTSP capture, model/domain evaluation, relay facts |
+| **Training** (batch) | `training/` (self-contained pose extraction + artifacts) | minutes–hours | manual / scheduled job    |
 | **Demo** (dev tool)  | `demo/app.py` (Streamlit)                      | interactive   | developer                 |
 
-Serving exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `POST /api/v1/debug/predict/window`, `POST /api/v1/debug/predict/source`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. The temporary `POST /predict` alias is removed. `ml-api` boots as a thin gateway (config → device/model warmup → debug pipeline → backend Event API gateway → heartbeat store → bounded debug source registry → readiness); it does not assemble camera loops or worker runtime (ADR-067). `/api/v1/status` is derived from the relay-heartbeat store; production camera loops run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json`; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
+`ml-api` exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. Prediction routes, including `POST /predict` and `POST /api/v1/debug/predict/*`, are removed. `ml-api` boots as a thin gateway (config → backend Event API gateway → heartbeat store → readiness); it does not load models, choose devices, assemble camera loops, or run worker runtime (ADR-067). `/api/v1/status` is derived from the relay-heartbeat store; production camera loops and classification run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json` inside worker-owned runners; model weights are gitignored and must be placed manually (or produced by training). See ADR-015 for the `ml/models/` single-root layout.
 
-Dependency ladder: `contracts/features` (L0) → `sources/runners` (L1) →
-`perception` (L2) → `domains` (L3) → `events` (L4) → `api/demo` (L5). Lower
-layers never import higher layers. `ml-worker` owns the live orchestration/state
-(there is no `runtime` package; ADR-067); `ml/core/` and `ml/util/` are removed.
+Dependency boundaries are package-name based and enforced by `ml/tests/test_import_dependency_ladder.py`: `contracts`/`features` are shared pure foundations; live ML packages live under `worker/{sources,runners,perception,domains}`; `events` owns relay schemas/clients; `api` is an ML-free gateway; `training` imports only `contracts` and `features` from production packages. `ml-worker` owns live orchestration/state (there is no `runtime` package; ADR-067); `ml/core/` and `ml/util/` are removed.
 
 Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
 
@@ -181,9 +179,9 @@ Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --re
      └──► [Kakao outbox/delivery]
 ```
 
-The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; `ml-api` is the only edge process that calls the backend Event API. Product policy, facility ownership, persistence, deduplication, SSE, and Kakao side effects happen in the backend. Debug inference remains separate under `POST /api/v1/debug/predict/window` and `POST /api/v1/debug/predict/source`; it is not the live ingress.
+The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; worker-produced probability is relayed through `ml-api` to the backend Event API as `confidence`. `ml-api` is the only edge process that calls the backend Event API and does not serve predictions. Product policy, facility ownership, persistence, deduplication, SSE, and Kakao side effects happen in the backend.
 
-The Streamlit demo (`ml/demo/app.py`) exercises the same api decision seam for temporal classifiers through `api.client.ServingFallClassifier` and `/api/v1/debug/predict/window`. It is a **developer tool**, not the product frontend.
+The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product frontend. It does not make `ml-api` a live prediction service.
 
 ---
 
@@ -193,12 +191,12 @@ The Streamlit demo (`ml/demo/app.py`) exercises the same api decision seam for t
 | --- | --- | --- |
 | RTSP capture, pose, windowing, domain fact creation | **ML worker** (`ml/worker/`) | Edge device owns camera loops and raw video stays on-site |
 | Relay gateway and backend Event API egress | **ML API** (`ml/api/`, `ml/events/`) | Single backend-facing edge process; worker talks only to local `/api/v1/relay/*` |
-| Debug fall probability score | **ML API** (`/api/v1/debug/predict/window`, `/api/v1/debug/predict/source`) | Model-level signal, stateless per window/source request |
+| Fall probability score | **ML worker** (`ml/worker/`) | Worker-owned model/domain evaluation emits probability relayed as Event API `confidence` |
 | Facility/space ownership resolution | **Backend** | `camera_id` is resolved server-side; client-provided facility is ignored |
 | Alert threshold, deduplication, persistence, SSE, Kakao | **Backend** | Product policy, state, credentials, retry logic, and user-facing side effects |
 | Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR-015); backend does not own model artifacts |
 
-ML is intentionally edge-local and signal-only: it predicts and emits relay facts through `ml-worker`/`ml-api`; backend decides product policy, persistence, deduplication, rate limits, tenant ownership, and user-facing side effects. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR-062/048 and must not be described as the operating path.
+ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides product policy, persistence, deduplication, rate limits, tenant ownership, and user-facing side effects. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR-062/048 and must not be described as the operating path.
 
 ---
 ## 상세 아키텍처 (deep dives)
@@ -299,7 +297,7 @@ ADRs are organized by active MECE category under `docs/decisions/{ml,backend,fro
 | ML demo vs product frontend boundary               | [ADR-024 — ML demo surface is not the product frontend](decisions/common/ADR-024-ml-demo-product-surface-boundary.md)                                                                                                                                                                                                                                                                                                                                                                                                                                              | `ml/demo/` is an ML observation harness; `front/` is the product UI.                                                                                                                                                                                                 |
 | ML data layout and access                          | [ADR-012 — Domain-first two-tier layout for `ml/data/`](decisions/ml/ADR-012-ml-data-domain-first-layout.md), [ADR-028 — Demo access boundary](decisions/common/ADR-028-demo-access-boundary.md) (superseded), and [ADR-045 — Streamlit demo is local-only](decisions/common/ADR-045-streamlit-demo-local-only.md)                                                                                                                                                                                                                                                 | ADR-012 owns domain-first ML data layout. ADR-028's deploy-time demo-access boundary is superseded by ADR-045: the demo is local-only, so the `FALL_DEMO_MODE` public/operator branching is removed. Retired source ADR-004 is mapped in the README coverage matrix. |
 | Pose framework                                     | [ADR-025 — YOLO26-pose framework adoption](decisions/ml/ADR-025-yolo26-pose-framework-adoption.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Active framework authority extracted from retired source ADR-005.                                                                                                                                                                                                    |
-| Frame, source, and model contracts                 | [ADR-056 — ML frame intake and source-package layout](decisions/ml/ADR-056-ml-frame-intake-and-source-package-layout.md) and [ADR-057 — FrameObservation, runner contracts, and edge-runtime architecture](decisions/ml/ADR-057-frame-observation-runner-contracts-and-edge-runtime-architecture.md) (current authorities), superseding [ADR-050](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026](decisions/ml/ADR-026-frame-model-seam-architecture.md), and [ADR-006](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) (historical) | `FrameSource` intake lives under `ml/sources/` (ADR-056); `FrameObservation`, runner contracts, `ModelRegistry`, and the L0→api dependency ladder are defined by ADR-057. ADR-006/026/050 are retained only as historical references.                                |
+| Frame, source, and model contracts                 | [ADR-056 — ML frame intake and source-package layout](decisions/ml/ADR-056-ml-frame-intake-and-source-package-layout.md) and [ADR-057 — FrameObservation, runner contracts, and edge-runtime architecture](decisions/ml/ADR-057-frame-observation-runner-contracts-and-edge-runtime-architecture.md) (current authorities), superseding [ADR-050](decisions/ml/ADR-050-frame-model-contract-architecture.md), [ADR-026](decisions/ml/ADR-026-frame-model-seam-architecture.md), and [ADR-006](decisions/ml/ADR-006-frame-source-intake-in-ml-util.md) (historical) | `FrameSource` intake historically moved to `ml/sources/` (ADR-056) and now lives under `ml/worker/sources/`; `FrameObservation`, runner contracts, `ModelRegistry`, and the name-based dependency boundary are defined by ADR-057. ADR-006/026/050 are retained only as historical references.                                |
 | Inference output and baselines                     | [ADR-027 — Inference output axis and comparison baseline policy](decisions/ml/ADR-027-inference-output-baseline-policy.md)                                                                                                                                                                                                                                                                                                                                                                                                                                         | Active output-axis, baseline-retention, and fake-adapter rejection authority extracted from retired source ADR-005.                                                                                                                                                  |
 | ML local generated/model paths                     | [ADR-015 — `ml/models/` single root](decisions/ml/ADR-015-ml-models-single-root.md) and [ADR-012](decisions/ml/ADR-012-ml-data-domain-first-layout.md)                                                                                                                                                                                                                                                                                                                                                                                                             | Current model and data roots supersede retired source ADR-007.                                                                                                                                                                                                       |
 | Issue/worktree enforcement                         | [ADR-008 — Issue-driven worktrees, enforced git-natively](decisions/common/ADR-008-issue-driven-worktree-enforcement.md)                                                                                                                                                                                                                                                                                                                                                                                                                                           | One issue → one branch cut with `git switch -c` inside a persistent lane; the one hard invariant is never working on `main`; guard scripts are the shared enforcement source.                                                                                                                                                                       |
