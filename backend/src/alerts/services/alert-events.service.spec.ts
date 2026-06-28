@@ -10,7 +10,6 @@ import type { PrismaService } from '../../prisma/prisma.service.js';
 
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
 import type { ChannelPort } from '../ports/channel.port.js';
-import type { PredictionPort } from '../ports/prediction.port.js';
 import type { AlertEventsRepository } from '../repositories/alert-events.repository.js';
 import { AlertEventsService } from './alert-events.service.js';
 
@@ -27,22 +26,7 @@ type ChannelPortMock = {
   readonly send: jest.MockedFunction<ChannelPort['send']>;
 };
 
-type PredictionPortMock = {
-  readonly predict: jest.MockedFunction<PredictionPort['predict']>;
-};
-
 describe('AlertEventsService', () => {
-  it('retains the ALERT_PREDICTION_PORT seam for future backend-owned prediction policy wiring', () => {
-    const prediction = predictionDouble();
-    const service = createService(
-      repositoryDouble(),
-      channelDouble(),
-      prediction,
-    );
-
-    expect(service.predictionSeam()).toBe(prediction);
-  });
-
   it('ensures ingest outbox once and fans out independently per recipient', async () => {
     process.env.KAKAO_TOKEN_ENC_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -77,7 +61,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -140,7 +123,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -194,7 +176,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -243,7 +224,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -293,7 +273,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -354,7 +333,6 @@ describe('AlertEventsService', () => {
     const service = createService(
       repository,
       channel,
-      predictionDouble(),
       prisma,
     );
 
@@ -380,7 +358,6 @@ describe('AlertEventsService', () => {
 function createService(
   repository: AlertEventsRepositoryMock,
   channel: ChannelPortMock,
-  prediction: PredictionPortMock,
   prisma: PrismaService = prismaDouble([]),
 ): AlertEventsService {
   const config = {
@@ -394,7 +371,6 @@ function createService(
   return new AlertEventsService(
     repository as unknown as AlertEventsRepository,
     channel,
-    prediction,
     prisma,
     config,
   );
@@ -410,12 +386,6 @@ function repositoryDouble(): AlertEventsRepositoryMock {
 function channelDouble(): ChannelPortMock {
   return {
     send: jest.fn(),
-  };
-}
-
-function predictionDouble(): PredictionPortMock {
-  return {
-    predict: jest.fn(),
   };
 }
 

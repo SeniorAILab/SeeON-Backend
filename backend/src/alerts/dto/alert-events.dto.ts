@@ -15,10 +15,6 @@ export type AlertEventRequestDto = {
   readonly confidence?: number;
 };
 
-export type PredictFallRequestDto = {
-  readonly window: readonly (readonly number[])[];
-};
-
 export type PredictFallResponseDto = {
   readonly fall_probability: number;
   readonly operating_threshold: number;
@@ -30,13 +26,6 @@ export type PredictionAlertRequestDto = {
   readonly external_event_id: string;
   readonly detected_at: string;
   readonly prediction: PredictFallResponseDto;
-};
-
-export type PredictionWindowAlertRequestDto = {
-  readonly source_id: string;
-  readonly external_event_id: string;
-  readonly detected_at: string;
-  readonly request: PredictFallRequestDto;
 };
 
 export type DeliveryStatusDto =
