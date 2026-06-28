@@ -1,4 +1,5 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import {
   NOKYANG_ADMIN_EMAIL,
   NOKYANG_FACILITY_ID,
@@ -61,7 +62,9 @@ async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
   });
 }
 
-async function upsertFacilityGraph(tx: Prisma.TransactionClient): Promise<void> {
+async function upsertFacilityGraph(
+  tx: Prisma.TransactionClient,
+): Promise<void> {
   for (const floor of nokyangFloors) {
     await tx.floor.upsert({
       where: { facilityId_id: { facilityId: floor.facilityId, id: floor.id } },

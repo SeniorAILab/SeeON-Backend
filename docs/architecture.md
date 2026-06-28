@@ -33,7 +33,7 @@ flowchart LR
   backend -->|"send-to-me (outbox/delivery)"| kakao
   user -->|"HTTPS /auth/*, /api/v1/*<br/>session cookie"| front
   front -->|"reverse proxy /api, /auth"| backend
-  backend -.->|"SSE /api/v1/sse<br/>alert · status frames"| user
+  backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · status frames"| user
   backend -.->|"ML_SERVING_URL pull seam<br/>dormant · ADR-048/062"| mlapi
 ```
 
@@ -114,7 +114,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `/auth/session`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/sse`) with cookie auth and `alertSeq` replay.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `/auth/session`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/dashboard/stream`) with cookie auth and `alertSeq` replay.
 
 **Demo vs runtime (canonical).** The front-only mock runtime (`VITE_USE_MOCK=true` with `realtimeEngine`, `mockData`, and `DemoMode`) is the front-alone "demo" path — it exists only to run the frontend by itself without a backend. dev and prod run on the real backend + real DB (demo content is seeded via `backend/prisma/demo-nokyang.fixture.ts`); there is no mock at runtime in dev/prod. The mock survives only for automated tests. The front-only mock ("demo") is therefore being retired; removing the mock-runtime code is a tracked follow-up.
 
@@ -175,7 +175,7 @@ Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --re
  camera_id → facility/space ownership → policy → dedup sha256(cameraId|detectedAt|type)
      │
      ├──► [PostgreSQL] immutable Event SSOT + derived Alert
-     ├──► [SSE GET /api/v1/sse] dashboard push
+     ├──► [SSE GET /api/v1/dashboard/stream] dashboard push
      └──► [Kakao outbox/delivery]
 ```
 

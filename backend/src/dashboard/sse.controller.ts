@@ -1,5 +1,5 @@
 /**
- * GET /api/sse — SSE event stream (F3/F8/F10/F13).
+ * GET /api/v1/dashboard/stream — dashboard SSE event stream (F3/F8/F10/F13).
  *
  * Auth: SessionGuard + RequireFacilityGuard (same as data routes).
  * Last-Event-ID: parsed as bigint alertSeq. On reconnect:
@@ -52,9 +52,9 @@ export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
 
 const HEARTBEAT_MS = 20_000;
 
-@Controller({ path: 'sse', version: '1' })
+@Controller({ path: 'dashboard', version: '1' })
 @UseGuards(SessionGuard, RequireFacilityGuard)
-export class SseController {
+export class DashboardStreamController {
   constructor(
     private readonly writer: AlertWriterService,
     private readonly alerts: AlertsService,
@@ -64,7 +64,7 @@ export class SseController {
     private readonly reAuthIntervalMs: number,
   ) {}
 
-  @Get()
+  @Get('stream')
   @Header('content-type', 'text/event-stream')
   @Header('cache-control', 'no-cache')
   @Header('connection', 'keep-alive')

@@ -146,7 +146,10 @@ function space(
   };
 }
 
-function residentialFloor(floorNumber: number, staff: string): readonly SpaceSeed[] {
+function residentialFloor(
+  floorNumber: number,
+  staff: string,
+): readonly SpaceSeed[] {
   const floorId = `fl_${floorNumber}f`;
   const rooms = Array.from({ length: 10 }, (_, index) => {
     const roomNumber = `${floorNumber}${String(index + 1).padStart(2, '0')}`;
@@ -161,9 +164,30 @@ function residentialFloor(floorNumber: number, staff: string): readonly SpaceSee
   });
   return [
     ...rooms,
-    space(`sp_${floorNumber}f_hc`, floorId, '중앙복도', SpaceType.HALLWAY, 10, staff),
-    space(`sp_${floorNumber}f_hl`, floorId, '좌측복도', SpaceType.HALLWAY, 8, staff),
-    space(`sp_${floorNumber}f_hr`, floorId, '우측복도', SpaceType.HALLWAY, 8, staff),
+    space(
+      `sp_${floorNumber}f_hc`,
+      floorId,
+      '중앙복도',
+      SpaceType.HALLWAY,
+      10,
+      staff,
+    ),
+    space(
+      `sp_${floorNumber}f_hl`,
+      floorId,
+      '좌측복도',
+      SpaceType.HALLWAY,
+      8,
+      staff,
+    ),
+    space(
+      `sp_${floorNumber}f_hr`,
+      floorId,
+      '우측복도',
+      SpaceType.HALLWAY,
+      8,
+      staff,
+    ),
     space(
       `sp_${floorNumber}f_prog`,
       floorId,
@@ -177,17 +201,45 @@ function residentialFloor(floorNumber: number, staff: string): readonly SpaceSee
 
 export const nokyangSpaces: readonly SpaceSeed[] = [
   space('sp_b1_pt', 'fl_b1', '물리치료실', SpaceType.REHAB_ROOM, 8, '정재활'),
-  space('sp_b1_prog', 'fl_b1', '프로그램실', SpaceType.PROGRAM_ROOM, 20, '한복지'),
+  space(
+    'sp_b1_prog',
+    'fl_b1',
+    '프로그램실',
+    SpaceType.PROGRAM_ROOM,
+    20,
+    '한복지',
+  ),
   space('sp_b1_dining', 'fl_b1', '식당', SpaceType.DINING, 40, '한복지'),
   space('sp_b1_hall', 'fl_b1', '복도', SpaceType.HALLWAY, 10, '정재활'),
   space('sp_b1_store', 'fl_b1', '창고', SpaceType.STORAGE, 2, '관리팀'),
-  space('sp_b1_staff', 'fl_b1', '직원휴게공간', SpaceType.STAFF_LOUNGE, 8, '관리팀'),
+  space(
+    'sp_b1_staff',
+    'fl_b1',
+    '직원휴게공간',
+    SpaceType.STAFF_LOUNGE,
+    8,
+    '관리팀',
+  ),
   space('sp_1f_lobby', 'fl_1f', '로비', SpaceType.LOBBY, 30, '안내데스크'),
   space('sp_1f_counsel', 'fl_1f', '상담실', SpaceType.OFFICE, 6, '김원장'),
   space('sp_1f_office', 'fl_1f', '사무실', SpaceType.OFFICE, 6, '관리팀'),
-  space('sp_1f_nurse', 'fl_1f', '간호스테이션', SpaceType.NURSE_STATION, 4, '이간호'),
+  space(
+    'sp_1f_nurse',
+    'fl_1f',
+    '간호스테이션',
+    SpaceType.NURSE_STATION,
+    4,
+    '이간호',
+  ),
   space('sp_1f_hall', 'fl_1f', '중앙복도', SpaceType.HALLWAY, 12, '이간호'),
-  space('sp_1f_entrance', 'fl_1f', '출입구', SpaceType.ENTRANCE, 6, '안내데스크'),
+  space(
+    'sp_1f_entrance',
+    'fl_1f',
+    '출입구',
+    SpaceType.ENTRANCE,
+    6,
+    '안내데스크',
+  ),
   ...residentialFloor(2, '이간호'),
   ...residentialFloor(3, '최요양'),
   ...residentialFloor(4, '윤케어'),
@@ -334,11 +386,36 @@ export const nokyangGuardians: readonly GuardianSeed[] = [
 ];
 
 export const nokyangCameras: readonly CameraSeed[] = [
-  { id: 'cam_sp_202', facilityId: NOKYANG_FACILITY_ID, spaceId: 'sp_202', label: 'CAM-2F-202' },
-  { id: 'cam_sp_203', facilityId: NOKYANG_FACILITY_ID, spaceId: 'sp_203', label: 'CAM-2F-203' },
-  { id: 'cam_sp_301', facilityId: NOKYANG_FACILITY_ID, spaceId: 'sp_301', label: 'CAM-3F-301' },
-  { id: 'cam_sp_305', facilityId: NOKYANG_FACILITY_ID, spaceId: 'sp_305', label: 'CAM-3F-305' },
-  { id: 'cam_sp_401', facilityId: NOKYANG_FACILITY_ID, spaceId: 'sp_401', label: 'CAM-4F-401' },
+  {
+    id: 'cam_sp_202',
+    facilityId: NOKYANG_FACILITY_ID,
+    spaceId: 'sp_202',
+    label: 'CAM-2F-202',
+  },
+  {
+    id: 'cam_sp_203',
+    facilityId: NOKYANG_FACILITY_ID,
+    spaceId: 'sp_203',
+    label: 'CAM-2F-203',
+  },
+  {
+    id: 'cam_sp_301',
+    facilityId: NOKYANG_FACILITY_ID,
+    spaceId: 'sp_301',
+    label: 'CAM-3F-301',
+  },
+  {
+    id: 'cam_sp_305',
+    facilityId: NOKYANG_FACILITY_ID,
+    spaceId: 'sp_305',
+    label: 'CAM-3F-305',
+  },
+  {
+    id: 'cam_sp_401',
+    facilityId: NOKYANG_FACILITY_ID,
+    spaceId: 'sp_401',
+    label: 'CAM-4F-401',
+  },
 ];
 
 export const nokyangStatuses: readonly ResidentStatusSeed[] = [

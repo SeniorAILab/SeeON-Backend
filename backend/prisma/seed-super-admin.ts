@@ -148,7 +148,9 @@ export async function bootstrapSuperAdmin(
 function createPrismaClient(): PrismaClient {
   const directUrl = process.env.DIRECT_URL;
   if (!directUrl) {
-    throw new Error('DIRECT_URL must be set for privileged super-admin bootstrap.');
+    throw new Error(
+      'DIRECT_URL must be set for privileged super-admin bootstrap.',
+    );
   }
   return new PrismaClient({ datasources: { db: { url: directUrl } } });
 }
