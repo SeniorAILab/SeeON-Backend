@@ -39,5 +39,6 @@ COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/prisma ./prisma
 
 EXPOSE 8080
-# nest build preserves the multi-root layout (src/, prisma/, scripts/), so the entry is dist/src/main.
-CMD ["node", "dist/src/main"]
+# SWC builder compiles sourceRoot (src/) to a flat dist/, so the entry is dist/main
+# (matches package.json start:prod). prisma/ + scripts/ are CLI/seed tools, not runtime imports.
+CMD ["node", "dist/main"]

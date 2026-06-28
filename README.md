@@ -35,7 +35,7 @@ pnpm prisma:generate
 # 6. Start app services in separate terminals
 pnpm dev:backend  # http://localhost:8080
 pnpm dev:ml-api       # ml-api / FastAPI private-local surface on http://localhost:8000
-pnpm dev:ml-worker --config config/ml-worker.local.yaml
+pnpm dev:ml-worker    # reads gitignored ml/config/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
 pnpm dev:front    # http://localhost:3000
 
 # 7. Register git hooks (core.hooksPath + guard scripts; run once per clone)
@@ -84,7 +84,7 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | NestJS dev server in watch mode (`backend/`) |
 | `pnpm dev:ml-api` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
-| `pnpm dev:ml-worker` | `ml-worker` RTSP worker; pass `--config config/ml-worker.local.yaml` because the script runs inside `ml/` |
+| `pnpm dev:ml-worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `config/ml-worker.local.yaml` (1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
 | `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
