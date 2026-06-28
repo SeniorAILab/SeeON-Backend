@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { AlertStatus } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { AlertStatusDto } from './dto/alert-status.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
+import { AlertWriterService } from './alert-writer.service.js';
+import { alertInclude, presentAlert } from './alerts.presenter.js';
 
 export interface AlertQuery {
   residentId?: string;
@@ -17,7 +18,10 @@ export interface AlertQuery {
 
 @Injectable()
 export class AlertsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly writer: AlertWriterService,
+  ) {}
 
   async list(facilityId: string, query: AlertQuery = {}) {
     const { residentId, status, afterSeq, beforeSeq, limit = 50 } = query;
@@ -58,22 +62,20 @@ export class AlertsService {
     return presentAlert(alert);
   }
 
-  async ack(facilityId: string, id: string) {
-    const existing = await this.prisma.withFacilityContext(
-      facilityId,
-      (tx: Prisma.TransactionClient) => tx.alert.findUnique({ where: { id } }),
-    );
-    if (!existing) throw new NotFoundException('Alert not found');
-    const alert = await this.prisma.withFacilityContext(
-      facilityId,
-      (tx: Prisma.TransactionClient) =>
-        tx.alert.update({
-          where: { id },
-          data: { status: AlertStatus.ACKED },
-          include: alertInclude,
-        }),
-    );
-    return presentAlert(alert);
+  /**
+   * Acknowledge an alert (NEW → ACKED). Transition + audit stamp + SSE emit are
+   * owned by AlertWriterService so all Alert mutations share one serialized queue.
+   */
+  ack(facilityId: string, id: string, actorUserId: string) {
+    return this.writer.ackAlert({ facilityId, alertId: id, actorUserId });
+  }
+
+  /**
+   * Resolve an alert (ACKED → RESOLVED). Requires a prior ACK; delegated to the
+   * writer for serialized transition + audit stamp + post-commit SSE emit.
+   */
+  resolve(facilityId: string, id: string, actorUserId: string) {
+    return this.writer.resolveAlert({ facilityId, alertId: id, actorUserId });
   }
 
   async setSnapshotKey(facilityId: string, id: string, snapshotKey: string) {
@@ -100,33 +102,4 @@ export class AlertsService {
         }),
     );
   }
-}
-
-const alertInclude = {
-  resident: { select: { name: true } },
-  space: { select: { name: true } },
-} satisfies Prisma.AlertInclude;
-
-type AlertWithContext = Prisma.AlertGetPayload<{
-  include: typeof alertInclude;
-}>;
-
-function presentAlert(alert: AlertWithContext) {
-  return {
-    alertSeq: alert.alertSeq.toString(),
-    id: alert.id,
-    facilityId: alert.facilityId,
-    residentId: alert.residentId,
-    cameraId: alert.cameraId,
-    spaceId: alert.spaceId,
-    room: alert.space.name,
-    type: alert.type,
-    probability: alert.probability,
-    snapshotKey: alert.snapshotKey,
-    detectedAt: alert.detectedAt,
-    status: alert.status,
-    resident: alert.resident,
-    space: alert.space,
-    createdAt: alert.createdAt,
-  };
 }

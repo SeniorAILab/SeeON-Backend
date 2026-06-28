@@ -12,11 +12,22 @@
  * so SSE streams can deliver `event: status` frames to connected clients
  * (AC5/AC6 live resident status badge).
  */
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ResidentState } from '@prisma/client';
+import { AlertStatus, ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertEventTypes } from './dto/alert-events.dto.js';
+import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
+import {
+  alertInclude,
+  presentAlert,
+  type AlertWithContext,
+} from './alerts.presenter.js';
 
 export interface AlertEvent {
   alertSeq: bigint;
@@ -38,7 +49,6 @@ export interface WriteAlertResult extends AlertEvent {
   created: boolean;
 }
 
-
 /** Emitted after each committed alert; carries the new ResidentStatus state. */
 export interface StatusEvent {
   alertSeq: bigint;
@@ -47,6 +57,18 @@ export interface StatusEvent {
   state: ResidentState;
   cameraOnline: boolean;
   lastSeenAt: Date | null;
+}
+
+/** Emitted after an alert lifecycle transition (ack/resolve) commits. Live-only, non-replayed. */
+export interface AlertUpdateEvent {
+  alertSeq: bigint;
+  id: string;
+  facilityId: string;
+  status: string;
+  ackedById: string | null;
+  ackedAt: Date | null;
+  resolvedById: string | null;
+  resolvedAt: Date | null;
 }
 
 export interface WriteAlertInput {
@@ -66,11 +88,13 @@ const CAMERA_ONLINE_TIMEOUT_MS = 30_000;
 
 type Listener = (event: AlertEvent) => void;
 type StatusListener = (event: StatusEvent) => void;
+type UpdateListener = (event: AlertUpdateEvent) => void;
 
 @Injectable()
 export class AlertWriterService {
   private readonly _listeners = new Map<string, Set<Listener>>();
   private readonly _statusListeners = new Map<string, Set<StatusListener>>();
+  private readonly _updateListeners = new Map<string, Set<UpdateListener>>();
   private _queue: Promise<unknown> = Promise.resolve();
   private readonly logger = new Logger(AlertWriterService.name);
 
@@ -147,9 +171,8 @@ export class AlertWriterService {
     const cameraOnline =
       now.getTime() - detectedAt.getTime() < CAMERA_ONLINE_TIMEOUT_MS;
 
-    const writeResult = await this.prisma.withFacilityContext(
-      facilityId,
-      async (tx: Prisma.TransactionClient) => {
+    const writeResult = await this.prisma
+      .withFacilityContext(facilityId, async (tx: Prisma.TransactionClient) => {
         const created = await tx.alert.create({
           data: {
             facilityId,
@@ -190,13 +213,17 @@ export class AlertWriterService {
         }
 
         return { alert: created, created: true };
-      },
-    ).catch(async (err: unknown) => {
-      if (!isAlertConflict(err)) throw err;
-      const existing = await this.findExistingAlert(facilityId, idempotencyKey, originEventId);
-      if (!existing) throw err;
-      return { alert: existing, created: false };
-    });
+      })
+      .catch(async (err: unknown) => {
+        if (!isAlertConflict(err)) throw err;
+        const existing = await this.findExistingAlert(
+          facilityId,
+          idempotencyKey,
+          originEventId,
+        );
+        if (!existing) throw err;
+        return { alert: existing, created: false };
+      });
 
     const { alert, created } = writeResult;
     if (!created) {
@@ -282,6 +309,147 @@ export class AlertWriterService {
       }
     }
   }
+
+  /**
+   * Subscribe to live alert lifecycle update events (ack/resolve) for facilityId.
+   * Returns an unsubscribe function.
+   */
+  subscribeUpdates(facilityId: string, fn: UpdateListener): () => void {
+    let listeners = this._updateListeners.get(facilityId);
+    if (!listeners) {
+      listeners = new Set();
+      this._updateListeners.set(facilityId, listeners);
+    }
+    listeners.add(fn);
+    return () => this._updateListeners.get(facilityId)?.delete(fn);
+  }
+
+  /**
+   * Acknowledge an alert (NEW → ACKED), stamping the session actor + time.
+   * Serialized on the same queue as inserts. Idempotent for an already-ACKED
+   * alert (no restamp); rejects an already-RESOLVED alert with 409.
+   */
+  ackAlert(input: {
+    facilityId: string;
+    alertId: string;
+    actorUserId: string;
+  }): Promise<ReturnType<typeof presentAlert>> {
+    const next = this._queue.then(() => this._transition('ack', input));
+    this._queue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Resolve an alert (ACKED → RESOLVED), stamping the session actor + time.
+   * Requires a prior ACK. Idempotent for an already-RESOLVED alert (no restamp);
+   * rejects a still-NEW alert with 409.
+   */
+  resolveAlert(input: {
+    facilityId: string;
+    alertId: string;
+    actorUserId: string;
+  }): Promise<ReturnType<typeof presentAlert>> {
+    const next = this._queue.then(() => this._transition('resolve', input));
+    this._queue = next.catch(() => undefined);
+    return next;
+  }
+
+  private async _transition(
+    kind: 'ack' | 'resolve',
+    {
+      facilityId,
+      alertId,
+      actorUserId,
+    }: { facilityId: string; alertId: string; actorUserId: string },
+  ): Promise<ReturnType<typeof presentAlert>> {
+    const { alert, changed } = await this.prisma.withFacilityContext(
+      facilityId,
+      async (
+        tx: Prisma.TransactionClient,
+      ): Promise<{ alert: AlertWithContext; changed: boolean }> => {
+        const existing = await tx.alert.findUnique({ where: { id: alertId } });
+        if (!existing) throw new FacilityScopedNotFoundException('alert');
+
+        const data =
+          kind === 'ack'
+            ? this._ackData(existing.status, actorUserId)
+            : this._resolveData(existing.status, actorUserId);
+
+        if (data === null) {
+          // Idempotent no-op: return the current row without restamping.
+          const current = await tx.alert.findUnique({
+            where: { id: alertId },
+            include: alertInclude,
+          });
+          return { alert: current as AlertWithContext, changed: false };
+        }
+
+        const updated = await tx.alert.update({
+          where: { id: alertId },
+          data,
+          include: alertInclude,
+        });
+        return { alert: updated, changed: true };
+      },
+    );
+
+    if (changed) {
+      // Emit AFTER commit (live-only, non-replayed lifecycle delta).
+      this._emitUpdate(facilityId, {
+        alertSeq: alert.alertSeq,
+        id: alert.id,
+        facilityId: alert.facilityId,
+        status: alert.status,
+        ackedById: alert.ackedById,
+        ackedAt: alert.ackedAt,
+        resolvedById: alert.resolvedById,
+        resolvedAt: alert.resolvedAt,
+      });
+    }
+    return presentAlert(alert);
+  }
+
+  private _ackData(
+    status: AlertStatus,
+    actorUserId: string,
+  ): Prisma.AlertUncheckedUpdateInput | null {
+    if (status === AlertStatus.ACKED) return null; // idempotent no-op
+    if (status === AlertStatus.RESOLVED)
+      throw new ConflictException('Alert already resolved');
+    return {
+      status: AlertStatus.ACKED,
+      ackedById: actorUserId,
+      ackedAt: new Date(),
+    };
+  }
+
+  private _resolveData(
+    status: AlertStatus,
+    actorUserId: string,
+  ): Prisma.AlertUncheckedUpdateInput | null {
+    if (status === AlertStatus.RESOLVED) return null; // idempotent no-op
+    if (status === AlertStatus.NEW)
+      throw new ConflictException(
+        'Alert must be acknowledged before resolution',
+      );
+    return {
+      status: AlertStatus.RESOLVED,
+      resolvedById: actorUserId,
+      resolvedAt: new Date(),
+    };
+  }
+
+  private _emitUpdate(facilityId: string, event: AlertUpdateEvent): void {
+    const listeners = this._updateListeners.get(facilityId);
+    if (!listeners) return;
+    for (const fn of listeners) {
+      try {
+        fn(event);
+      } catch {
+        // listener errors must not crash the writer
+      }
+    }
+  }
 }
 
 function toAlertEvent(alert: {
@@ -326,6 +494,7 @@ function isAlertConflict(err: unknown): boolean {
     typeof target === 'string' ||
     (Array.isArray(target) &&
       target.includes('facility_id') &&
-      (target.includes('idempotency_key') || target.includes('origin_event_id')))
+      (target.includes('idempotency_key') ||
+        target.includes('origin_event_id')))
   );
 }

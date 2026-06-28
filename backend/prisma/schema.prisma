@@ -34,7 +34,6 @@ enum ResidentState {
   FALL
 }
 
-
 enum SpaceType {
   ROOM
   HALLWAY
@@ -110,6 +109,8 @@ model User {
   kakaoIdentity    KakaoIdentity?
   sessions         ServerSession[]
   deliveryAttempts DeliveryAttempt[]
+  ackedAlerts      Alert[]           @relation("AlertAckedBy")
+  resolvedAlerts   Alert[]           @relation("AlertResolvedBy")
 
   @@map("users")
 }
@@ -214,13 +215,13 @@ model Guardian {
 /// Camera. Composite unique (facilityId, id) supports composite FK
 /// references from Alert and Event rows.
 model Camera {
-  id               String    @id @default(cuid())
-  facilityId       String    @map("facility_id")
-  spaceId          String    @map("space_id")
-  label            String
-  lastSeenAt       DateTime?        @map("last_seen_at")
-  online           Boolean          @default(false)
-  createdAt        DateTime         @default(now()) @map("created_at")
+  id         String    @id @default(cuid())
+  facilityId String    @map("facility_id")
+  spaceId    String    @map("space_id")
+  label      String
+  lastSeenAt DateTime? @map("last_seen_at")
+  online     Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   facility         Facility         @relation(fields: [facilityId], references: [id])
   space            Space            @relation(fields: [facilityId, spaceId], references: [facilityId, id])
@@ -255,18 +256,29 @@ model Alert {
   idempotencyKey String      @map("idempotency_key")
   originEventId  String?     @map("origin_event_id")
   createdAt      DateTime    @default(now()) @map("created_at")
+  ackedById      String?     @map("acked_by_id")
+  ackedAt        DateTime?   @map("acked_at")
+  resolvedById   String?     @map("resolved_by_id")
+  resolvedAt     DateTime?   @map("resolved_at")
 
-  facility Facility  @relation(fields: [facilityId], references: [id])
-  resident Resident? @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  facility    Facility  @relation(fields: [facilityId], references: [id])
+  resident    Resident? @relation(fields: [facilityId, residentId], references: [facilityId, id])
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
-  camera      Camera? @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space       Space   @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originEvent Event?  @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
+  camera      Camera?   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space       Space     @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originEvent Event?    @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
+  /// Lifecycle audit actors. Simple nullable FK → users(id); same-facility is an
+  /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
+  ackedBy     User?     @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resolvedBy  User?     @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([facilityId, idempotencyKey])
   @@index([facilityId, alertSeq])
   @@index([facilityId, spaceId, alertSeq])
+  @@index([facilityId, status, alertSeq])
+  @@index([ackedById])
+  @@index([resolvedById])
   @@map("alerts")
 }
 
@@ -283,10 +295,10 @@ model Event {
   modifiedAt DateTime @updatedAt @map("modified_at")
   dedupKey   String   @map("dedup_key")
 
-  facility Facility @relation(fields: [facilityId], references: [id])
-  camera   Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originAlerts Alert[] @relation("AlertOriginEvent")
+  facility     Facility @relation(fields: [facilityId], references: [id])
+  camera       Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space        Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originAlerts Alert[]  @relation("AlertOriginEvent")
 
   @@unique([facilityId, id])
   @@unique([facilityId, dedupKey])

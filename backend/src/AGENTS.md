@@ -12,8 +12,8 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | Event ingestion | `events/` | Versioned Event API intake. |
 | Alert policy | `alerts/` | Policy, repositories, ports, Kakao fan-out. |
 | Auth/session | `auth/`, `guardians/` | Email/password, Kakao, guardian domain. |
-| Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs. |
-| Resident domain | `residents/`, `resident-assignments/`, `resident-risk-summaries/` | Resident read/write surfaces. |
+| Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs; zone routes nest under `spaces/:spaceId/zones` (ADR-077). |
+| Resident domain | `residents/`, `resident-risk-summaries/` | Resident CRUD + assignments (incl. `GET /residents/assignments`); risk summaries are a deferred read-model. |
 | Shared Nest pieces | `common/`, `config/`, `prisma/` | Filters, config, PrismaService wrapper. |
 
 ## Conventions

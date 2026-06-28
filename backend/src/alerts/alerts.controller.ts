@@ -64,7 +64,13 @@ export class AlertsController {
   @Patch(':id/ack')
   @HttpCode(200)
   ack(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.ack(requireFacilityId(req), id);
+    return this.service.ack(requireFacilityId(req), id, requireUserId(req));
+  }
+
+  @Patch(':id/resolve')
+  @HttpCode(200)
+  resolve(@Req() req: RequestWithAuth, @Param('id') id: string) {
+    return this.service.resolve(requireFacilityId(req), id, requireUserId(req));
   }
 
   /**
@@ -164,4 +170,10 @@ function requireFacilityId(req: RequestWithAuth): string {
   const facilityId = req.user?.facilityId;
   if (!facilityId) throw new ForbiddenException('Facility context required');
   return facilityId;
+}
+
+function requireUserId(req: RequestWithAuth): string {
+  const userId = req.user?.id;
+  if (!userId) throw new ForbiddenException('Session user required');
+  return userId;
 }

@@ -4,9 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { KakaoSendToMeChannelAdapter } from './adapters/kakao-send-to-me-channel.adapter.js';
-import { MlServingPredictionAdapter } from './adapters/ml-serving-prediction.adapter.js';
 import { ALERT_CHANNEL_PORT } from './ports/channel.port.js';
-import { ALERT_PREDICTION_PORT } from './ports/prediction.port.js';
 import { AlertEventsRepository } from './repositories/alert-events.repository.js';
 import { AlertEventsService } from './services/alert-events.service.js';
 import {
@@ -22,9 +20,8 @@ import { AlertWriterService } from './alert-writer.service.js';
  * AlertsModule bounds the live alert domain:
  *  - /api/v1/events is the live ML ingress; AlertEventsService owns the
  *    persisted outbox + Kakao channel fan-out used by the Event API.
- *  - ALERT_PREDICTION_PORT remains wired as the D2-O1 future seam for
- *    backend-owned alert policy over ML predictions, but no legacy prediction
- *    route is exposed here.
+ *  - AlertEventsService owns persisted outbox + Kakao channel fan-out only;
+ *    live alert decisions come from pushed Event API payload confidence.
  *  - #105 read-model: dashboard-facing Alert queries + snapshot proxy
  *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by AuthModule.
  *  - #105 write path: AlertWriterService serializes Alert inserts (alertSeq
@@ -40,7 +37,6 @@ import { AlertWriterService } from './alert-writer.service.js';
     AlertPolicyService,
     { provide: AlertPolicyClock, useClass: SystemAlertPolicyClock },
     { provide: ALERT_CHANNEL_PORT, useClass: KakaoSendToMeChannelAdapter },
-    { provide: ALERT_PREDICTION_PORT, useClass: MlServingPredictionAdapter },
     AlertsService,
     AlertWriterService,
   ],

@@ -15,7 +15,6 @@ import { FacilitiesModule } from './facilities/facilities.module.js';
 import { FloorsModule } from './floors/floors.module.js';
 import { SpacesModule } from './spaces/spaces.module.js';
 import { ZonesModule } from './zones/zones.module.js';
-import { ResidentAssignmentsModule } from './resident-assignments/resident-assignments.module.js';
 import { SpaceStatusesModule } from './space-statuses/space-statuses.module.js';
 import { ResidentRiskSummariesModule } from './resident-risk-summaries/resident-risk-summaries.module.js';
 import { EventsModule } from './events/events.module.js';
@@ -50,7 +49,6 @@ import { validateBackendEnv } from './config/env-validation.js';
     FloorsModule,
     SpacesModule,
     ZonesModule,
-    ResidentAssignmentsModule,
     SpaceStatusesModule,
     ResidentRiskSummariesModule,
     EventsModule,

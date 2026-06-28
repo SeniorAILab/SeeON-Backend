@@ -18,10 +18,6 @@ import {
   type ChannelPort,
   type DeliveryResult,
 } from '../ports/channel.port.js';
-import {
-  ALERT_PREDICTION_PORT,
-  type PredictionPort,
-} from '../ports/prediction.port.js';
 import { AlertEventsRepository } from '../repositories/alert-events.repository.js';
 
 const DEFAULT_DELIVERY_TIMEOUT_MS = 5_000;
@@ -43,20 +39,10 @@ export class AlertEventsService {
     private readonly alertEventsRepository: AlertEventsRepository,
     @Inject(ALERT_CHANNEL_PORT)
     private readonly channelPort: ChannelPort,
-    @Inject(ALERT_PREDICTION_PORT)
-    private readonly predictionPort: PredictionPort,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
   ) {}
 
-  /**
-   * Retained D2-O1 seam: AlertsModule still wires ALERT_PREDICTION_PORT so the
-   * backend-owned alert policy can consume ML predictions again without
-   * reviving the removed legacy /api.alerts/events ingress.
-   */
-  predictionSeam(): PredictionPort {
-    return this.predictionPort;
-  }
 
   async ensureOutboxForIngest(
     input: EnsureOutboxForIngestInput,
