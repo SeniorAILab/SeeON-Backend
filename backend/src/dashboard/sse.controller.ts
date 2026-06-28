@@ -41,6 +41,7 @@ import { AlertWriterService } from '../alerts/alert-writer.service.js';
 import type {
   AlertEvent,
   StatusEvent,
+  AlertUpdateEvent,
 } from '../alerts/alert-writer.service.js';
 import { AlertsService } from '../alerts/alerts.service.js';
 import { StatusService } from '../status/status.service.js';
@@ -99,6 +100,7 @@ export class SseController {
     let liveReady = false;
     const liveBuffer: AlertEvent[] = [];
     const statusLiveBuffer: StatusEvent[] = [];
+    const updateLiveBuffer: AlertUpdateEvent[] = [];
 
     const unsub = this.writer.subscribe(facilityId, (event: AlertEvent) => {
       if (!liveReady) {
@@ -120,10 +122,23 @@ export class SseController {
       },
     );
 
+    // Subscribe to lifecycle update events (ack/resolve) — buffer during replay.
+    const unsubUpdates = this.writer.subscribeUpdates(
+      facilityId,
+      (event: AlertUpdateEvent) => {
+        if (!liveReady) {
+          updateLiveBuffer.push(event);
+          return;
+        }
+        write(formatAlertUpdateEvent(event));
+      },
+    );
+
     const failBeforeLive = (eventName: string) => {
       write(`event: ${eventName}\ndata: {}\n\n`);
       unsub();
       unsubStatus();
+      unsubUpdates();
       try {
         res.end();
       } catch {
@@ -184,6 +199,13 @@ export class SseController {
     }
     statusLiveBuffer.length = 0;
 
+    // Flush alert-updated live buffer. Lifecycle updates are NOT replay-cursor
+    // bound, so emit every buffered frame (no alertSeq filtering, no id: line).
+    for (const event of updateLiveBuffer) {
+      write(formatAlertUpdateEvent(event));
+    }
+    updateLiveBuffer.length = 0;
+
     // Heartbeat to keep connection alive.
     const heartbeat = setInterval(() => write(': heartbeat\n\n'), HEARTBEAT_MS);
 
@@ -196,6 +218,7 @@ export class SseController {
       if (reAuthTick !== null) clearInterval(reAuthTick);
       unsub();
       unsubStatus();
+      unsubUpdates();
       try {
         res.end();
       } catch {
@@ -277,6 +300,28 @@ function formatStatusEvent(event: StatusEvent): string {
       state: event.state,
       cameraOnline: event.cameraOnline,
       lastSeenAt: event.lastSeenAt,
+    })}\n\n`
+  );
+}
+
+/**
+ * Format a named `event: alert-updated` SSE frame (live-only lifecycle delta).
+ * MUST NOT include an `id:` line: status changes do not mint a new alertSeq, so
+ * reusing it as the SSE id would corrupt Last-Event-ID replay. alertSeq lives in
+ * `data` only for client correlation; missed updates are recovered via REST.
+ */
+export function formatAlertUpdateEvent(event: AlertUpdateEvent): string {
+  return (
+    `event: alert-updated\n` +
+    `data: ${JSON.stringify({
+      alertSeq: event.alertSeq.toString(),
+      id: event.id,
+      facilityId: event.facilityId,
+      status: event.status,
+      ackedById: event.ackedById,
+      ackedAt: event.ackedAt,
+      resolvedById: event.resolvedById,
+      resolvedAt: event.resolvedAt,
     })}\n\n`
   );
 }

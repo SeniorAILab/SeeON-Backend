@@ -1,8 +1,6 @@
-import { NotFoundException } from '@nestjs/common';
-import { AlertStatus } from '@prisma/client';
-
 import { FacilityScopedNotFoundException } from '../common/domain-errors';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { AlertWriterService } from './alert-writer.service';
 import { AlertsService } from './alerts.service';
 
 type FindManyArg = {
@@ -10,8 +8,6 @@ type FindManyArg = {
   take: number;
   orderBy: { alertSeq: 'desc' };
 };
-
-type UpdateArg = { data: { status: AlertStatus } };
 
 type AlertDelegate = {
   findMany: jest.Mock;
@@ -31,7 +27,15 @@ function setup() {
         cb({ alert }),
     ),
   } as unknown as PrismaService;
-  return { service: new AlertsService(prisma), alert };
+  const ackAlert = jest.fn();
+  const resolveAlert = jest.fn();
+  const writer = { ackAlert, resolveAlert } as unknown as AlertWriterService;
+  return {
+    service: new AlertsService(prisma, writer),
+    alert,
+    ackAlert,
+    resolveAlert,
+  };
 }
 
 describe('AlertsService (read-model)', () => {
@@ -54,31 +58,38 @@ describe('AlertsService (read-model)', () => {
     ).rejects.toBeInstanceOf(FacilityScopedNotFoundException);
   });
 
-  it('throws NotFound when acking a missing alert', async () => {
-    const { service, alert } = setup();
-    alert.findUnique.mockResolvedValue(null);
-    await expect(service.ack('facility-1', 'missing')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+  it('delegates ack to the lifecycle writer with the session actor', async () => {
+    const { service, ackAlert } = setup();
+    ackAlert.mockResolvedValue({ id: 'a1', status: 'ACKED' });
+    const result = await service.ack('facility-1', 'a1', 'user-1');
+    expect(ackAlert).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'a1',
+      actorUserId: 'user-1',
+    });
+    expect(result).toMatchObject({ status: 'ACKED' });
+  });
+
+  it('delegates resolve to the lifecycle writer with the session actor', async () => {
+    const { service, resolveAlert } = setup();
+    resolveAlert.mockResolvedValue({ id: 'a1', status: 'RESOLVED' });
+    const result = await service.resolve('facility-1', 'a1', 'user-2');
+    expect(resolveAlert).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'a1',
+      actorUserId: 'user-2',
+    });
+    expect(result).toMatchObject({ status: 'RESOLVED' });
+  });
+
+  it('does not write Alert state directly from the service (writer owns mutation)', async () => {
+    const { service, alert, ackAlert } = setup();
+    ackAlert.mockResolvedValue({ id: 'a1' });
+    await service.ack('facility-1', 'a1', 'user-1');
     expect(alert.update).not.toHaveBeenCalled();
   });
 
-  it('marks an existing alert ACKED', async () => {
-    const { service, alert } = setup();
-    alert.findUnique.mockResolvedValue({ id: 'a1' });
-    alert.update.mockResolvedValue(alertRow({ status: AlertStatus.ACKED }));
-    const result = await service.ack('facility-1', 'a1');
-    const [[updateArg]] = alert.update.mock.calls as [[UpdateArg]];
-    expect(updateArg.data).toEqual({
-      status: AlertStatus.ACKED,
-    });
-    expect(result).toMatchObject({
-      alertSeq: '1',
-      spaceId: 'space-1',
-      room: 'Room 101',
-    });
-  });
-  it('serializes room-only alerts with null resident fields', async () => {
+  it('serializes room-only alerts with null resident + lifecycle fields', async () => {
     const { service, alert } = setup();
     alert.findUnique.mockResolvedValue(
       alertRow({
@@ -95,6 +106,8 @@ describe('AlertsService (read-model)', () => {
       resident: null,
       spaceId: 'space-1',
       room: 'Room 101',
+      ackedById: null,
+      resolvedById: null,
     });
   });
 });
@@ -111,7 +124,13 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     probability: 0.9,
     snapshotKey: null,
     detectedAt: new Date('2026-06-22T00:00:00Z'),
-    status: AlertStatus.NEW,
+    status: 'NEW',
+    ackedById: null,
+    ackedAt: null,
+    ackedBy: null,
+    resolvedById: null,
+    resolvedAt: null,
+    resolvedBy: null,
     createdAt: new Date('2026-06-22T00:00:01Z'),
     resident: { name: '홍길동' },
     space: { name: 'Room 101' },

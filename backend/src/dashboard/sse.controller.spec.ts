@@ -1,4 +1,4 @@
-import { formatAlertEvent } from './sse.controller';
+import { formatAlertEvent, formatAlertUpdateEvent } from './sse.controller';
 
 describe('formatAlertEvent', () => {
   it('serializes alertSeq as string with spaceId and room context', () => {
@@ -29,5 +29,35 @@ describe('formatAlertEvent', () => {
     expect(payload.spaceId).toBe('space-1');
     expect(payload.room).toBe('Room 101');
     expect(payload.space).toEqual({ name: 'Room 101' });
+  });
+});
+
+describe('formatAlertUpdateEvent', () => {
+  it('emits a named alert-updated frame with lifecycle fields and NO id: line', () => {
+    const frame = formatAlertUpdateEvent({
+      alertSeq: 42n,
+      id: 'alert-1',
+      facilityId: 'facility-1',
+      status: 'ACKED',
+      ackedById: 'user-1',
+      ackedAt: new Date('2026-06-22T00:05:00Z'),
+      resolvedById: null,
+      resolvedAt: null,
+    });
+
+    expect(frame).toContain('event: alert-updated\n');
+    // Replay-cursor safety: lifecycle updates are live-only, never carry an SSE id.
+    expect(frame).not.toMatch(/^id:/m);
+
+    const payload = JSON.parse(frame.split('data: ')[1]) as {
+      alertSeq: string;
+      id: string;
+      status: string;
+      ackedById: string | null;
+    };
+    expect(payload.alertSeq).toBe('42');
+    expect(payload.id).toBe('alert-1');
+    expect(payload.status).toBe('ACKED');
+    expect(payload.ackedById).toBe('user-1');
   });
 });
