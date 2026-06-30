@@ -5,7 +5,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 // 백엔드 계층/DTO 경계를 warn-first로 기계 강제 (신규 의존성 0).
-// 규약 SoT: ADR-064 · docs/rules/backend-architecture-lint-and-guard.md.
+// 규약 SoT: decision map · docs/rules/backend-architecture-lint-and-guard.md.
 export default tseslint.config(
   {
     ignores: ['eslint.config.mjs'],
@@ -27,7 +27,7 @@ export default tseslint.config(
     },
   },
   {
-    // Stability deny-list (docs/rules/code-stability.md, ADR-014).
+    // Stability deny-list (docs/rules/code-stability.md, decision map).
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/only-throw-error': 'error',

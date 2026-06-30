@@ -10,7 +10,7 @@ migration SQL, seed data, and Postgres role initialization.
   `prisma migrate deploy` from deploy tooling.
 - `init/01-create-app-role.sql` and `init/02-sync-app-role.sh` - runtime role
   setup and privilege synchronization.
-- `scripts/deploy/AGENTS.md` and `docs/decisions/common/ADR-072-local-manual-production-deploy.md` - production migration/deploy contract.
+- `scripts/deploy/AGENTS.md` and `docs/decisions/README.md` - production migration/deploy contract.
 
 ## Conventions
 - `DATABASE_URL` is the runtime app role path. `DIRECT_URL` is for migrations,
@@ -24,7 +24,7 @@ migration SQL, seed data, and Postgres role initialization.
   CLI and `backend/prisma/**` only so deploy tooling can run one-shot
   `prisma migrate deploy` / `prisma migrate resolve` commands.
 - Keep the fixed runtime role contract aligned with `APP_DB_USER=fall_app`
-  unless a backend ADR changes it.
+  unless a backend decision changes it.
 
 ## Anti-patterns
 - No hand-edited production database changes outside migrations.

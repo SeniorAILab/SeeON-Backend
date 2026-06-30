@@ -4,9 +4,9 @@
 `scripts/git-guard/`(레포 전역 워크플로/자산 가드)의 형제 디렉터리이며, 같은
 `scripts/git-guard/lib.sh` 헬퍼(`gg_warn`/`gg_die`)를 재사용합니다.
 
-> ADR 근거: **ADR-046**(백엔드 계층 규약) 강제 레이어, **ADR-066**(DTO hard gate),
-> **ADR-008**(단일소스 호출), **ADR-016**(되돌릴 수 있는 convention에는 warn-tier 훅 금지) 경계 준수.
-> 자세한 결정은 `docs/decisions/backend/ADR-064-backend-layering-lint-and-guard-enforcement.md`
+> 결정 근거: backend layering rule, DTO hard gate, single-source guard invocation,
+> and the warn-tier boundary for reversible convention checks.
+> 자세한 결정은 `docs/decisions/README.md`
 > 와 `docs/rules/backend-architecture-lint-and-guard.md` 참고.
 
 ## 무엇을 어디서 검사하나 (경계)
@@ -76,5 +76,5 @@ pnpm --filter backend run dto:check -- --fixture scripts/backend-guard/fixtures/
 > 벤더 무관 보증은 git-native `.githooks/pre-commit` + CI 입니다. 스키마 가드는 에이전트
 > pre-edit 훅(`.claude`/`.codex`)에 넣지 않습니다 — 스키마만 스테이지된 동안 모든 셸/편집을
 > 막아 데드락을 유발할 수 있고, pre-commit 이 이미 전 벤더를 커밋 시점에 커버하기 때문입니다.
-> ADR-016 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
+> decision map 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
 > (ESLint 에디터 + CI lint 로만 노출).

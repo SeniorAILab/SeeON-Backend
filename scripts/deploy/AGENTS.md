@@ -13,7 +13,7 @@ production Compose image-pull topology.
 - `scripts/release/manual-production-deploy.mjs` - current local production
   deploy path while Actions-backed CD is paused: builds/pushes SHA-tagged GHCR
   images, uploads the bundle, then invokes this VM pull-only deploy script.
-- `docs/decisions/common/ADR-072-local-manual-production-deploy.md` - deploy
+- `docs/decisions/README.md` - deploy
   decision of record; `.env.host.prod.example` - production env contract. VM
   access / bootstrap / operate notes are in the section below.
 
@@ -62,7 +62,7 @@ ssh root@<retired-host> \
 
 `ncloud-bootstrap.sh` installs Docker, enables SSH/Docker, creates the `deploy` user and `/opt/eldercare-fall-ai`, and adds a 2G swapfile for the 1 GB VM.
 
-Production env lives in `/opt/eldercare-fall-ai/shared/.env` (or the GitHub secret `NCLOUD_ENV_FILE`); fill it from `.env.host.prod.example`. The deploy command path, DB modes (`migrate` default / `baseline-existing` / `reset-demo` / `skip`), and super-admin bootstrap (ADR-073) are owned by `scripts/release/manual-production-deploy.mjs`, so run it with `--dry-run` first:
+Production env lives in `/opt/eldercare-fall-ai/shared/.env` (or the GitHub secret `NCLOUD_ENV_FILE`); fill it from `.env.host.prod.example`. The deploy command path, DB modes (`migrate` default / `baseline-existing` / `reset-demo` / `skip`), and super-admin bootstrap (decision map) are owned by `scripts/release/manual-production-deploy.mjs`, so run it with `--dry-run` first:
 
 ```bash
 pnpm deploy:prod:manual -- v0.1.0 --dry-run
@@ -78,4 +78,4 @@ COMPOSE_PROFILES=full docker compose -f compose.yaml -f compose.prod.yaml ps
 docker compose -f compose.yaml -f compose.prod.yaml logs --tail=100 front backend
 ```
 
-GitHub Actions (`.github/workflows/deploy-ncloud.yml`) only deploys on explicit `workflow_dispatch`; the release trigger is paused (ADR-072). Set secrets `NCLOUD_SSH_PRIVATE_KEY` and `NCLOUD_ENV_FILE`, and optional vars `NCLOUD_HOST` and `NCLOUD_SSH_USER`.
+GitHub Actions (`.github/workflows/deploy-ncloud.yml`) only deploys on explicit `workflow_dispatch`; the release trigger is paused (decision map). Set secrets `NCLOUD_SSH_PRIVATE_KEY` and `NCLOUD_ENV_FILE`, and optional vars `NCLOUD_HOST` and `NCLOUD_SSH_USER`.

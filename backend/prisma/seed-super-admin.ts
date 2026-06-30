@@ -6,7 +6,7 @@
 //
 // Here we idempotently guarantee that one email/password SUPER_ADMIN exists so a
 // freshly migrated production database is operable. It runs after `prisma migrate
-// deploy` in the safe deploy path (ADR-073) and is driven entirely by runtime env —
+// deploy` in the safe deploy path (decision map) and is driven entirely by runtime env —
 // no credentials are committed. If SUPER_ADMIN_PASSWORD is unset the bootstrap is a
 // no-op, so deploys without a configured super admin are never blocked.
 import { PrismaClient } from '@prisma/client';

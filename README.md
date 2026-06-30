@@ -1,6 +1,6 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> ml-api -> backend POST /api/v1/events` plus heartbeat (`POST /api/v1/events/heartbeat`) (ADR-067/029): the worker owns camera capture, model/domain evaluation, heartbeats, and alert facts. `ml-api` is a private/local FastAPI health, status, models, debug, and relay surface plus the single backend Event API gateway; live camera ownership and raw frame relay stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
+An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> ml-api -> backend POST /api/v1/events` plus heartbeat (`POST /api/v1/events/heartbeat`) (decision map): the worker owns camera capture, model/domain evaluation, heartbeats, and alert facts. `ml-api` is a private/local FastAPI health, status, models, debug, and relay surface plus the single backend Event API gateway; live camera ownership and raw frame relay stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
 
 ## Prerequisites
 
@@ -73,9 +73,9 @@ EDGE_CAMERA_CONFIG=./ml/config/ml-worker.local.yaml \
 
 `EDGE_CAMERA_CONFIG` points to a gitignored per-camera YAML file with RTSP URLs,
 relay URL/token, camera identity, and the LSTM fall-model artifact contract.
-Backend Event API URL (`API_BACKEND_EVENTS_URL`) and the worker→ml-api relay token live in edge `ml-api`/Compose configuration per ADR-067/029.
+Backend Event API URL (`API_BACKEND_EVENTS_URL`) and the worker→ml-api relay token live in edge `ml-api`/Compose configuration per decision map.
 
-On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR-063).
+On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (decision map).
 
 ## Commands
 
@@ -103,7 +103,7 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 eldercare-fall-ai/
 ├── front/          # Vite + React + TypeScript (frontend SSOT)
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
-├── ml/             # 9-package layered edge runtime (ADR-056/057/067/068); see ml/README.md
+├── ml/             # 9-package layered edge runtime (decision map); see ml/README.md
 │   ├── contracts/  # L0 pure contracts (frame/observation/model/artifacts/event)
 │   ├── features/   # L0 pure feature math
 │   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp; OpenCV current backend)
@@ -115,15 +115,15 @@ eldercare-fall-ai/
 │   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
 │   ├── demo/       # Streamlit demo UI (fall classification via api)
 │   ├── training/   # Batch training pipeline
-│   ├── data/       # Video dataset — domain-first layout (gitignored; ADR-012)
-│   └── models/     # Model single root (gitignored; ADR-015)
+│   ├── data/       # Video dataset — domain-first layout (gitignored; decision map)
+│   └── models/     # Model single root (gitignored; decision map)
 ├── docs/
 │   ├── architecture.md   # System diagram and component boundaries
-│   └── decisions/        # Architecture Decision Records (ADRs)
+│   └── decisions/        # Decision Map (decisions)
 └── compose*.yaml    # host Compose plus compose.edge.yaml for ML edge services
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for ADRs covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.
+See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for decisions covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.
 
 **Dependency locks are per-ecosystem.** `pnpm-lock.yaml` covers `front/` and `backend/`; `ml/uv.lock` covers the Python project. The root `package.json` is an orchestration layer only — it holds no application dependencies.
 
