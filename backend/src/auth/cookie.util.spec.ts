@@ -89,6 +89,6 @@ describe('auth cookie utilities', () => {
     expect(name).toBe(OAUTH_STATE_COOKIE_NAME);
     expect(value).toBe('oauth-state');
     expect(options.secure).toBe(false);
-    expect(options.path).toBe('/auth');
+    expect(options.path).toBe('/api/v1/auth');
   });
 });

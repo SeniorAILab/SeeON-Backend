@@ -1,10 +1,12 @@
-import { INestApplication } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaService } from '../src/prisma/prisma.service';
 import request from 'supertest';
+import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
 import { configureVersionedTestApp } from './helpers/versioned-app';
+
 const prismaDouble = {
   onModuleInit: jest.fn(),
   onModuleDestroy: jest.fn(),
@@ -22,9 +24,22 @@ const prismaDouble = {
   },
 };
 describe('global api/v1 route matrix (e2e)', () => {
-  let app: INestApplication;
+  let app: INestApplication<App>;
+  const originalEnv = {
+    KAKAO_REDIRECT_URI: process.env.KAKAO_REDIRECT_URI,
+    KAKAO_REST_API_KEY: process.env.KAKAO_REST_API_KEY,
+    KAKAO_TOKEN_ENC_KEY: process.env.KAKAO_TOKEN_ENC_KEY,
+    SESSION_JWT_SECRET: process.env.SESSION_JWT_SECRET,
+  };
 
   beforeAll(async () => {
+    process.env.KAKAO_REDIRECT_URI =
+      'http://localhost:3001/api/v1/auth/kakao/callback';
+    process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
+    process.env.KAKAO_TOKEN_ENC_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.SESSION_JWT_SECRET =
+      'test-session-secret-minimum-32-characters';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -39,15 +54,16 @@ describe('global api/v1 route matrix (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    restoreEnv(originalEnv);
   });
 
   it('keeps root unprefixed and unversioned', async () => {
     await request(app.getHttpServer()).get('/').expect(200, 'Hello World!');
   });
 
-  it('keeps auth session unprefixed and unversioned', async () => {
-    await request(app.getHttpServer()).get('/auth/session').expect(401);
-    await request(app.getHttpServer()).get('/api/v1/auth/session').expect(404);
+  it('moves auth session under /api/v1 and removes the unversioned alias', async () => {
+    await request(app.getHttpServer()).get('/api/v1/auth/session').expect(401);
+    await request(app.getHttpServer()).get('/auth/session').expect(404);
   });
 
   it('moves guarded API controllers under /api/v1', async () => {
@@ -61,7 +77,9 @@ describe('global api/v1 route matrix (e2e)', () => {
 
   it('versions mixed auth API routes under /api/v1', async () => {
     await request(app.getHttpServer()).post('/api/v1/facilities').expect(401);
-    await request(app.getHttpServer()).get('/api/v1/protected-probe').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/protected-probe')
+      .expect(401);
     await request(app.getHttpServer())
       .get('/api/v1/facility-protected-probe')
       .expect(401);
@@ -71,7 +89,9 @@ describe('global api/v1 route matrix (e2e)', () => {
   it('legacy ingest routes are removed (404)', async () => {
     await request(app.getHttpServer()).post('/ingest/alerts').expect(404);
     await request(app.getHttpServer()).post('/ingest/heartbeat').expect(404);
-    await request(app.getHttpServer()).post('/api/v1/ingest/alerts').expect(404);
+    await request(app.getHttpServer())
+      .post('/api/v1/ingest/alerts')
+      .expect(404);
   });
 
   it('keeps swagger docs at /api/docs', async () => {
@@ -79,3 +99,10 @@ describe('global api/v1 route matrix (e2e)', () => {
     await request(app.getHttpServer()).get('/api/v1/docs').expect(404);
   });
 });
+
+function restoreEnv(env: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
