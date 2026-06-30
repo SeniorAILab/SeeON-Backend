@@ -1,12 +1,12 @@
 # Host stack (single host): db + backend + front(nginx). ML runs on the external
 # edge device — see compose.edge.yaml (ML inference pushes signed events to the
-# backend /ingest endpoint per ADR-029, so ml-serving is not part of this stack).
+# backend /ingest endpoint, so ml-serving is not part of this stack).
 # App services (backend, front) are gated behind the `full` profile so the default
 # `docker compose up` / `pnpm db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
 # PostgreSQL for dev/prod parity. Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
-# DB role separation (ADR-A / NR1):
+# DB role separation:
 #   fall     = superuser      → migrations, seed (DIRECT_URL)
 #   fall_app = NOSUPERUSER NOBYPASSRLS → application runtime (DATABASE_URL)
 #
@@ -43,12 +43,12 @@ services:
       target: runner
     environment:
       PORT: 8080
-      # Runtime uses the fall_app NOSUPERUSER/NOBYPASSRLS role so RLS is enforced (ADR-A / ADR-032).
+      # Runtime uses the fall_app NOSUPERUSER/NOBYPASSRLS role so RLS is enforced.
       DATABASE_URL: postgresql://${APP_DB_USER:-fall_app}:${APP_DB_PASSWORD:-fall_app}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
       # DIRECT_URL keeps the privileged fall superuser for migrations / seed only.
       DIRECT_URL: postgresql://${POSTGRES_USER:-fall}:${POSTGRES_PASSWORD:-fall}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
       # ML_SERVING_URL is intentionally absent: ML runs on the edge and pushes to /ingest.
-      # The backend MlServingPredictionAdapter pull seam stays dormant (ADR-029 / ADR-048);
+      # The backend MlServingPredictionAdapter pull seam stays dormant;
       # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}

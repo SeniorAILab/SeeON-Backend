@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # check-schema-migration.sh — Prisma 스키마↔마이그레이션 결합(coupling) 검사.
-# 사용법·종료코드·근거(ADR-008 단일소스, ADR-016)는 scripts/backend-guard/README.md 참고.
+# 사용법·종료코드·근거(단일소스 호출, 되돌릴 수 있는 convention에는 warn-tier 훅 금지)는 scripts/backend-guard/README.md 참고.
 set -eu
 
 _bg_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

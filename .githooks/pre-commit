@@ -7,6 +7,6 @@ root=$(git rev-parse --show-toplevel)
 "$root/scripts/git-guard/assert-not-main.sh"
 "$root/scripts/git-guard/check-freshness.sh" warn
 "$root/scripts/git-guard/deny-assets.sh" staged
-# 백엔드 스키마↔마이그레이션 결합 계약 (scripts/backend-guard, ADR-064). 스테이지된
+# 백엔드 스키마↔마이그레이션 결합 계약 (scripts/backend-guard). 스테이지된
 # 변경만 검사하며, schema.prisma 변경 시 동반 마이그레이션이 없으면 커밋을 막는다.
 "$root/scripts/backend-guard/check-schema-migration.sh" staged

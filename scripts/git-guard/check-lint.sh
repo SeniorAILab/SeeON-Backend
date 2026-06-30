@@ -8,7 +8,7 @@
 #
 # Mirrors `ci.yml` semantics exactly so local == CI:
 #   frontend (front/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint` (BLOCK)
-#   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR-064)
+#   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR)
 #   ml       (ml/**): `ruff check` (BLOCK)
 #
 # Scoped to changed packages so a frontend-only push never needs uv, and vice versa.
@@ -67,10 +67,10 @@ if [ "$fe" = 1 ]; then
 fi
 
 if [ "$be" = 1 ]; then
-  gg_warn "backend changed -> dto:check + tsc --noEmit (block) + lint (warn-first, ADR-064)"
+  gg_warn "backend changed -> dto:check + tsc --noEmit (block) + lint (warn-first, ADR)"
   pnpm --filter backend run dto:check || fail=1
   pnpm --filter backend exec tsc --noEmit || fail=1
-  pnpm --filter backend run lint || gg_warn "backend lint reported issues (warn-first per ADR-064 — not blocking)"
+  pnpm --filter backend run lint || gg_warn "backend lint reported issues (warn-first per ADR — not blocking)"
 fi
 
 if [ "$envc" = 1 ]; then

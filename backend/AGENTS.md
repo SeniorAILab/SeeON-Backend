@@ -31,4 +31,4 @@ See `src/AGENTS.md` before changing Nest application code. See
 - `CamerasService.recordHeartbeat` remains used by `EventsController.heartbeat`.
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).
-- lint: `pnpm --filter backend lint` (check) / `pnpm --filter backend lint:fix` (autofix). Convention: ADR-070.
+- lint: `pnpm --filter backend lint` (check) / `pnpm --filter backend lint:fix` (autofix). Convention: ADR.

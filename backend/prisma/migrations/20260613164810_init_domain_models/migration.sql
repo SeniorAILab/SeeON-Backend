@@ -204,7 +204,7 @@ ALTER TABLE "ResidentStatus" ADD CONSTRAINT "ResidentStatus_orgId_residentId_fke
 -- AddForeignKey
 ALTER TABLE "ResidentStatus" ADD CONSTRAINT "ResidentStatus_orgId_sourceId_fkey" FOREIGN KEY ("orgId", "sourceId") REFERENCES "Camera"("orgId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- ─── RLS: Enable + Force on tenant tables (ADR-A / NR1) ──────────────────────
+-- ─── RLS: Enable + Force on tenant tables ───────────────────────────────────────
 -- Tenant tables = orgId-scoped domain data. FORCE ROW LEVEL SECURITY means
 -- the policy runs for ALL roles (including the migration superuser inside txns).
 --

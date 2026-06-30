@@ -1,7 +1,7 @@
-// Prisma schema — Postgres everywhere (ADR-002, ADR-C).
+// Prisma schema — Postgres everywhere.
 // provider is locked; dev/prod differ only by DATABASE_URL / DIRECT_URL.
 //
-// DATABASE_URL  = fall_app role (NOSUPERUSER NOBYPASSRLS) — runtime (ADR-A).
+// DATABASE_URL  = fall_app role (NOSUPERUSER NOBYPASSRLS) — runtime.
 // DIRECT_URL    = fall superuser — migrations + schema introspection only.
 
 generator client {
@@ -396,7 +396,8 @@ model Zone {
 // AlertEvent/DeliveryAttempt are NOT tenant-domain RLS tables. They are keyed
 // by source_id (ingest source) + external_event_id for idempotency, owned by the
 // backend alert pipeline, and intentionally excluded from PrismaService's
-// TENANT_MODELS guard (no facility context required). See backend/ADR-035..038.
+// TENANT_MODELS guard (no facility context required). See the backend section of
+// the ADR.
 
 enum AlertEventType {
   FALL
