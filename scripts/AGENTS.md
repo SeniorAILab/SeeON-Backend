@@ -63,4 +63,4 @@ scripts/
   failure.
 - No secret printing while handling env files, registry credentials, SSH, or
   release tokens.
-- No hook that blocks reversible convention work before commit; follow decision map.
+- No hook that blocks reversible convention work before commit; follow ADR.

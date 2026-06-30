@@ -397,7 +397,7 @@ model Zone {
 // by source_id (ingest source) + external_event_id for idempotency, owned by the
 // backend alert pipeline, and intentionally excluded from PrismaService's
 // TENANT_MODELS guard (no facility context required). See the backend section of
-// the decision map.
+// the ADR.
 
 enum AlertEventType {
   FALL

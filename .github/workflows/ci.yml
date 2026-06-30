@@ -108,8 +108,8 @@ jobs:
         run: pnpm --filter backend exec prisma migrate deploy
       # warn-first 롤아웃: lint 결과(경고 + 기존 error)를 로그에 노출하되 CI를 막지
       # 않는다. 기존 type-safety error 백로그(약 20건)를 소진한 뒤 블로킹으로 승격한다
-      # (decision map follow-up). 경고는 ESLint/에디터로 항상 노출됨.
-      - name: Backend lint guard (warn-first; non-blocking — see decision map)
+      # (ADR follow-up). 경고는 ESLint/에디터로 항상 노출됨.
+      - name: Backend lint guard (warn-first; non-blocking — see ADR)
         continue-on-error: true
         run: pnpm --filter backend run lint
       - name: Backend DTO contract guard

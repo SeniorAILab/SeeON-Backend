@@ -76,5 +76,5 @@ pnpm --filter backend run dto:check -- --fixture scripts/backend-guard/fixtures/
 > 벤더 무관 보증은 git-native `.githooks/pre-commit` + CI 입니다. 스키마 가드는 에이전트
 > pre-edit 훅(`.claude`/`.codex`)에 넣지 않습니다 — 스키마만 스테이지된 동안 모든 셸/편집을
 > 막아 데드락을 유발할 수 있고, pre-commit 이 이미 전 벤더를 커밋 시점에 커버하기 때문입니다.
-> decision map 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
+> ADR 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
 > (ESLint 에디터 + CI lint 로만 노출).

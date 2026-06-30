@@ -34,7 +34,7 @@ flowchart LR
   user -->|"HTTPS /auth/*, /api/v1/*<br/>session cookie"| front
   front -->|"reverse proxy /api, /auth"| backend
   backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · status frames"| user
-  backend -.->|"ML_SERVING_URL pull seam<br/>dormant · decision map"| mlapi
+  backend -.->|"ML_SERVING_URL pull seam<br/>dormant · ADR"| mlapi
 ```
 
 > 라이브 ingress는 `ml-api → backend POST /api/v1/events` 하나뿐이다. `ml-worker`는 backend를 직접 호출하지 않고 local `ml-api` relay만 부른다. SSE는 같은 nginx same-origin 프록시를 통해 backend가 브라우저로 push한다.
@@ -48,7 +48,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 ├── package.json                    ← dev:*, build:*, lint, db:*, prisma:* scripts
 ├── pnpm-workspace.yaml             ← workspace: [front, backend]
 ├── pnpm-lock.yaml                  ← single lock for all TS packages
-├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; compose.edge.yaml = ML edge (decision map)
+├── compose.yaml                    ← host stack: db+backend+front(nginx), gated by `full` profile; +compose.prod.yaml overlay; compose.edge.yaml = ML edge (ADR)
 │
 ├── front/                          ← Vite 5 / React 18 / Tailwind v3 (product UI)
 │   ├── src/
@@ -84,27 +84,27 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 │   │   └── domains/               ← fall/bed-exit/long-lie/risk domain logic
 │   ├── training/                  ← batch lifecycle; self-contained pose extraction + model artifacts
 │   ├── demo/                      ← Streamlit ML-demo (not the product UI)
-│   ├── models/                     ← single model root (decision map; gitignored in entirety)
+│   ├── models/                     ← single model root (ADR; gitignored in entirety)
 │   │   ├── pose/                   ← YOLO26-pose weight cache (re-downloadable)
 │   │   │   └── yolo26{n,s,m,l,x}-pose.pt
 │   │   └── fall/                   ← fall-detection models (trained + third-party)
 │   │       ├── random-forest/      ← trained sklearn RF + metadata.json
 │   │       ├── lstm/               ← trained PyTorch LSTM + metadata.json
 │   │       ├── transformer/        ← trained PyTorch Transformer + metadata.json
-│   │       └── pretrained/         ← curated comparison checkpoints (decision map)
-│   └── data/                       ← ml/data gitignored as a whole (decision map invariant)
-│       ├── {domain}/               ← domain-first layout (decision map): nursing-home/, le2i/, …
-│       │   ├── raw/                ← INPUT: source footage (raw is sacred)  ─┐ decision map
+│   │       └── pretrained/         ← curated comparison checkpoints (ADR)
+│   └── data/                       ← ml/data gitignored as a whole (ADR invariant)
+│       ├── {domain}/               ← domain-first layout (ADR): nursing-home/, le2i/, …
+│       │   ├── raw/                ← INPUT: source footage (raw is sacred)  ─┐ ADR
 │       │   ├── processed/          ← INPUT: lossless processed clips          │ (domain-scoped)
 │       │   ├── poses/              ← INPUT: extracted keypoint caches (.npz)  │
 │       │   └── annotated/          ← OUTPUT: rendered overlay videos         ─┘
-│       ├── uploads/                ← INPUT: demo-uploaded clips (session-scoped; decision map)
-│       └── eval/                   ← OUTPUT: cross-domain comparison outputs (decision map)
+│       ├── uploads/                ← INPUT: demo-uploaded clips (session-scoped; ADR)
+│       └── eval/                   ← OUTPUT: cross-domain comparison outputs (ADR)
 │
 └── docs/
     ├── architecture.md             ← this file
     ├── onboarding/                 ← onboarding deep dives: edge, frontend, backend flows
-    ├── decisions/                   ← compact current decision map
+    ├── decisions/                   ← compact current ADR
     └── rules/                       ← standing conventions (e.g. streamlit-demo.md)
 ```
 
@@ -131,7 +131,7 @@ NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local def
 Key responsibilities:
 
 - Own auth/session, facility-scoped RLS (`app.facility_id`), dashboard read models, and admin CRUD.
-- Receive edge facts through backend Event API (`POST /api/v1/events` and `POST /api/v1/events/heartbeat`); the former `ML_SERVING_URL` backend-pull seam from decision map was dormant and removed; it is not part of the live path.
+- Receive edge facts through backend Event API (`POST /api/v1/events` and `POST /api/v1/events/heartbeat`); the former `ML_SERVING_URL` backend-pull seam from ADR was dormant and removed; it is not part of the live path.
 - Apply alert policy (threshold, dedup key, rate-limit), persist immutable events and derived alerts, and publish SSE dashboard frames.
 - Dispatch Kakao delivery through the outbox/delivery adapter layer.
 
@@ -143,14 +143,14 @@ Independent uv project. Two distinct lifecycles share one project:
 
 | Lifecycle            | Entry                                          | Runtime       | Trigger                   |
 | -------------------- | ---------------------------------------------- | ------------- | ------------------------- |
-| **API gateway** (online) | `api/main.py` (FastAPI)                        | milliseconds  | edge relay/status HTTP (`backend` pull removed, decision map) |
+| **API gateway** (online) | `api/main.py` (FastAPI)                        | milliseconds  | edge relay/status HTTP (`backend` pull removed, ADR) |
 | **Worker** (live ML) | `worker/edge_worker.py` | long-running | RTSP capture, model/domain evaluation, relay facts |
 | **Training** (batch) | `training/` (self-contained pose extraction + artifacts) | minutes–hours | manual / scheduled job    |
 | **Demo** (dev tool)  | `demo/app.py` (Streamlit)                      | interactive   | developer                 |
 
-`ml-api` exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. Prediction routes, including `POST /predict` and `POST /api/v1/debug/predict/*`, are removed. `ml-api` boots as a thin gateway (config → backend Event API gateway → heartbeat store → readiness); it does not load models, choose devices, assemble camera loops, or run worker runtime (decision map). `/api/v1/status` is derived from the relay-heartbeat store; production camera loops and classification run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json` inside worker-owned runners; model weights are gitignored and must be placed manually (or produced by training). See decision map for the `ml/models/` single-root layout.
+`ml-api` exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. Prediction routes, including `POST /predict` and `POST /api/v1/debug/predict/*`, are removed. `ml-api` boots as a thin gateway (config → backend Event API gateway → heartbeat store → readiness); it does not load models, choose devices, assemble camera loops, or run worker runtime (ADR). `/api/v1/status` is derived from the relay-heartbeat store; production camera loops and classification run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json` inside worker-owned runners; model weights are gitignored and must be placed manually (or produced by training). See ADR for the `ml/models/` single-root layout.
 
-Dependency boundaries are package-name based and enforced by `ml/tests/test_import_dependency_ladder.py`: `contracts`/`features` are shared pure foundations; live ML packages live under `worker/{sources,runners,perception,domains}`; `events` owns relay schemas/clients; `api` is an ML-free gateway; `training` imports only `contracts` and `features` from production packages. `ml-worker` owns live orchestration/state (there is no `runtime` package; decision map); `ml/core/` and `ml/util/` are removed.
+Dependency boundaries are package-name based and enforced by `ml/tests/test_import_dependency_ladder.py`: `contracts`/`features` are shared pure foundations; live ML packages live under `worker/{sources,runners,perception,domains}`; `events` owns relay schemas/clients; `api` is an ML-free gateway; `training` imports only `contracts` and `features` from production packages. `ml-worker` owns live orchestration/state (there is no `runtime` package; ADR); `ml/core/` and `ml/util/` are removed.
 
 Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
 
@@ -194,9 +194,9 @@ The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product f
 | Fall probability score | **ML worker** (`ml/worker/`) | Worker-owned model/domain evaluation emits probability relayed as Event API `confidence` |
 | Facility/space ownership resolution | **Backend** | `camera_id` is resolved server-side; client-provided facility is ignored |
 | Alert threshold, deduplication, persistence, SSE, Kakao | **Backend** | Product policy, state, credentials, retry logic, and user-facing side effects |
-| Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (decision map); backend does not own model artifacts |
+| Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR); backend does not own model artifacts |
 
-ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides product policy, persistence, deduplication, rate limits, tenant ownership, and user-facing side effects. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by decision map and must not be described as the operating path.
+ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides product policy, persistence, deduplication, rate limits, tenant ownership, and user-facing side effects. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR and must not be described as the operating path.
 
 ---
 ## 상세 아키텍처 (deep dives)
@@ -221,7 +221,7 @@ Root package.json            ← orchestration scripts only; NO app dependencies
 ├── pnpm-workspace.yaml      ← declares [front, backend] as workspace packages
 ├── pnpm-lock.yaml           ← single lock covering front + backend
 │
-├── front/package.json       ← vite@5, react@18, react-router-dom@6, tailwindcss@3 (decision map)
+├── front/package.json       ← vite@5, react@18, react-router-dom@6, tailwindcss@3 (ADR)
 └── backend/package.json     ← @nestjs/core@11, @prisma/client@6, @nestjs/config@4
                                 dotenv-cli (used by prisma:migrate script)
 
@@ -248,7 +248,7 @@ Lock file locations:
 
 ## Data persistence
 
-PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into the schema and migration files — unlike Hibernate, it does not support runtime dialect switching. Using SQLite in dev and PostgreSQL in prod would require maintaining two migration histories. See decision map for the full trade-off analysis.
+PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into the schema and migration files — unlike Hibernate, it does not support runtime dialect switching. Using SQLite in dev and PostgreSQL in prod would require maintaining two migration histories. See ADR for the full trade-off analysis.
 
 | Layer            | Technology                                       | Config                         |
 | ---------------- | ------------------------------------------------ | ------------------------------ |
@@ -315,5 +315,5 @@ Architecture-level consequences are:
 ### Hubs
 
 - [`api/`](api/) — wire/API 계약
-- [`decisions/`](decisions/) — decision map
+- [`decisions/`](decisions/) — ADR
 - [`domain/`](domain/) — 데이터 모델/도메인 문서
