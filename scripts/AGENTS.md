@@ -10,6 +10,8 @@ and production deploy scripts.
 ```text
 scripts/
 ├── backend-guard/  # backend schema/migration and DTO contract checks
+├── db/             # local DB reset / Prisma orchestration helpers
+├── dev/            # native local dev command orchestration and env guards
 ├── deploy/         # Naver Cloud VM bootstrap and VM-side deploy execution
 ├── env/            # compose/env example contract verification
 ├── git-guard/      # worktree, freshness, lint/type, migration, asset guards
@@ -21,6 +23,7 @@ scripts/
 | Task | Location | Notes |
 | --- | --- | --- |
 | Protected-branch guard | `git-guard/assert-not-main.sh` | Refuses commit/push on `main` (the one hard invariant). |
+| Local dev orchestration | `dev/`, `db/` | Guarded local env checks, DB reset, and native dev command sequencing. |
 | Local lint gate | `git-guard/check-lint.sh` | Mirrors changed-package lint/type checks. |
 | Freshness guard | `git-guard/check-freshness.sh` | Protects stale protected-branch work. |
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL. |

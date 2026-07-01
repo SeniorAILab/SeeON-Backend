@@ -9,7 +9,9 @@
   },
   "scripts": {
     "dev:front": "pnpm --filter front dev",
-    "dev:backend": "pnpm --filter backend start:dev",
+    "dev:backend": "node scripts/dev/dev-local.mjs backend",
+    "dev:local": "node scripts/dev/dev-local.mjs local --reset",
+    "dev:local:reset": "node scripts/dev/dev-local.mjs local --reset",
     "dev:ml-api": "uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000",
     "dev:ml-worker": "uv run --directory ml python -m worker --config config/ml-worker.local.yaml",
     "dev:demo": "uv run --directory ml --group demo streamlit run demo/app.py",
@@ -20,7 +22,9 @@
     "dupcheck": "jscpd ml backend/src front/src",
     "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
     "env:verify": "node scripts/env/verify-compose-env-contract.mjs",
+    "env:local:verify": "node scripts/dev/ensure-local-env.mjs",
     "db:up": "docker compose --env-file .env.local up -d db",
+    "db:reset:local": "node scripts/db/reset-local.mjs",
     "db:down": "docker compose down",
     "compose:local:up": "docker compose --env-file .env.local --profile full up -d --build",
     "compose:prod:up": "docker compose --env-file .env.host.prod --profile full -f compose.yaml -f compose.prod.yaml up -d",
@@ -31,6 +35,7 @@
     "prisma:generate": "pnpm --filter backend exec prisma generate",
     "prisma:migrate": "pnpm --filter backend run prisma:migrate",
     "prisma:seed": "pnpm --filter backend run prisma:seed",
+    "smoke:backend:no-db": "pnpm --filter backend run smoke:no-db",
     "demo:bind": "pnpm --filter backend run demo:bind"
   },
   "devDependencies": {
