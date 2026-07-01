@@ -1,9 +1,10 @@
 import type { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import {
-  AUTH_ROLES,
   RBAC_PERMISSIONS,
   hasRbacCapability,
+  isAuthRole,
   postLoginPathForRole,
 } from './auth.constants';
 import type { KakaoClient } from './kakao.client';
@@ -14,15 +15,17 @@ describe('RBAC SSOT', () => {
     process.env.KAKAO_TOKEN_ENC_KEY = '0'.repeat(64);
   });
   it('defines the exact three backend roles and capability matrix', () => {
-    expect(AUTH_ROLES).toEqual(['SUPER_ADMIN', 'ADMIN', 'STAFF']);
-    expect(hasRbacCapability('SUPER_ADMIN', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('ADMIN', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('STAFF', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('STAFF', 'monitorView')).toBe(true);
-    expect(RBAC_PERMISSIONS.STAFF.has('facilityAdmin')).toBe(false);
-    expect(postLoginPathForRole('SUPER_ADMIN')).toBe('/admin/dashboard');
-    expect(postLoginPathForRole('ADMIN')).toBe('/admin/dashboard');
-    expect(postLoginPathForRole('STAFF')).toBe('/now');
+    expect(isAuthRole(Role.SUPER_ADMIN)).toBe(true);
+    expect(isAuthRole(Role.ADMIN)).toBe(true);
+    expect(isAuthRole(Role.STAFF)).toBe(true);
+    expect(hasRbacCapability(Role.SUPER_ADMIN, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.ADMIN, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.STAFF, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.STAFF, 'monitorView')).toBe(true);
+    expect(RBAC_PERMISSIONS[Role.STAFF].has('facilityAdmin')).toBe(false);
+    expect(postLoginPathForRole(Role.SUPER_ADMIN)).toBe('/admin/dashboard');
+    expect(postLoginPathForRole(Role.ADMIN)).toBe('/admin/dashboard');
+    expect(postLoginPathForRole(Role.STAFF)).toBe('/now');
   });
 
   it('creates personal sessions for staff users', async () => {

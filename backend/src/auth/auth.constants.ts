@@ -1,11 +1,12 @@
+import { Role } from '@prisma/client';
+
 export const SESSION_COOKIE_NAME = 'app_session';
 export const OAUTH_STATE_COOKIE_NAME = 'kakao_oauth_state';
 export const DEFAULT_SESSION_TTL_SECONDS = 30 * 60;
 export const DEFAULT_REFRESH_WINDOW_SECONDS = 10 * 60;
 export const OAUTH_STATE_TTL_SECONDS = 5 * 60;
 
-export const AUTH_ROLES = ['SUPER_ADMIN', 'ADMIN', 'STAFF'] as const;
-export type AuthRole = (typeof AUTH_ROLES)[number];
+export type AuthRole = Role;
 
 export type RbacCapability =
   | 'personalLogin'
@@ -13,26 +14,20 @@ export type RbacCapability =
   | 'facilityAdmin'
   | 'monitorView';
 
-export const RBAC_PERMISSIONS: Record<AuthRole, ReadonlySet<RbacCapability>> = {
-  SUPER_ADMIN: new Set<RbacCapability>([
+export const RBAC_PERMISSIONS: Record<Role, ReadonlySet<RbacCapability>> = {
+  [Role.SUPER_ADMIN]: new Set<RbacCapability>([
     'personalLogin',
     'facilityOnboarding',
     'facilityAdmin',
     'monitorView',
   ]),
-  ADMIN: new Set<RbacCapability>([
+  [Role.ADMIN]: new Set<RbacCapability>([
     'personalLogin',
     'facilityOnboarding',
     'facilityAdmin',
     'monitorView',
   ]),
-  STAFF: new Set<RbacCapability>(['personalLogin', 'monitorView']),
-};
-
-export const POST_LOGIN_PATHS: Record<AuthRole, string> = {
-  SUPER_ADMIN: '/admin/dashboard',
-  ADMIN: '/admin/dashboard',
-  STAFF: '/now',
+  [Role.STAFF]: new Set<RbacCapability>(['personalLogin', 'monitorView']),
 };
 
 export function hasRbacCapability(
@@ -43,14 +38,20 @@ export function hasRbacCapability(
 }
 
 export function postLoginPathForRole(role: AuthRole): string {
-  return POST_LOGIN_PATHS[role];
+  switch (role) {
+    case Role.SUPER_ADMIN:
+    case Role.ADMIN:
+      return '/admin/dashboard';
+    case Role.STAFF:
+      return '/now';
+  }
 }
 
 export function isAuthRole(role: string): role is AuthRole {
   switch (role) {
-    case 'SUPER_ADMIN':
-    case 'ADMIN':
-    case 'STAFF':
+    case Role.SUPER_ADMIN:
+    case Role.ADMIN:
+    case Role.STAFF:
       return true;
     default:
       return false;
