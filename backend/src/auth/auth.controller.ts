@@ -218,7 +218,6 @@ export class AuthController {
       this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
     ).replace(/\/+$/, '');
   }
-
 }
 
 function presentAuthUser(
