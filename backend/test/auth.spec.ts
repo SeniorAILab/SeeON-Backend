@@ -312,7 +312,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         kakaoId: 'kakao-e2e-user',
         email: 'owner@example.test',
         nickname: '시설 원장',
-        role: 'CAREGIVER',
+        role: 'STAFF',
       },
     });
 
@@ -347,7 +347,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBeNull();
     expect(
       (sessionBeforeFacility.body as unknown as AuthResponseBody).user.role,
-    ).toBe('CAREGIVER');
+    ).toBe('STAFF');
 
     await request(app.getHttpServer())
       .get('/api/v1/facility-protected-probe')

@@ -25,7 +25,7 @@ describe('AuthController', () => {
 
   const makeUser = (
     facilityId: string | null,
-    role: User['role'] = 'CAREGIVER',
+    role: User['role'] = 'STAFF',
   ): User => ({
     id: 'user-1',
     createdAt: new Date('2026-06-18T00:00:00.000Z'),
@@ -151,7 +151,7 @@ describe('AuthController', () => {
     );
 
     expect(response.redirect).toHaveBeenCalledWith(
-      'https://app.example.com/dashboard',
+      'https://app.example.com/admin/dashboard',
     );
   });
 

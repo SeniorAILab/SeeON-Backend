@@ -1,9 +1,11 @@
 import type { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import {
-  BACKEND_ROLES,
   RBAC_PERMISSIONS,
   hasRbacCapability,
+  isAuthRole,
+  postLoginPathForRole,
 } from './auth.constants';
 import type { KakaoClient } from './kakao.client';
 import { SessionService } from './session.service';
@@ -13,15 +15,20 @@ describe('RBAC SSOT', () => {
     process.env.KAKAO_TOKEN_ENC_KEY = '0'.repeat(64);
   });
   it('defines the exact three backend roles and capability matrix', () => {
-    expect(BACKEND_ROLES).toEqual(['SUPER_ADMIN', 'ADMIN', 'CAREGIVER']);
-    expect(hasRbacCapability('SUPER_ADMIN', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('ADMIN', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('CAREGIVER', 'personalLogin')).toBe(true);
-    expect(hasRbacCapability('CAREGIVER', 'monitorView')).toBe(true);
-    expect(RBAC_PERMISSIONS.CAREGIVER.has('facilityAdmin')).toBe(false);
+    expect(isAuthRole(Role.SUPER_ADMIN)).toBe(true);
+    expect(isAuthRole(Role.ADMIN)).toBe(true);
+    expect(isAuthRole(Role.STAFF)).toBe(true);
+    expect(hasRbacCapability(Role.SUPER_ADMIN, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.ADMIN, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.STAFF, 'personalLogin')).toBe(true);
+    expect(hasRbacCapability(Role.STAFF, 'monitorView')).toBe(true);
+    expect(RBAC_PERMISSIONS[Role.STAFF].has('facilityAdmin')).toBe(false);
+    expect(postLoginPathForRole(Role.SUPER_ADMIN)).toBe('/admin/dashboard');
+    expect(postLoginPathForRole(Role.ADMIN)).toBe('/admin/dashboard');
+    expect(postLoginPathForRole(Role.STAFF)).toBe('/now');
   });
 
-  it('creates personal sessions for CAREGIVER staff users', async () => {
+  it('creates personal sessions for staff users', async () => {
     const prisma = {
       db: {
         serverSession: {
@@ -45,9 +52,9 @@ describe('RBAC SSOT', () => {
     const session = await service.createSession({
       id: 'user-1',
       facilityId: 'facility-1',
-      role: 'CAREGIVER',
+      role: 'STAFF',
       kakaoId: 'kakao-1',
-      nickname: 'Caregiver',
+      nickname: 'Staff',
       sessionVersion: 0,
     });
 
@@ -62,7 +69,7 @@ describe('RBAC SSOT', () => {
       kakaoId: 'kakao-1',
       email: 'old@example.test',
       nickname: 'Old',
-      role: 'CAREGIVER',
+      role: 'STAFF',
       facilityId: 'facility-1',
       sessionVersion: 0,
     };
@@ -72,7 +79,7 @@ describe('RBAC SSOT', () => {
         update: jest.fn().mockResolvedValue({
           ...existingUser,
           email: 'a@example.test',
-          nickname: 'Caregiver',
+          nickname: 'Staff',
         }),
       },
       kakaoIdentity: { upsert: jest.fn().mockResolvedValue({}) },
@@ -98,7 +105,7 @@ describe('RBAC SSOT', () => {
         ) => Promise<unknown>;
       }
     ).updateLinkedKakaoUser(
-      { kakaoId: 'kakao-1', email: 'a@example.test', nickname: 'Caregiver' },
+      { kakaoId: 'kakao-1', email: 'a@example.test', nickname: 'Staff' },
       { access_token: 'token', expires_in: 3600 },
     );
 
@@ -109,7 +116,7 @@ describe('RBAC SSOT', () => {
       where: { id: 'user-1' },
       data: {
         email: 'a@example.test',
-        nickname: 'Caregiver',
+        nickname: 'Staff',
       },
     });
   });

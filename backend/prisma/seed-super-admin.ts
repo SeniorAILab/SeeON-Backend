@@ -16,7 +16,7 @@ import { hashPassword, verifyPassword } from '../src/auth/password';
 const DEFAULT_EMAIL = '<REDACTED_NOTIFICATION_EMAIL>';
 const DEFAULT_NICKNAME = 'SeniorAILab Super Admin';
 
-type Role = 'SUPER_ADMIN' | 'ADMIN' | 'CAREGIVER';
+type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
 
 export type SuperAdminConfig =
   | { readonly skip: true; readonly reason: string }
