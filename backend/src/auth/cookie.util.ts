@@ -61,11 +61,11 @@ export function setOAuthStateCookie(
     httpOnly: true,
     secure: secureCookiesEnabled(),
     sameSite: 'lax',
-    path: '/auth',
+    path: '/api/v1/auth',
     maxAge: maxAgeSeconds * 1000,
   });
 }
 
 export function clearOAuthStateCookie(response: Response): void {
-  response.clearCookie(OAUTH_STATE_COOKIE_NAME, { path: '/auth' });
+  response.clearCookie(OAUTH_STATE_COOKIE_NAME, { path: '/api/v1/auth' });
 }

@@ -10,7 +10,7 @@ const VALID_PROD_ENV = {
   FRONT_ORIGIN: 'https://senai.example.com',
   ALERT_DASHBOARD_URL: 'https://senai.example.com',
   KAKAO_REST_API_KEY: 'prod-kakao-rest-api-key',
-  KAKAO_REDIRECT_URI: 'https://senai.example.com/auth/kakao/callback',
+  KAKAO_REDIRECT_URI: 'https://senai.example.com/api/v1/auth/kakao/callback',
   SESSION_JWT_SECRET: 'prod-dummy-session-secret-minimum-32-chars',
   KAKAO_TOKEN_ENC_KEY:
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

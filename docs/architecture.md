@@ -31,8 +31,8 @@ flowchart LR
   mlapi -->|"POST /api/v1/events (+heartbeat)<br/>no-HMAC · camera_id"| backend
   backend -->|"Prisma · facility-scoped RLS"| db
   backend -->|"send-to-me (outbox/delivery)"| kakao
-  user -->|"HTTPS /auth/*, /api/v1/*<br/>session cookie"| front
-  front -->|"reverse proxy /api, /auth"| backend
+  user -->|"HTTPS /api/v1/*<br/>session cookie"| front
+  front -->|"reverse proxy /api"| backend
   backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · status frames"| user
   backend -.->|"ML_SERVING_URL pull seam<br/>dormant · ADR"| mlapi
 ```
@@ -114,7 +114,7 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `/auth/session`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/dashboard/stream`) with cookie auth and `alertSeq` replay.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /api/v1/auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `GET /api/v1/auth/session`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/dashboard/stream`) with cookie auth and `alertSeq` replay.
 
 **Demo vs runtime (canonical).** The front-only mock runtime (`VITE_USE_MOCK=true` with `realtimeEngine`, `mockData`, and `DemoMode`) is the front-alone "demo" path — it exists only to run the frontend by itself without a backend. dev and prod run on the real backend + real DB (demo content is seeded via `backend/prisma/demo-nokyang.fixture.ts`); there is no mock at runtime in dev/prod. The mock survives only for automated tests. The front-only mock ("demo") is therefore being retired; removing the mock-runtime code is a tracked follow-up.
 
@@ -268,7 +268,7 @@ pnpm backend:prisma:generate  # regenerate Prisma Client after schema changes
 
 The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm backend:db:up` is db-only with `.env.local` and is normally reached through `pnpm dev:backend`; daily dev is native hot reload via `pnpm dev:*`. `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` and `/auth` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` pushes no-HMAC events to backend `POST /api/v1/events` through `API_BACKEND_EVENTS_URL`. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
+**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm backend:db:up` is db-only with `.env.local` and is normally reached through `pnpm dev:backend`; daily dev is native hot reload via `pnpm dev:*`. `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` to `backend:8080` (same-origin); auth routes are `/api/v1/auth/*`. ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` pushes no-HMAC events to backend `POST /api/v1/events` through `API_BACKEND_EVENTS_URL`. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
 
 ---
 
