@@ -5,7 +5,7 @@ import {
   RBAC_PERMISSIONS,
   hasRbacCapability,
   isAuthRole,
-  postLoginPathForRole,
+  postLoginPathForUser,
 } from './auth.constants';
 import type { KakaoClient } from './kakao.client';
 import { SessionService } from './session.service';
@@ -23,9 +23,15 @@ describe('RBAC SSOT', () => {
     expect(hasRbacCapability(Role.STAFF, 'personalLogin')).toBe(true);
     expect(hasRbacCapability(Role.STAFF, 'monitorView')).toBe(true);
     expect(RBAC_PERMISSIONS[Role.STAFF].has('facilityAdmin')).toBe(false);
-    expect(postLoginPathForRole(Role.SUPER_ADMIN)).toBe('/admin/dashboard');
-    expect(postLoginPathForRole(Role.ADMIN)).toBe('/admin/dashboard');
-    expect(postLoginPathForRole(Role.STAFF)).toBe('/now');
+    expect(
+      postLoginPathForUser({ role: Role.SUPER_ADMIN, facilityId: null }),
+    ).toBe('/dashboard');
+    expect(
+      postLoginPathForUser({ role: Role.ADMIN, facilityId: 'fac 1' }),
+    ).toBe('/dashboard/facilities/fac%201/admin');
+    expect(
+      postLoginPathForUser({ role: Role.STAFF, facilityId: 'fac-1' }),
+    ).toBe('/dashboard/facilities/fac-1/staff');
   });
 
   it('creates personal sessions for staff users', async () => {

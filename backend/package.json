@@ -21,7 +21,7 @@
     "lint": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\" --fix",
     "dto:check": "node ../scripts/backend-guard/check-dto-contracts.mjs",
-    "smoke:no-db": "NODE_ENV=test DATABASE_URL='postgresql://fall_app:fall_app@127.0.0.1:65432/fall_dev?schema=public' DIRECT_URL='postgresql://fall:fall@127.0.0.1:65432/fall_dev?schema=public' SESSION_JWT_SECRET='dev-only-session-secret-change-me-32chars-min' KAKAO_REST_API_KEY='dev-placeholder-kakao-rest-api-key' KAKAO_REDIRECT_URI='http://localhost:8080/auth/kakao/callback' KAKAO_TOKEN_ENC_KEY='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' jest test/route-versioning.spec.ts --runInBand",
+    "smoke:no-db": "NODE_ENV=test DATABASE_URL='postgresql://fall_app:fall_app@127.0.0.1:65432/fall_dev?schema=public' DIRECT_URL='postgresql://fall:fall@127.0.0.1:65432/fall_dev?schema=public' SESSION_JWT_SECRET='dev-only-session-secret-change-me-32chars-min' KAKAO_REST_API_KEY='dev-placeholder-kakao-rest-api-key' KAKAO_REDIRECT_URI='http://localhost:8080/api/v1/auth/kakao/callback' KAKAO_TOKEN_ENC_KEY='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' jest test/route-versioning.spec.ts --runInBand",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

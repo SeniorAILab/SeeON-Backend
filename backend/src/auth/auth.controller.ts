@@ -20,7 +20,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
   SESSION_COOKIE_NAME,
-  postLoginPathForRole,
+  postLoginPathForUser,
 } from './auth.constants';
 import { AuthService } from './auth.service';
 import {
@@ -101,7 +101,7 @@ export class AuthController {
     setSessionCookie(response, session.token, session.maxAgeSeconds);
     // Backend OAuth callbacks run on :8080; relative redirects would land on missing :8080 frontend routes.
     response.redirect(
-      `${this.frontOrigin()}${this.postLoginPath(session.user)}`,
+      `${this.frontOrigin()}${postLoginPathForUser(session.user)}`,
     );
   }
 
@@ -219,12 +219,6 @@ export class AuthController {
     ).replace(/\/+$/, '');
   }
 
-  private postLoginPath(
-    user: Pick<AuthenticatedUser, 'facilityId' | 'role'>,
-  ): string {
-    if (!user.facilityId) return '/onboarding';
-    return postLoginPathForRole(user.role);
-  }
 }
 
 function presentAuthUser(
