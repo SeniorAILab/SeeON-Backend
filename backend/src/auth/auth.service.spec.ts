@@ -40,7 +40,7 @@ describe('AuthService password login', () => {
       kakaoId: null,
       email: 'admin@sen.ai',
       passwordHash,
-      nickname: '시설 관리자',
+      nickname: '관리자',
       role: 'ADMIN',
       sessionVersion: 0,
     };

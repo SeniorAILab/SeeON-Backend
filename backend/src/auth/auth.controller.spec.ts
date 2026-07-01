@@ -25,7 +25,7 @@ describe('AuthController', () => {
 
   const makeUser = (
     facilityId: string | null,
-    role: User['role'] = 'CAREGIVER',
+    role: User['role'] = 'STAFF',
   ): User => ({
     id: 'user-1',
     createdAt: new Date('2026-06-18T00:00:00.000Z'),
@@ -128,7 +128,7 @@ describe('AuthController', () => {
     );
 
     expect(response.redirect).toHaveBeenCalledWith(
-      'https://app.example.com/now',
+      'https://app.example.com/dashboard/facilities/demo-facility-01/staff',
     );
   });
 
@@ -138,6 +138,29 @@ describe('AuthController', () => {
       token: 'session-token',
       maxAgeSeconds: 60,
       user: makeUser('demo-facility-01', 'ADMIN'),
+    });
+    const response = makeResponse();
+
+    await controller.kakaoCallback(
+      'code',
+      'state',
+      {
+        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
+      } as RequestWithAuth,
+      response,
+    );
+
+    expect(response.redirect).toHaveBeenCalledWith(
+      'https://app.example.com/dashboard/facilities/demo-facility-01/admin',
+    );
+  });
+
+  it('redirects super admins to the system dashboard without requiring facilityId', async () => {
+    const { auth, controller } = makeController('https://app.example.com///');
+    auth.completeKakaoCallback.mockResolvedValue({
+      token: 'session-token',
+      maxAgeSeconds: 60,
+      user: makeUser(null, 'SUPER_ADMIN'),
     });
     const response = makeResponse();
 

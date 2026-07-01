@@ -13,8 +13,6 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
-  VERSION_NEUTRAL,
-  Version,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -22,6 +20,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
   SESSION_COOKIE_NAME,
+  postLoginPathForUser,
 } from './auth.constants';
 import { AuthService } from './auth.service';
 import {
@@ -51,8 +50,7 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
-  @Version(VERSION_NEUTRAL)
-  @Get('/auth/kakao/login')
+  @Get('auth/kakao/login')
   kakaoLogin(@Res() response: Response): void {
     const state = this.auth.createOAuthState();
     let authorizeUrl: string;
@@ -72,8 +70,7 @@ export class AuthController {
     response.redirect(authorizeUrl);
   }
 
-  @Version(VERSION_NEUTRAL)
-  @Get('/auth/kakao/callback')
+  @Get('auth/kakao/callback')
   async kakaoCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
@@ -104,12 +101,11 @@ export class AuthController {
     setSessionCookie(response, session.token, session.maxAgeSeconds);
     // Backend OAuth callbacks run on :8080; relative redirects would land on missing :8080 frontend routes.
     response.redirect(
-      `${this.frontOrigin()}${this.postLoginPath(session.user)}`,
+      `${this.frontOrigin()}${postLoginPathForUser(session.user)}`,
     );
   }
 
-  @Version(VERSION_NEUTRAL)
-  @Get('/auth/session')
+  @Get('auth/session')
   @Header('cache-control', 'no-store')
   async sessionForServerRender(
     @Req() request: RequestWithAuth,
@@ -123,8 +119,7 @@ export class AuthController {
     return { user: presentAuthUser(valid.user) };
   }
 
-  @Version(VERSION_NEUTRAL)
-  @Post('/auth/login')
+  @Post('auth/login')
   @HttpCode(200)
   async login(
     @Body() body: LoginRequestDto,
@@ -138,8 +133,7 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
-  @Version(VERSION_NEUTRAL)
-  @Post('/auth/register')
+  @Post('auth/register')
   async register(
     @Body() body: RegisterRequestDto,
     @Res({ passthrough: true }) response: Response,
@@ -155,8 +149,7 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
-  @Version(VERSION_NEUTRAL)
-  @Post('/auth/logout')
+  @Post('auth/logout')
   @UseGuards(SessionGuard)
   @HttpCode(204)
   async logout(
@@ -224,15 +217,6 @@ export class AuthController {
     return (
       this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
     ).replace(/\/+$/, '');
-  }
-
-  private postLoginPath(
-    user: Pick<AuthenticatedUser, 'facilityId' | 'role'>,
-  ): string {
-    if (!user.facilityId) return '/onboarding';
-    return user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
-      ? '/dashboard'
-      : '/now';
   }
 }
 

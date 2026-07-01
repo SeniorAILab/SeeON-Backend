@@ -19,7 +19,7 @@ datasource db {
 enum Role {
   SUPER_ADMIN
   ADMIN
-  CAREGIVER
+  STAFF
 }
 
 enum AlertStatus {
@@ -100,7 +100,7 @@ model User {
   passwordHash   String?  @map("password_hash")
   phone          String?  @map("phone")
   nickname       String
-  role           Role     @default(CAREGIVER)
+  role           Role     @default(STAFF)
   /// Increment to invalidate all existing sessions for this user.
   sessionVersion Int      @default(0) @map("session_version")
   createdAt      DateTime @default(now()) @map("created_at")

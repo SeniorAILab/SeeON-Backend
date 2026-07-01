@@ -114,7 +114,7 @@ describe('auth fail-fast config and cookie attributes', () => {
         httpOnly: true,
         secure: true,
         sameSite: 'lax',
-        path: '/auth',
+        path: '/api/v1/auth',
         maxAge: 45000,
       }),
     );
@@ -129,7 +129,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
     process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
     process.env.KAKAO_REDIRECT_URI =
-      'http://localhost:3001/auth/kakao/callback';
+      'http://localhost:3001/api/v1/auth/kakao/callback';
     process.env.KAKAO_TOKEN_ENC_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
@@ -186,13 +186,15 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
   });
 
   it('rejects unauthenticated protected requests with 401', async () => {
-    await request(app.getHttpServer()).get('/auth/session').expect(401);
-    await request(app.getHttpServer()).get('/api/v1/protected-probe').expect(401);
+    await request(app.getHttpServer()).get('/api/v1/auth/session').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/protected-probe')
+      .expect(401);
   });
 
   it('registers a password owner, restores the session, and rejects duplicate signup', async () => {
     const registered = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         name: '홍원장',
         email: ' ULW-OWNER@EXAMPLE.TEST ',
@@ -211,7 +213,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     expect(registeredBody.user.facilityId).toBeTruthy();
 
     const restored = await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', sessionCookie)
       .expect(200);
     expect((restored.body as unknown as AuthResponseBody).user).toMatchObject({
@@ -221,7 +223,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     });
 
     await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         name: '다른 원장',
         email: 'ulw-owner@example.test',
@@ -234,7 +236,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('logs in an existing password user and returns 200 (not 201)', async () => {
     await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         name: '로그인 원장',
         email: 'login-200@example.test',
@@ -245,7 +247,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(201);
 
     const loggedIn = await request(app.getHttpServer())
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ email: 'login-200@example.test', password: 'care2026' })
       .expect(200);
     expect(extractSessionCookie(loggedIn.headers['set-cookie'])).toContain(
@@ -260,7 +262,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects signup when required fields are missing', async () => {
     await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         name: '홍원장',
         email: 'missing-phone@example.test',
@@ -272,7 +274,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects signup passwords shorter than the public password policy', async () => {
     await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         name: '홍원장',
         email: 'weak-password@example.test',
@@ -285,14 +287,14 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects Kakao login when the Kakao account is not registered locally', async () => {
     const login = await request(app.getHttpServer())
-      .get('/auth/kakao/login')
+      .get('/api/v1/auth/kakao/login')
       .expect(302);
     const stateCookie = login.headers['set-cookie'][0];
     const state = /kakao_oauth_state=([^;]+)/.exec(stateCookie)?.[1];
     expect(state).toBeTruthy();
 
     const callback = await request(app.getHttpServer())
-      .get(`/auth/kakao/callback?code=test-code&state=${state}`)
+      .get(`/api/v1/auth/kakao/callback?code=test-code&state=${state}`)
       .set('cookie', stateCookie)
       .expect(302);
 
@@ -310,12 +312,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
         kakaoId: 'kakao-e2e-user',
         email: 'owner@example.test',
         nickname: '시설 원장',
-        role: 'CAREGIVER',
+        role: 'STAFF',
       },
     });
 
     const login = await request(app.getHttpServer())
-      .get('/auth/kakao/login')
+      .get('/api/v1/auth/kakao/login')
       .expect(302);
     const stateCookie = login.headers['set-cookie'][0];
     const state = /kakao_oauth_state=([^;]+)/.exec(stateCookie)?.[1];
@@ -325,7 +327,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     );
 
     const callback = await request(app.getHttpServer())
-      .get(`/auth/kakao/callback?code=test-code&state=${state}`)
+      .get(`/api/v1/auth/kakao/callback?code=test-code&state=${state}`)
       .set('cookie', stateCookie)
       .expect(302);
     const firstSessionCookie = extractSessionCookie(
@@ -336,7 +338,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     expect(firstSessionCookie).toContain('SameSite=Lax');
 
     const sessionBeforeFacility = await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', firstSessionCookie)
       .expect(200);
     expect(
@@ -345,7 +347,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBeNull();
     expect(
       (sessionBeforeFacility.body as unknown as AuthResponseBody).user.role,
-    ).toBe('CAREGIVER');
+    ).toBe('STAFF');
 
     await request(app.getHttpServer())
       .get('/api/v1/facility-protected-probe')
@@ -427,20 +429,20 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const tamperedToken = `${oldToken.slice(0, -1)}${oldToken.endsWith('a') ? 'b' : 'a'}`;
 
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', `app_session=${tamperedToken}`)
       .expect(401);
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', `app_session=${expiredToken}`)
       .expect(401);
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', `app_session=${staleVersionToken}`)
       .expect(401);
 
     const rotated = await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', `app_session=${oldToken}`)
       .expect(200);
     const rotatedCookie = extractSessionCookie(rotated.headers['set-cookie']);
@@ -451,22 +453,22 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       }),
     ).resolves.toMatchObject({ revokedAt: expect.any(Date) as Date });
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', `app_session=${oldToken}`)
       .expect(401);
 
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', rotatedCookie)
       .expect(200);
 
     await request(app.getHttpServer())
-      .post('/auth/logout')
+      .post('/api/v1/auth/logout')
       .set('cookie', rotatedCookie)
       .expect(204);
 
     await request(app.getHttpServer())
-      .get('/auth/session')
+      .get('/api/v1/auth/session')
       .set('cookie', rotatedCookie)
       .expect(401);
 
@@ -483,12 +485,12 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects OAuth callbacks when a state cookie is present but query state is missing or different', async () => {
     const login = await request(app.getHttpServer())
-      .get('/auth/kakao/login')
+      .get('/api/v1/auth/kakao/login')
       .expect(302);
     const stateCookie = login.headers['set-cookie'][0];
 
     const missingState = await request(app.getHttpServer())
-      .get('/auth/kakao/callback?code=test-code')
+      .get('/api/v1/auth/kakao/callback?code=test-code')
       .set('cookie', stateCookie)
       .expect(400);
     expect(
@@ -496,7 +498,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBeNull();
 
     const mismatchedState = await request(app.getHttpServer())
-      .get('/auth/kakao/callback?code=test-code&state=different')
+      .get('/api/v1/auth/kakao/callback?code=test-code&state=different')
       .set('cookie', stateCookie)
       .expect(400);
     expect(
@@ -506,7 +508,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   it('rejects callback requests with missing or mismatched OAuth state', async () => {
     await request(app.getHttpServer())
-      .get('/auth/kakao/callback?code=test-code&state=bad')
+      .get('/api/v1/auth/kakao/callback?code=test-code&state=bad')
       .expect(400);
   });
 });

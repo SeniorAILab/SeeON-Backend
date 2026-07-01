@@ -2,6 +2,16 @@ packages:
   - front
   - backend
 
+allowBuilds:
+  '@nestjs/core': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': true
+  '@swc/core': true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true
+
 # Native deps create-next-app prefers to use prebuilt binaries for (skip build step).
 ignoredBuiltDependencies:
   - sharp

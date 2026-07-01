@@ -11,7 +11,7 @@ import { configureVersionedTestApp } from './helpers/versioned-app';
  * Catches the wiring/serialization bug class that mocked unit tests structurally
  * cannot, both of which actually reached main during the #105 decomposition:
  *  - AppModule fails to boot — a dangling provider or unregistered module (e.g.
- *    AuthModule was once never registered, 404'ing every /auth/* route).
+ *    AuthModule was once never registered, 404'ing every /api/v1/auth/* route).
  *  - guarded domain/auth routes must be MOUNTED: unauthenticated requests get
  *    401, NOT 404. A 404 here means the owning module isn't registered.
  *  - Alert.alertSeq (BigInt) must serialize in JSON responses via the global
@@ -38,7 +38,7 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
   });
 
   it.each([
-    '/auth/session',
+    '/api/v1/auth/session',
     '/api/v1/alerts',
     '/api/v1/residents',
     '/api/v1/guardians',
