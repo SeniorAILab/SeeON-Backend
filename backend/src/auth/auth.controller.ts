@@ -22,6 +22,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
   SESSION_COOKIE_NAME,
+  postLoginPathForRole,
 } from './auth.constants';
 import { AuthService } from './auth.service';
 import {
@@ -230,9 +231,7 @@ export class AuthController {
     user: Pick<AuthenticatedUser, 'facilityId' | 'role'>,
   ): string {
     if (!user.facilityId) return '/onboarding';
-    return user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'
-      ? '/dashboard'
-      : '/now';
+    return postLoginPathForRole(user.role);
   }
 }
 

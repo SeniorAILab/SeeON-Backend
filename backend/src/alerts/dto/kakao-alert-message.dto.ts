@@ -2,7 +2,7 @@ import type { AlertEventType } from './alert-events.dto.js';
 import type { AlertDeliveryMessage } from '../ports/channel.port.js';
 
 /**
- * Structured, transport-agnostic payload for a caregiver-facing Kakao alert.
+ * Structured, transport-agnostic payload for a staff-facing Kakao alert.
  * Built at the application/adapter seam from an AlertDeliveryMessage; the
  * adapter renders it into a Kakao "text" template. No debug/database IDs.
  */
