@@ -40,19 +40,18 @@
 
 | Service | URL | Start (native) |
 |---|---|---|
-| db (Postgres) | `localhost:5432` | `pnpm db:up` |
-| backend (NestJS) | `http://localhost:8080` | `pnpm dev:backend` |
-| ml-api (FastAPI) | `http://localhost:8000` | `pnpm dev:ml-api` |
-| ml-worker (RTSP) | — | `pnpm dev:ml-worker` |
+| backend + db (NestJS/Postgres) | `http://localhost:8080` / `localhost:5432` | `pnpm dev:backend` (`pnpm dev:backend:fresh` for reset+seed) |
+| ml-api (FastAPI) | `http://localhost:8000` | `pnpm dev:ml` |
+| ml-worker (RTSP) | — | `pnpm dev:ml:worker` |
 | front (Vite + React) | `http://localhost:3000` | `pnpm dev:front` |
-| ml demo (Streamlit) | — | `pnpm dev:demo` |
+| ml demo (Streamlit) | — | `pnpm dev:ml:demo` |
 
-First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .env.local` → `pnpm db:up` → `pnpm prisma:generate` → `pnpm prisma:migrate` → `pnpm prisma:seed`.
+First-time: `pnpm install` → `cd ml && uv sync` → `cp .env.local.example .env.local` → `pnpm dev:backend:fresh`.
 
 - **Env 위치**: local/native/Prisma/Compose는 루트 `.env.local`, host prod는 루트 `.env.host.prod`, edge prod는 루트 `.env.edge.prod`를 읽는다. 실제 `.env*`는 gitignored, tracked 계약은 `.env.local.example`/`.env.host.prod.example`/`.env.edge.prod.example`. `backend/.env*`/`front/.env*`/`ml/.env*`는 만들지 않는다.
-- **ml-worker config**: `pnpm dev:ml-worker`는 `python -m worker`로 gitignored `ml/config/ml-worker.local.yaml`를 읽는다(`--config` 기본 내장). 최초 1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml` 후, 네이티브 dev(`uv run --directory ml`, cwd=`ml/`)용으로 `artifact_dir: ./models/fall/lstm`(경로는 `ml/` 기준)와 실제/외부 RTSP `rtsp_url`을 설정한다. `python -m worker.edge_worker`도 그대로 유효. 단독 검증: `pnpm dev:ml-worker --check-config`.
+- **ml-worker config**: `pnpm dev:ml:worker`는 `python -m worker`로 gitignored `ml/config/ml-worker.local.yaml`를 읽는다(`--config` 기본 내장). 최초 1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml` 후, 네이티브 dev(`uv run --directory ml`, cwd=`ml/`)용으로 `artifact_dir: ./models/fall/lstm`(경로는 `ml/` 기준)와 실제/외부 RTSP `rtsp_url`을 설정한다. `python -m worker.edge_worker`도 그대로 유효. 단독 검증: `pnpm dev:ml:worker --check-config`.
 - **Verify**: `pnpm typecheck` · `pnpm lint` · backend `pnpm --filter backend test` · ml `uv run --directory ml pytest` · front `pnpm --filter front test`.
-- **Compose**: db만 `pnpm db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod` image pins). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없다.
+- **Compose**: backend-owned db만 `pnpm backend:db:up` / 풀 로컬 호스트 스택 `pnpm compose:local:up` (`.env.local`, `--profile full`) / prod 호스트 스택 `pnpm compose:prod:up` (`.env.host.prod` image pins). 일상 dev는 네이티브 hot reload(`pnpm dev:*`)이며 컨테이너-dev override는 없다.
 - **Demo(라이브 낙상→카카오 fan-out E2E)**: 절차는 README Quick Start + `.env.local.example`, durable 기록은 `docs/exec-plan/active/thursday-mvp-live-fall-kakao-fanout/`.
 
 ## Development Flow

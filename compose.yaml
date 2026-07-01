@@ -2,7 +2,7 @@
 # edge device — see compose.edge.yaml (ML inference pushes signed events to the
 # backend /ingest endpoint, so ml-serving is not part of this stack).
 # App services (backend, front) are gated behind the `full` profile so the default
-# `docker compose up` / `pnpm db:up` brings up db only (daily dev is native hot reload).
+# `docker compose up` / `pnpm backend:db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
 # PostgreSQL for dev/prod parity. Prisma's provider is locked to postgresql; dev and prod differ only by DATABASE_URL.
@@ -11,7 +11,7 @@
 #   fall_app = NOSUPERUSER NOBYPASSRLS → application runtime (DATABASE_URL)
 #
 # First-time setup requires a clean volume so initdb scripts run:
-#   docker compose down -v && docker compose up -d db
+#   docker compose down -v && pnpm backend:db:up
 services:
   db:
     image: postgres:17-alpine

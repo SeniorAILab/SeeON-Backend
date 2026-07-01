@@ -135,7 +135,7 @@ Key responsibilities:
 - Apply alert policy (threshold, dedup key, rate-limit), persist immutable events and derived alerts, and publish SSE dashboard frames.
 - Dispatch Kakao delivery through the outbox/delivery adapter layer.
 
-Runs via: `pnpm dev:backend` → `pnpm --filter backend start:dev`
+Runs via: `pnpm dev:backend` → `pnpm backend:db:up` → `pnpm dev:backend:app` → `pnpm --filter backend start:dev`.
 
 ### 3. `ml/` — Training pipeline, live worker, and gateway api
 
@@ -152,7 +152,7 @@ Independent uv project. Two distinct lifecycles share one project:
 
 Dependency boundaries are package-name based and enforced by `ml/tests/test_import_dependency_ladder.py`: `contracts`/`features` are shared pure foundations; live ML packages live under `worker/{sources,runners,perception,domains}`; `events` owns relay schemas/clients; `api` is an ML-free gateway; `training` imports only `contracts` and `features` from production packages. `ml-worker` owns live orchestration/state (there is no `runtime` package; ADR); `ml/core/` and `ml/util/` are removed.
 
-Runs via: `pnpm dev:ml-api` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
+Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000`
 
 ---
 
@@ -257,17 +257,18 @@ PostgreSQL everywhere. The choice was made because Prisma bakes `provider` into 
 | Dev connection   | `postgresql://fall_app:fall_app@localhost:5432/fall_dev` | `.env.local.example`            |
 | Prod connection  | `DATABASE_URL` / `DIRECT_URL` with production roles | `.env.host.prod.example`        |
 
-Start the database:
+Backend-owned local DB commands:
 
 ```bash
-pnpm db:up                    # docker compose up -d db
-pnpm prisma:migrate           # prisma migrate dev (reads .env.local via dotenv-cli)
-pnpm prisma:generate          # regenerate Prisma client after schema changes
+pnpm dev:backend:fresh        # start db, reset/apply migrations, generate Prisma Client, seed, then start Nest
+pnpm dev:backend              # start db, then start Nest watch mode without reset
+pnpm backend:prisma:migrate   # prisma migrate dev (reads .env.local via dotenv-cli)
+pnpm backend:prisma:generate  # regenerate Prisma Client after schema changes
 ```
 
 The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm db:up` is db-only with `.env.local` (daily dev is native hot reload via `pnpm dev:*`); `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` and `/auth` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` pushes no-HMAC events to backend `POST /api/v1/events` through `API_BACKEND_EVENTS_URL`. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
+**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm backend:db:up` is db-only with `.env.local` and is normally reached through `pnpm dev:backend`; daily dev is native hot reload via `pnpm dev:*`. `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` and `/auth` to `backend:8080` (same-origin). ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` pushes no-HMAC events to backend `POST /api/v1/events` through `API_BACKEND_EVENTS_URL`. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
 
 ---
 

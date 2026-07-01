@@ -44,7 +44,7 @@ When an ADR-level rule needs rationale, keep it compact. Use git history for old
 
 ## Runtime Topology
 
-- Daily local development runs native hot reload for backend, ML, and frontend. Compose is used for the database, local full-stack smoke runs, and production host or edge stacks.
+- Daily local development runs native hot reload for backend, ML, and frontend. The backend owns local DB lifecycle commands; Compose is used for the database, local full-stack smoke runs, and production host or edge stacks.
 - The host stack is `db` + `backend` + `front`; ML runs on the edge stack.
 - Production deploy is release-gated and image-pinned. Manual local production deploy scripts are the current path.
 - Production database migrations require explicit backup, migration, and verification steps before destructive or schema-changing work proceeds.

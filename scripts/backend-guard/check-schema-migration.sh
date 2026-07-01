@@ -54,5 +54,5 @@ fi
 
 # 3) 스키마만 바뀌고 마이그레이션이 없음 → 거부.
 gg_die "backend-guard: $SCHEMA 가 변경됐지만 동반 Prisma 마이그레이션(backend/prisma/migrations/*/migration.sql)이 없습니다.
-  → 'pnpm --filter backend run prisma:migrate' 로 마이그레이션을 생성·스테이지하거나, schema.prisma 변경을 되돌리세요.
+  → 'pnpm backend:prisma:migrate' 로 마이그레이션을 생성·스테이지하거나, schema.prisma 변경을 되돌리세요.
   (마이그레이션만 단독 변경하는 것은 허용됩니다: 데이터 보정/수기 RLS 마이그레이션 등.)"

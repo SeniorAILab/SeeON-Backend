@@ -29,13 +29,13 @@ cp .env.local.example .env.local
 # 4. Start local backend dependencies + backend
 pnpm dev:backend  # starts db, prepares Prisma, then http://localhost:8080
 
-# Optional: reset local DB, reseed, then run backend + front
-pnpm dev:local
+# Optional first boot or reset: guarded local DB reset, seed, then backend
+pnpm dev:backend:fresh
 
-# 5. Start the remaining app services in separate terminals as needed
-pnpm dev:ml-api       # ml-api / FastAPI private-local surface on http://localhost:8000
-pnpm dev:ml-worker    # reads gitignored ml/config/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
-pnpm dev:front        # http://localhost:3000
+# 5. Start other app services in separate terminals
+pnpm dev:front       # http://localhost:3000
+pnpm dev:ml          # ml-api / FastAPI private-local surface on http://localhost:8000
+pnpm dev:ml:worker   # reads gitignored ml/config/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
 
 # 6. Register git hooks (core.hooksPath + guard scripts; run once per clone)
 bash scripts/git-guard/setup-hooks.sh
@@ -82,26 +82,24 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 |--------|-------------|
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
 | `pnpm dev:backend` | Verify local env, start PostgreSQL, generate Prisma Client, run `prisma migrate dev`, then start NestJS watch mode (`backend/`) |
-| `pnpm dev:local` | Destructive local loop: verify local env, start PostgreSQL, reset/replay migrations/seed local DB, then start backend + front native dev servers |
-| `pnpm dev:local:reset` | Explicit alias for the same destructive local reset loop as `dev:local` |
-| `pnpm dev:ml-api` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
-| `pnpm dev:ml-worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `config/ml-worker.local.yaml` (1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
-| `pnpm dev:demo` | Streamlit demo UI (`ml/demo/`) |
+| `pnpm dev:backend:fresh` | Guard-reset `.env.local` DB, replay migrations/seed demo data, then start NestJS watch mode (`backend/`) |
+| `pnpm dev:backend:app` | NestJS dev server only; use when DB is already managed externally |
+| `pnpm dev:ml` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
+| `pnpm dev:ml:worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `config/ml-worker.local.yaml` (1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
+| `pnpm dev:ml:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
 | `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
-| `pnpm env:local:verify` | Verify `.env.local` is safe for local DB dev commands |
-| `pnpm db:up` | `docker compose up -d db` — start PostgreSQL |
-| `pnpm db:reset:local` | Destructive local-only reset: `migrate reset --force`, regenerate Prisma Client, and seed demo data after local env guard |
-| `pnpm db:down` | `docker compose down` — stop all Compose services |
+| `pnpm backend:db:up` | `docker compose up -d db` — start PostgreSQL for backend |
+| `pnpm backend:db:reset` | Guard `.env.local`, run `prisma migrate reset --force`, regenerate Prisma Client, and seed |
+| `pnpm backend:db:down` | `docker compose down` — stop all Compose services |
 | `pnpm compose:local:up` | Full local host stack (db+backend+front[nginx], `.env.local`, `--profile full`) |
 | `pnpm compose:prod:up` | Production full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod` image pins) |
 | `pnpm release:prod -- vX.Y.Z` | Create the non-prerelease GitHub Release that triggers production deploy |
-| `pnpm prisma:generate` | Regenerate Prisma client from `schema.prisma` |
-| `pnpm prisma:migrate` | Run Prisma migrations (`migrate dev`) |
-| `pnpm smoke:backend:no-db` | Backend route wiring smoke with Prisma overridden; not E2E |
+| `pnpm backend:prisma:generate` | Regenerate Prisma Client from `schema.prisma` |
+| `pnpm backend:prisma:migrate` | Run Prisma migrations (`migrate dev`) |
 
-`pnpm dev:local` and `pnpm dev:local:reset` intentionally wipe only a
+`pnpm dev:backend:fresh` and `pnpm backend:db:reset` intentionally wipe only a
 guard-verified local development DB. They refuse non-local hosts and production
 env files before running Prisma reset. Use `pnpm dev:backend` when you want the
 backend-only loop with DB startup absorbed but without a reset.

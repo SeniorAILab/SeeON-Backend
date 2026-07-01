@@ -16,6 +16,7 @@
     "start:prod": "node dist/main",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "dotenv -e ../.env.local -- prisma migrate dev",
+    "prisma:reset:local": "node ../scripts/dev/assert-local-db-env.mjs ../.env.local && dotenv -e ../.env.local -- prisma migrate reset --force && prisma generate && dotenv -e ../.env.local -- ts-node prisma/seed.ts",
     "prisma:seed": "dotenv -e ../.env.local -- ts-node prisma/seed.ts",
     "lint": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\" --fix",
