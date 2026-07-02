@@ -1,11 +1,17 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Facility } from '@prisma/client';
+import { Role, type Facility } from '@prisma/client';
 import type { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 import { FacilitiesRepository } from '../repositories/facilities.repository.js';
+
+export type FacilityListUser = {
+  readonly role: Role;
+  readonly facilityId: string | null;
+};
 
 @Injectable()
 export class FacilitiesService {
@@ -20,6 +26,18 @@ export class FacilitiesService {
         message: 'Facility not found',
       });
     return presentFacility(facility);
+  }
+
+  async listForUser(user: FacilityListUser) {
+    if (user.role === Role.SUPER_ADMIN) {
+      return (await this.facilitiesRepository.listAll()).map(presentFacility);
+    }
+    if (!user.facilityId) {
+      throw new ForbiddenException('Facility context required');
+    }
+    return (
+      await this.facilitiesRepository.listByFacilityId(user.facilityId)
+    ).map(presentFacility);
   }
 
   async update(facilityId: string, dto: UpdateFacilityRequestDto) {

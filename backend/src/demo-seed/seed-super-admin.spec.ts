@@ -24,7 +24,7 @@ describe('super-admin bootstrap config', () => {
       skip: false,
       email: '<REDACTED_NOTIFICATION_EMAIL>',
       password: 'pw',
-      nickname: 'SeniorAILab Super Admin',
+      nickname: 'Senior AI Lab',
       facilityId: null,
     });
   });
@@ -49,35 +49,75 @@ describe('super-admin bootstrap config', () => {
 
 describe('super-admin action decision', () => {
   it('creates when no user exists', () => {
-    expect(decideSuperAdminAction(null, false)).toBe('create');
+    expect(decideSuperAdminAction(null, false, null)).toBe('create');
   });
 
-  it('no-ops only when already SUPER_ADMIN with a matching password', () => {
+  it('no-ops only when already SUPER_ADMIN with a matching password and facility binding', () => {
     expect(
       decideSuperAdminAction(
-        { id: 'u1', role: 'SUPER_ADMIN', passwordHash: 'hash' },
+        {
+          id: 'u1',
+          role: 'SUPER_ADMIN',
+          passwordHash: 'hash',
+          facilityId: null,
+        },
         true,
+        null,
       ),
     ).toBe('noop');
   });
 
-  it('updates an existing non-super-admin or a password mismatch', () => {
-    const cases: { existing: ExistingSuperAdmin; matches: boolean }[] = [
+  it('updates an existing non-super-admin, password mismatch, or facility mismatch', () => {
+    const cases: {
+      existing: ExistingSuperAdmin;
+      matches: boolean;
+      facilityId: string | null;
+    }[] = [
       {
-        existing: { id: 'u1', role: 'ADMIN', passwordHash: 'hash' },
+        existing: {
+          id: 'u1',
+          role: 'ADMIN',
+          passwordHash: 'hash',
+          facilityId: 'fac_happy_nokyang',
+        },
         matches: true,
+        facilityId: null,
       },
       {
-        existing: { id: 'u1', role: 'SUPER_ADMIN', passwordHash: 'hash' },
+        existing: {
+          id: 'u1',
+          role: 'SUPER_ADMIN',
+          passwordHash: 'hash',
+          facilityId: null,
+        },
         matches: false,
+        facilityId: null,
       },
       {
-        existing: { id: 'u1', role: 'SUPER_ADMIN', passwordHash: null },
+        existing: {
+          id: 'u1',
+          role: 'SUPER_ADMIN',
+          passwordHash: null,
+          facilityId: null,
+        },
         matches: false,
+        facilityId: null,
+      },
+      {
+        existing: {
+          id: 'u1',
+          role: 'SUPER_ADMIN',
+          passwordHash: 'hash',
+          facilityId: 'fac_happy_nokyang',
+        },
+        matches: true,
+        facilityId: null,
       },
     ];
-    for (const { existing, matches } of cases) {
-      expect(decideSuperAdminAction(existing, matches)).toBe('update');
+    for (const { existing, matches, facilityId } of cases) {
+      expect(decideSuperAdminAction(existing, matches, facilityId)).toBe(
+        'update',
+      );
     }
   });
 });
@@ -87,7 +127,7 @@ describe('bootstrapSuperAdmin wiring', () => {
     skip: false as const,
     email: '<REDACTED_NOTIFICATION_EMAIL>',
     password: 's3cret-pass',
-    nickname: 'SeniorAILab Super Admin',
+    nickname: 'Senior AI Lab',
     facilityId: null,
   };
 
@@ -118,6 +158,7 @@ describe('bootstrapSuperAdmin wiring', () => {
     ];
     expect(arg.data.email).toBe(config.email);
     expect(arg.data.role).toBe('SUPER_ADMIN');
+    expect(arg.data.facilityId).toBeNull();
     expect(arg.data.nickname).toBe(config.nickname);
     expect(arg.data.passwordHash).toMatch(/^scrypt\$/);
   });
@@ -127,6 +168,7 @@ describe('bootstrapSuperAdmin wiring', () => {
       id: 'user_nokyang_admin',
       role: 'ADMIN',
       passwordHash: await hashPassword('old-password'),
+      facilityId: 'fac_happy_nokyang',
     });
     await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
     expect(create).not.toHaveBeenCalled();
@@ -136,8 +178,28 @@ describe('bootstrapSuperAdmin wiring', () => {
     ];
     expect(arg.where).toEqual({ id: 'user_nokyang_admin' });
     expect(arg.data.role).toBe('SUPER_ADMIN');
+    expect(arg.data.facilityId).toBeNull();
     expect(arg.data.sessionVersion).toEqual({ increment: 1 });
     expect(arg.data.passwordHash).toMatch(/^scrypt\$/);
+  });
+
+  it('clears facility binding from an existing matching SUPER_ADMIN', async () => {
+    const { prisma, create, update } = makePrisma({
+      id: 'user-super',
+      role: 'SUPER_ADMIN',
+      passwordHash: await hashPassword(config.password),
+      facilityId: 'fac_happy_nokyang',
+    });
+    await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
+    expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+    const [arg] = update.mock.calls[0] as [
+      Parameters<SuperAdminPrisma['user']['update']>[0],
+    ];
+    expect(arg.where).toEqual({ id: 'user-super' });
+    expect(arg.data.facilityId).toBeNull();
+    expect(arg.data.role).toBe('SUPER_ADMIN');
+    expect(arg.data.sessionVersion).toEqual({ increment: 1 });
   });
 
   it('is a no-op when the SUPER_ADMIN password already matches', async () => {
@@ -145,6 +207,7 @@ describe('bootstrapSuperAdmin wiring', () => {
       id: 'user_nokyang_admin',
       role: 'SUPER_ADMIN',
       passwordHash: await hashPassword(config.password),
+      facilityId: null,
     });
     await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('noop');
     expect(create).not.toHaveBeenCalled();

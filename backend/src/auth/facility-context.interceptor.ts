@@ -26,9 +26,9 @@ export class FacilityContextInterceptor implements NestInterceptor {
         RequestWithAuth & { withFacilityContext?: FacilityBoundPrismaRunner }
       >();
     if (!request.user) throw new UnauthorizedException('Missing session');
-    if (!request.user.facilityId)
+    const facilityId = request.effectiveFacilityId ?? request.user.facilityId;
+    if (!facilityId)
       throw new ForbiddenException('Facility onboarding required');
-    const facilityId = request.user.facilityId;
     request.withFacilityContext = <T>(
       fn: (tx: Prisma.TransactionClient) => Promise<T>,
     ) => this.prisma.withFacilityContext<T>(facilityId, fn);

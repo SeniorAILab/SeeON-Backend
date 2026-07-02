@@ -1,7 +1,7 @@
 import { Level, ResidentState, SpaceType, ZoneType } from '@prisma/client';
 
 export const NOKYANG_FACILITY_ID = 'fac_happy_nokyang';
-export const NOKYANG_ADMIN_EMAIL = '<REDACTED_NOTIFICATION_EMAIL>';
+export const NOKYANG_ADMIN_EMAIL = 'nokyang-admin@example.com';
 
 export type FixtureItem = {
   readonly id: string;

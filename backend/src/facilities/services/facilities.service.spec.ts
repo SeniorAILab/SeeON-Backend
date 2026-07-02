@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { FacilitiesService } from './facilities.service';
 
 describe('FacilitiesService', () => {
@@ -9,6 +11,12 @@ describe('FacilitiesService', () => {
     phone: null,
     businessRegistrationNumber: null,
     createdAt: new Date('2026-06-21T00:00:00.000Z'),
+  };
+  const otherFacility = {
+    ...facility,
+    id: 'other-facility',
+    name: 'Other Home',
+    code: 'other-home',
   };
 
   it('reads the facility root directly by session facilityId', async () => {
@@ -37,5 +45,48 @@ describe('FacilitiesService', () => {
       'facility-session',
       { name: 'New Name', address: undefined, phone: undefined },
     );
+  });
+
+  it('lists every facility for facility-less super admins', async () => {
+    const repository = {
+      listAll: jest.fn().mockResolvedValue([facility, otherFacility]),
+    };
+    const service = new FacilitiesService(repository as never);
+
+    await expect(
+      service.listForUser({ role: Role.SUPER_ADMIN, facilityId: null }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: 'facility-session' }),
+      expect.objectContaining({ id: 'other-facility' }),
+    ]);
+    expect(repository.listAll).toHaveBeenCalledWith();
+  });
+
+  it('lists only the caller facility for facility-bound users', async () => {
+    const repository = {
+      listByFacilityId: jest.fn().mockResolvedValue([facility]),
+    };
+    const service = new FacilitiesService(repository as never);
+
+    await expect(
+      service.listForUser({ role: Role.ADMIN, facilityId: 'facility-session' }),
+    ).resolves.toEqual([expect.objectContaining({ id: 'facility-session' })]);
+    expect(repository.listByFacilityId).toHaveBeenCalledWith(
+      'facility-session',
+    );
+  });
+
+  it('rejects facility-less non-super users', async () => {
+    const repository = {
+      listAll: jest.fn(),
+      listByFacilityId: jest.fn(),
+    };
+    const service = new FacilitiesService(repository as never);
+
+    await expect(
+      service.listForUser({ role: Role.STAFF, facilityId: null }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.listAll).not.toHaveBeenCalled();
+    expect(repository.listByFacilityId).not.toHaveBeenCalled();
   });
 });

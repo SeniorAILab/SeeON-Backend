@@ -13,6 +13,19 @@ export class FacilitiesRepository {
     });
   }
 
+  listAll() {
+    return this.prisma.db.facility.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  listByFacilityId(facilityId: string) {
+    return this.prisma.db.facility.findMany({
+      where: { id: facilityId },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   updateByFacilityId(facilityId: string, data: Prisma.FacilityUpdateInput) {
     return this.prisma.db.facility.update({
       where: { id: facilityId },

@@ -14,7 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { hashPassword, verifyPassword } from '../src/auth/password';
 
 const DEFAULT_EMAIL = '<REDACTED_NOTIFICATION_EMAIL>';
-const DEFAULT_NICKNAME = 'SeniorAILab Super Admin';
+const DEFAULT_NICKNAME = 'Senior AI Lab';
 
 type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
 
@@ -45,6 +45,7 @@ export type ExistingSuperAdmin = {
   readonly id: string;
   readonly role: Role;
   readonly passwordHash: string | null;
+  readonly facilityId: string | null;
 } | null;
 
 export type SuperAdminAction = 'create' | 'update' | 'noop';
@@ -55,6 +56,7 @@ export type SuperAdminAction = 'create' | 'update' | 'noop';
 export function decideSuperAdminAction(
   existing: ExistingSuperAdmin,
   passwordMatches: boolean,
+  facilityId: string | null,
 ): SuperAdminAction {
   if (existing === null) {
     return 'create';
@@ -62,7 +64,8 @@ export function decideSuperAdminAction(
   if (
     existing.role === 'SUPER_ADMIN' &&
     existing.passwordHash !== null &&
-    passwordMatches
+    passwordMatches &&
+    existing.facilityId === facilityId
   ) {
     return 'noop';
   }
@@ -77,6 +80,7 @@ export type SuperAdminPrisma = {
         readonly id: true;
         readonly role: true;
         readonly passwordHash: true;
+        readonly facilityId: true;
       };
     }) => Promise<ExistingSuperAdmin>;
     readonly create: (args: {
@@ -85,7 +89,7 @@ export type SuperAdminPrisma = {
         readonly passwordHash: string;
         readonly nickname: string;
         readonly role: 'SUPER_ADMIN';
-        readonly facilityId?: string;
+        readonly facilityId?: string | null;
       };
     }) => Promise<unknown>;
     readonly update: (args: {
@@ -95,7 +99,7 @@ export type SuperAdminPrisma = {
         readonly nickname: string;
         readonly role: 'SUPER_ADMIN';
         readonly sessionVersion: { readonly increment: 1 };
-        readonly facilityId?: string;
+        readonly facilityId?: string | null;
       };
     }) => Promise<unknown>;
   };
@@ -107,13 +111,17 @@ export async function bootstrapSuperAdmin(
 ): Promise<SuperAdminAction> {
   const existing = await prisma.user.findUnique({
     where: { email: config.email },
-    select: { id: true, role: true, passwordHash: true },
+    select: { id: true, role: true, passwordHash: true, facilityId: true },
   });
   const passwordMatches =
     existing?.passwordHash != null
       ? await verifyPassword(config.password, existing.passwordHash)
       : false;
-  const action = decideSuperAdminAction(existing, passwordMatches);
+  const action = decideSuperAdminAction(
+    existing,
+    passwordMatches,
+    config.facilityId,
+  );
   if (action === 'noop') {
     return 'noop';
   }
@@ -126,7 +134,7 @@ export async function bootstrapSuperAdmin(
         passwordHash,
         nickname: config.nickname,
         role: 'SUPER_ADMIN',
-        ...(config.facilityId ? { facilityId: config.facilityId } : {}),
+        facilityId: config.facilityId,
       },
     });
     return 'create';
@@ -139,7 +147,7 @@ export async function bootstrapSuperAdmin(
       nickname: config.nickname,
       role: 'SUPER_ADMIN',
       sessionVersion: { increment: 1 },
-      ...(config.facilityId ? { facilityId: config.facilityId } : {}),
+      facilityId: config.facilityId,
     },
   });
   return 'update';

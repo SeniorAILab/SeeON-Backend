@@ -197,7 +197,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     this.refreshRotatedCookie(request, response);
-    return { facilityId: request.user?.facilityId };
+    return { facilityId: request.effectiveFacilityId };
   }
 
   private refreshRotatedCookie(

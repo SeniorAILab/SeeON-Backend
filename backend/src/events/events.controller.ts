@@ -27,7 +27,9 @@ import { EventAlarmService } from './event-alarm.service.js';
 import { EventRecorderService } from './event-recorder.service.js';
 
 const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
-const ALLOWED_EVENT_TYPE_SET = new Set(ALLOWED_EVENT_TYPES.map((type) => type.toLowerCase()));
+const ALLOWED_EVENT_TYPE_SET = new Set(
+  ALLOWED_EVENT_TYPES.map((type) => type.toLowerCase()),
+);
 
 @Controller({ path: 'events', version: '1' })
 export class EventsController {
@@ -38,10 +40,15 @@ export class EventsController {
   ) {}
 
   @Post()
-  async record(@Body() body: RecordEventRequestDto): Promise<RecordEventResponseDto> {
+  async record(
+    @Body() body: RecordEventRequestDto,
+  ): Promise<RecordEventResponseDto> {
     const input = parseRecordEventRequest(body);
     const result = await this.eventAlarm.record(input);
-    return { id: result.event.id, status: result.duplicate ? 'duplicate' : 'created' };
+    return {
+      id: result.event.id,
+      status: result.duplicate ? 'duplicate' : 'created',
+    };
   }
 
   @Post('heartbeat')
@@ -69,7 +76,9 @@ function parseRecordEventRequest(body: RecordEventRequestDto) {
   const cameraId = requireString(body?.camera_id, 'camera_id');
   const type = requireString(body?.type, 'type').trim();
   if (!ALLOWED_EVENT_TYPE_SET.has(type.toLowerCase())) {
-    throw new BadRequestException(`type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`);
+    throw new BadRequestException(
+      `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
+    );
   }
   const detectedAtRaw = requireString(body?.detected_at, 'detected_at');
   const detectedAt = new Date(detectedAtRaw);
@@ -91,7 +100,7 @@ function requireString(value: unknown, field: string): string {
 }
 
 function requireFacilityId(req: RequestWithAuth): string {
-  const facilityId = req.user?.facilityId;
+  const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
   if (!facilityId) throw new ForbiddenException('Facility context required');
   return facilityId;
 }

@@ -45,6 +45,11 @@ async function main() {
       args: ['exec', 'ts-node', 'prisma/seed.ts'],
       cwd: backendDir,
     },
+    {
+      label: 'prisma:seed-super-admin',
+      args: ['exec', 'ts-node', 'prisma/seed-super-admin.ts'],
+      cwd: backendDir,
+    },
   ];
 
   for (const step of steps) {
