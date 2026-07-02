@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
-import { AlertStatus, ResidentState } from '@prisma/client';
+import { AlertStatus } from '@prisma/client';
 import { AlertEventTypes } from './dto/alert-events.dto';
 
 import type { PrismaService } from '../prisma/prisma.service';
@@ -25,7 +25,6 @@ function setup() {
         }),
       ),
     },
-    residentStatus: { upsert: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
     withFacilityContext: jest.fn(
@@ -64,11 +63,11 @@ describe('AlertWriterService', () => {
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
   });
-  it('persists empty-room alerts without creating ResidentStatus, status events, or PII logs', async () => {
+  it('persists room-centric alerts without creating ResidentStatus or status events', async () => {
     const logSpy = jest
       .spyOn(Logger.prototype, 'log')
       .mockImplementation(() => undefined);
-    const { service, tx } = setup();
+    const { service } = setup();
     const statuses: StatusEvent[] = [];
     service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
@@ -76,7 +75,6 @@ describe('AlertWriterService', () => {
 
     expect(event.residentId).toBeNull();
     expect(event.room).toBe('Room 101');
-    expect(tx.residentStatus.upsert).not.toHaveBeenCalled();
     expect(statuses).toHaveLength(0);
     expect(logSpy).toHaveBeenCalledWith({
       event: 'alert.empty_room_written',
@@ -102,39 +100,22 @@ describe('AlertWriterService', () => {
     expect(tx.alert.create).not.toHaveBeenCalled();
   });
 
-  it.each([
-    [0.9, ResidentState.FALL],
-    [0.6, ResidentState.WARNING],
-    [0.1, ResidentState.NORMAL],
-  ])('maps probability %s to resident state %s', async (p, state) => {
-    const { service } = setup();
-    const statuses: StatusEvent[] = [];
-    service.subscribeStatus('facility-1', (e) => statuses.push(e));
-    await service.writeAlert(input(p));
-    expect(statuses[0].state).toBe(state);
-  });
-
-  it('maps bed-exit alerts to WARNING regardless of probability', async () => {
-    const { service } = setup();
+  it('persists ML type and probability as-is without resident-keyed status emission', async () => {
+    const { service, tx } = setup();
     const statuses: StatusEvent[] = [];
     service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
-    await service.writeAlert({
-      ...input(0.1),
-      type: AlertEventTypes.bedExit,
-    });
+    await service.writeAlert({ ...input(0.1), type: AlertEventTypes.fall });
 
-    expect(statuses[0].state).toBe(ResidentState.WARNING);
-  });
-
-  it('keeps high-probability fall alerts mapped to FALL', async () => {
-    const { service } = setup();
-    const statuses: StatusEvent[] = [];
-    service.subscribeStatus('facility-1', (e) => statuses.push(e));
-
-    await service.writeAlert(input(0.9));
-
-    expect(statuses[0].state).toBe(ResidentState.FALL);
+    expect(tx.alert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: AlertEventTypes.fall,
+          probability: 0.1,
+        }),
+      }),
+    );
+    expect(statuses).toHaveLength(0);
   });
 
   it('stops delivering after unsubscribe', async () => {
@@ -245,7 +226,10 @@ describe('AlertWriterService lifecycle (ack/resolve)', () => {
     expect(updateArg.data.resolvedById).toBe('user-2');
     expect(result.status).toBe(AlertStatus.RESOLVED);
     expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({ status: AlertStatus.RESOLVED });
+    expect(updates[0]).toMatchObject({
+      status: AlertStatus.RESOLVED,
+      spaceId: 'space-1',
+    });
   });
 
   it('re-ack of an ACKED alert is an idempotent no-op (no update, no emit, no restamp)', async () => {
@@ -270,12 +254,29 @@ describe('AlertWriterService lifecycle (ack/resolve)', () => {
     expect(updates).toHaveLength(0);
   });
 
-  it('rejects NEW → RESOLVED with a Conflict', async () => {
+  it('resolves NEW → RESOLVED, stamps the actor, and emits an update', async () => {
     const { service, tx } = lifecycleSetup(AlertStatus.NEW);
-    await expect(service.resolveAlert(lifecycleInput)).rejects.toBeInstanceOf(
-      ConflictException,
+    const updates: AlertUpdateEvent[] = [];
+    service.subscribeUpdates('facility-1', (e) => updates.push(e));
+
+    const result = await service.resolveAlert(lifecycleInput);
+
+    expect(tx.alert.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: AlertStatus.RESOLVED,
+          resolvedById: 'user-1',
+          resolvedAt: expect.any(Date),
+        }),
+      }),
     );
-    expect(tx.alert.update).not.toHaveBeenCalled();
+    expect(result.status).toBe(AlertStatus.RESOLVED);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      id: 'a1',
+      status: AlertStatus.RESOLVED,
+      spaceId: 'space-1',
+    });
   });
 
   it('rejects RESOLVED → ACKED with a Conflict', async () => {

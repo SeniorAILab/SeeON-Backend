@@ -8,15 +8,12 @@ import { AuthModule } from './auth/auth.module.js';
 import { ResidentsModule } from './residents/residents.module.js';
 import { GuardiansModule } from './guardians/guardians.module.js';
 import { CamerasModule } from './cameras/cameras.module.js';
-import { StatusModule } from './status/status.module.js';
 
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { FacilitiesModule } from './facilities/facilities.module.js';
 import { FloorsModule } from './floors/floors.module.js';
 import { SpacesModule } from './spaces/spaces.module.js';
 import { ZonesModule } from './zones/zones.module.js';
-import { SpaceStatusesModule } from './space-statuses/space-statuses.module.js';
-import { ResidentRiskSummariesModule } from './resident-risk-summaries/resident-risk-summaries.module.js';
 import { EventsModule } from './events/events.module.js';
 import { backendEnvFilePaths } from './config/env-files.js';
 import { validateBackendEnv } from './config/env-validation.js';
@@ -42,15 +39,12 @@ import { validateBackendEnv } from './config/env-validation.js';
     ResidentsModule,
     GuardiansModule,
     CamerasModule,
-    StatusModule,
     AlertsModule,
     DashboardModule,
     FacilitiesModule,
     FloorsModule,
     SpacesModule,
     ZonesModule,
-    SpaceStatusesModule,
-    ResidentRiskSummariesModule,
     EventsModule,
   ],
   controllers: [AppController],

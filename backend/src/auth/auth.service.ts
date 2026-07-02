@@ -6,18 +6,35 @@ import {
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   KakaoClient,
   type KakaoProfile,
   type KakaoTokenResponse,
 } from './kakao.client';
-import { SessionService } from './session.service';
 import { encryptToken } from './token-crypto';
 import { hashPassword, verifyPassword } from './password';
 import { assertValidPassword, requiredPassword } from './password-policy';
 import { createRegisteredFacilityOwner } from './password-registration';
 import { nextFacilityCode } from './facility-code';
+import { DEFAULT_JWT_TTL, hasRbacCapability } from './auth.constants';
+
+export interface AuthSession {
+  readonly user: Pick<
+    User,
+    | 'id'
+    | 'facilityId'
+    | 'role'
+    | 'kakaoId'
+    | 'nickname'
+    | 'email'
+    | 'sessionVersion'
+  >;
+  readonly token: string;
+  readonly maxAgeSeconds: number;
+}
 
 export interface RegisterWithPasswordInput {
   readonly name: unknown;
@@ -32,7 +49,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kakao: KakaoClient,
-    private readonly sessions: SessionService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   createOAuthState(): string {
@@ -43,22 +61,19 @@ export class AuthService {
     return this.kakao.buildAuthorizeUrl(state);
   }
 
-  async completeKakaoCallback(
-    code: string,
-  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+  async completeKakaoCallback(code: string): Promise<AuthSession> {
     if (!code)
       throw new BadRequestException('Missing Kakao authorization code');
     const kakaoToken = await this.kakao.exchangeCode(code);
     const profile = await this.kakao.getProfile(kakaoToken.access_token);
     const user = await this.updateLinkedKakaoUser(profile, kakaoToken);
-    const session = await this.sessions.createSession(user);
-    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+    return this.createJwtSession(user);
   }
 
   async loginWithPassword(
     email: string,
     password: string,
-  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+  ): Promise<AuthSession> {
     const normalizedEmail = normalizeEmail(email);
     if (!normalizedEmail || !password) {
       throw new UnauthorizedException('Invalid email or password');
@@ -75,13 +90,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const session = await this.sessions.createSession(user);
-    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+    return this.createJwtSession(user);
   }
 
   async registerWithPassword(
     input: RegisterWithPasswordInput,
-  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+  ): Promise<AuthSession> {
     const name = requiredString(input.name, 'name');
     const normalizedEmail = normalizeEmail(
       requiredString(input.email, 'email'),
@@ -105,14 +119,13 @@ export class AuthService {
       name,
     });
 
-    const session = await this.sessions.createSession(user);
-    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+    return this.createJwtSession(user);
   }
 
   async createFacilityForUser(
     userId: string,
     facilityName: string,
-  ): Promise<{ user: User; token: string; maxAgeSeconds: number }> {
+  ): Promise<AuthSession> {
     const name = facilityName.trim();
     if (!name) throw new BadRequestException('facilityName is required');
 
@@ -121,12 +134,7 @@ export class AuthService {
     });
     if (!existing) throw new UnauthorizedException('Unknown user');
     if (existing.facilityId) {
-      const session = await this.sessions.createSession(existing);
-      return {
-        user: existing,
-        token: session.token,
-        maxAgeSeconds: session.maxAgeSeconds,
-      };
+      return this.createJwtSession(existing);
     }
 
     const facility = await this.prisma.db.facility.create({
@@ -158,8 +166,54 @@ export class AuthService {
       },
     );
 
-    const session = await this.sessions.createSession(user);
-    return { user, token: session.token, maxAgeSeconds: session.maxAgeSeconds };
+    return this.createJwtSession(user);
+  }
+
+  async revokeAllSessions(userId: string): Promise<void> {
+    await this.prisma.db.user.update({
+      where: { id: userId },
+      data: { sessionVersion: { increment: 1 } },
+    });
+  }
+
+  async isSessionVersionCurrent(
+    userId: string,
+    expectedSessionVersion: number,
+  ): Promise<boolean> {
+    const user = await this.prisma.db.user.findUnique({
+      where: { id: userId },
+      select: { sessionVersion: true },
+    });
+    return user !== null && user.sessionVersion === expectedSessionVersion;
+  }
+
+  private createJwtSession(
+    user: Pick<
+      User,
+      | 'id'
+      | 'facilityId'
+      | 'role'
+      | 'kakaoId'
+      | 'nickname'
+      | 'email'
+      | 'sessionVersion'
+    >,
+  ): AuthSession {
+    if (!hasRbacCapability(user.role, 'personalLogin')) {
+      throw new UnauthorizedException('Role cannot create a personal session');
+    }
+    const expiresIn = this.jwtTtl();
+    const token = this.jwt.sign({
+      sub: user.id,
+      role: user.role,
+      facilityId: user.facilityId,
+      sessionVersion: user.sessionVersion,
+    });
+    return { user, token, maxAgeSeconds: jwtTtlSeconds(expiresIn) };
+  }
+
+  private jwtTtl(): string {
+    return this.config.get<string>('JWT_TTL') ?? DEFAULT_JWT_TTL;
   }
 
   private async updateLinkedKakaoUser(
@@ -227,4 +281,15 @@ function requiredString(value: unknown, fieldName: string): string {
   const trimmed = value.trim();
   if (!trimmed) throw new BadRequestException(`${fieldName} is required`);
   return trimmed;
+}
+
+function jwtTtlSeconds(ttl: string): number {
+  const trimmed = ttl.trim();
+  const match = /^(\d+)([smhd])?$/.exec(trimmed);
+  if (!match) return 12 * 60 * 60;
+  const value = Number.parseInt(match[1], 10);
+  const unit = match[2] ?? 's';
+  const multiplier =
+    unit === 'd' ? 86400 : unit === 'h' ? 3600 : unit === 'm' ? 60 : 1;
+  return value * multiplier;
 }

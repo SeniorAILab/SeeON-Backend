@@ -43,7 +43,6 @@ export class AlertEventsService {
     private readonly configService: ConfigService,
   ) {}
 
-
   async ensureOutboxForIngest(
     input: EnsureOutboxForIngestInput,
   ): Promise<void> {

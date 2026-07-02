@@ -5,20 +5,12 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
-import { SESSION_COOKIE_NAME } from './auth.constants';
-import { readCookie } from './cookie.util';
-import { SessionService } from './session.service';
 import type { AuthenticatedUser } from './auth.types';
 
-// Express Request already provides headers: IncomingHttpHeaders which is wider
-// than AuthenticatedRequest.headers — extending both causes an incompatible
-// intersection. We include the auth-specific fields directly instead.
 export interface RequestWithAuth extends Request {
   user?: AuthenticatedUser;
-  sessionId?: string;
-  rotatedSessionToken?: string | null;
-  rotatedSessionMaxAgeSeconds?: number;
   effectiveFacilityId?: string;
 }
 
@@ -26,20 +18,7 @@ const FACILITY_SCOPE_HEADER = 'x-facility-id';
 const FACILITY_SCOPE_QUERY = 'facilityId';
 
 @Injectable()
-export class SessionGuard implements CanActivate {
-  constructor(private readonly sessions: SessionService) {}
-
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<RequestWithAuth>();
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE_NAME);
-    const valid = await this.sessions.validateToken(token);
-    request.user = valid.user;
-    request.sessionId = valid.session.id;
-    request.rotatedSessionToken = valid.rotatedToken;
-    request.rotatedSessionMaxAgeSeconds = valid.maxAgeSeconds;
-    return true;
-  }
-}
+export class JwtAuthGuard extends AuthGuard('jwt') {}
 
 @Injectable()
 export class RequireFacilityGuard implements CanActivate {

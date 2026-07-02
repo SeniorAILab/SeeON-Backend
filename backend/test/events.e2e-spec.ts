@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { SESSION_COOKIE_NAME } from '../src/auth/auth.constants';
-import { createSignedSessionToken } from '../src/auth/signed-token';
+import { sign } from 'jsonwebtoken';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AlertWriterService } from '../src/alerts/alert-writer.service';
@@ -30,15 +30,21 @@ describe('Events API (e2e)', () => {
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
 
-    direct = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL } } });
-    appRole = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
+    direct = new PrismaClient({
+      datasources: { db: { url: process.env.DIRECT_URL } },
+    });
+    appRole = new PrismaClient({
+      datasources: { db: { url: process.env.DATABASE_URL } },
+    });
     await direct.$connect();
     await appRole.$connect();
   });
 
   beforeEach(async () => {
     await cleanup();
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleFixture.createNestApplication();
     configureVersionedTestApp(app);
     await app.init();
@@ -96,25 +102,38 @@ describe('Events API (e2e)', () => {
       .post('/api/v1/events')
       .send({ ...body, type: 'fall' })
       .expect(201);
-    expect(duplicate.body).toEqual({ id: created.body.id, status: 'duplicate' });
+    expect(duplicate.body).toEqual({
+      id: created.body.id,
+      status: 'duplicate',
+    });
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: second.cameraId, type: 'bed-exit', detected_at: '2026-06-26T01:02:04.456Z' })
+      .send({
+        camera_id: second.cameraId,
+        type: 'bed-exit',
+        detected_at: '2026-06-26T01:02:04.456Z',
+      })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: `${PREFIX}-missing`, type: 'fall', detected_at: '2026-06-26T01:02:03.456Z' })
+      .send({
+        camera_id: `${PREFIX}-missing`,
+        type: 'fall',
+        detected_at: '2026-06-26T01:02:03.456Z',
+      })
       .expect(404);
 
-    const rows = await direct.event.findMany({ where: { id: created.body.id } });
+    const rows = await direct.event.findMany({
+      where: { id: created.body.id },
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       facilityId: first.facilityId,
       cameraId: first.cameraId,
       spaceId: first.spaceId,
-      type: 'FALL',
+      type: 'fall',
       confidence: 0.88,
     });
 
@@ -122,7 +141,9 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', firstCookie)
       .expect(200);
-    expect(firstList.body.map((event: { id: string }) => event.id)).toEqual([created.body.id]);
+    expect(firstList.body.map((event: { id: string }) => event.id)).toEqual([
+      created.body.id,
+    ]);
 
     const secondList = await request(app.getHttpServer())
       .get('/api/v1/events')
@@ -150,10 +171,11 @@ describe('Events API (e2e)', () => {
     ).rejects.toThrow(/permission denied|privilege/i);
   });
 
-
   it('rejects unsupported event types without persisting an Event row', async () => {
     const seeded = await seedFacilityGraph('invalid-type');
-    const before = await direct.event.count({ where: { facilityId: seeded.facilityId } });
+    const before = await direct.event.count({
+      where: { facilityId: seeded.facilityId },
+    });
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
@@ -192,7 +214,9 @@ describe('Events API (e2e)', () => {
   it('dispatches concurrent EVENT_API duplicate first-writes to one Alert and one SSE notification', async () => {
     const seeded = await seedFacilityGraph('dispatch');
     const received: unknown[] = [];
-    app.get(AlertWriterService).subscribe(seeded.facilityId, (event) => received.push(event));
+    app
+      .get(AlertWriterService)
+      .subscribe(seeded.facilityId, (event) => received.push(event));
     const body = {
       camera_id: seeded.cameraId,
       type: 'fall',
@@ -201,14 +225,22 @@ describe('Events API (e2e)', () => {
     };
 
     const responses = await Promise.all([
-      request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201),
-      request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201),
+      request(app.getHttpServer())
+        .post('/api/v1/events')
+        .send(body)
+        .expect(201),
+      request(app.getHttpServer())
+        .post('/api/v1/events')
+        .send(body)
+        .expect(201),
     ]);
     const statuses = responses.map((response) => response.body.status).sort();
     expect(statuses).toEqual(['created', 'duplicate']);
     const eventId = responses[0].body.id;
 
-    const alerts = await direct.alert.findMany({ where: { facilityId: seeded.facilityId } });
+    const alerts = await direct.alert.findMany({
+      where: { facilityId: seeded.facilityId },
+    });
     expect(alerts).toHaveLength(1);
     expect(alerts[0].originEventId).toBe(eventId);
     expect(responses.map((response) => response.body.id)).toEqual([
@@ -224,22 +256,40 @@ describe('Events API (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: first.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:00.000Z', confidence: 0.9 })
+      .send({
+        camera_id: first.cameraId,
+        type: 'fall',
+        detected_at: '2026-06-26T03:10:00.000Z',
+        confidence: 0.9,
+      })
       .expect(201);
     await request(app.getHttpServer())
       .post('/api/v1/events')
-      .send({ camera_id: second.cameraId, type: 'fall', detected_at: '2026-06-26T03:10:01.000Z', confidence: 0.9 })
+      .send({
+        camera_id: second.cameraId,
+        type: 'fall',
+        detected_at: '2026-06-26T03:10:01.000Z',
+        confidence: 0.9,
+      })
       .expect(201);
 
-    expect(await direct.event.count({ where: { facilityId: first.facilityId } })).toBe(1);
-    expect(await direct.alert.count({ where: { facilityId: first.facilityId } })).toBe(1);
-    expect(await direct.alert.count({ where: { facilityId: second.facilityId } })).toBe(1);
+    expect(
+      await direct.event.count({ where: { facilityId: first.facilityId } }),
+    ).toBe(1);
+    expect(
+      await direct.alert.count({ where: { facilityId: first.facilityId } }),
+    ).toBe(1);
+    expect(
+      await direct.alert.count({ where: { facilityId: second.facilityId } }),
+    ).toBe(1);
   });
 
   it('collapses repeated EVENT_API submissions through shared idempotency', async () => {
     const seeded = await seedFacilityGraph('event-idempotency');
     const received: unknown[] = [];
-    app.get(AlertWriterService).subscribe(seeded.facilityId, (event) => received.push(event));
+    app
+      .get(AlertWriterService)
+      .subscribe(seeded.facilityId, (event) => received.push(event));
 
     const detectedAt = new Date();
     const body = {
@@ -249,20 +299,37 @@ describe('Events API (e2e)', () => {
       confidence: 0.9,
     };
 
-    await request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201);
-    await request(app.getHttpServer()).post('/api/v1/events').send(body).expect(201);
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send(body)
+      .expect(201);
 
-    expect(await direct.event.count({ where: { facilityId: seeded.facilityId } })).toBe(1);
-    expect(await direct.alert.count({ where: { facilityId: seeded.facilityId } })).toBe(1);
+    expect(
+      await direct.event.count({ where: { facilityId: seeded.facilityId } }),
+    ).toBe(1);
+    expect(
+      await direct.alert.count({ where: { facilityId: seeded.facilityId } }),
+    ).toBe(1);
     expect(received).toHaveLength(1);
   });
 
   async function seedFacilityGraph(suffix: string) {
     const facility = await direct.facility.create({
-      data: { name: `${PREFIX}-facility-${suffix}`, code: `${PREFIX}-${suffix}` },
+      data: {
+        name: `${PREFIX}-facility-${suffix}`,
+        code: `${PREFIX}-${suffix}`,
+      },
     });
     const floor = await direct.floor.create({
-      data: { facilityId: facility.id, name: `${PREFIX}-floor-${suffix}`, orderIndex: 1 },
+      data: {
+        facilityId: facility.id,
+        name: `${PREFIX}-floor-${suffix}`,
+        orderIndex: 1,
+      },
     });
     const space = await direct.space.create({
       data: {
@@ -284,7 +351,6 @@ describe('Events API (e2e)', () => {
     return { facilityId: facility.id, spaceId: space.id, cameraId: camera.id };
   }
 
-
   async function seedSessionCookie(facilityId: string, suffix: string) {
     const user = await direct.user.create({
       data: {
@@ -295,30 +361,39 @@ describe('Events API (e2e)', () => {
         role: 'ADMIN',
       },
     });
-    const session = await direct.serverSession.create({
-      data: {
-        userId: user.id,
+    const secret = app
+      .get(ConfigService)
+      .getOrThrow<string>('SESSION_JWT_SECRET');
+    const token = sign(
+      {
+        sub: user.id,
+        role: user.role,
         facilityId,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        sessionVersion: user.sessionVersion,
       },
-    });
-    const secret = app.get(ConfigService).getOrThrow<string>('SESSION_JWT_SECRET');
-    const now = Math.floor(Date.now() / 1000);
-    const token = createSignedSessionToken(
-      { sessionId: session.id, userId: user.id, facilityId, sessionVersion: 0, iat: now, exp: now + 1800 },
       secret,
+      { expiresIn: '12h' },
     );
     return `${SESSION_COOKIE_NAME}=${token}`;
   }
 
   async function cleanup() {
-    await direct.alert.deleteMany({ where: { facility: { name: { startsWith: PREFIX } } } });
-    await direct.event.deleteMany({ where: { facility: { name: { startsWith: PREFIX } } } });
-    await direct.serverSession.deleteMany({ where: { user: { nickname: { startsWith: PREFIX } } } });
-    await direct.user.deleteMany({ where: { nickname: { startsWith: PREFIX } } });
-    await direct.camera.deleteMany({ where: { label: { startsWith: PREFIX } } });
+    await direct.alert.deleteMany({
+      where: { facility: { name: { startsWith: PREFIX } } },
+    });
+    await direct.event.deleteMany({
+      where: { facility: { name: { startsWith: PREFIX } } },
+    });
+    await direct.user.deleteMany({
+      where: { nickname: { startsWith: PREFIX } },
+    });
+    await direct.camera.deleteMany({
+      where: { label: { startsWith: PREFIX } },
+    });
     await direct.space.deleteMany({ where: { name: { startsWith: PREFIX } } });
     await direct.floor.deleteMany({ where: { name: { startsWith: PREFIX } } });
-    await direct.facility.deleteMany({ where: { name: { startsWith: PREFIX } } });
+    await direct.facility.deleteMany({
+      where: { name: { startsWith: PREFIX } },
+    });
   }
 });

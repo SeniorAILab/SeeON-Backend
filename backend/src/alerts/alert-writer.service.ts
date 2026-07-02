@@ -8,9 +8,9 @@
  * SSE clients subscribe via `subscribe(facilityId, fn)` and receive emitted events
  * for their facility. Unsubscribe by calling the returned cleanup function.
  *
- * After each committed alert, a StatusEvent is emitted via subscribeStatus
- * so SSE streams can deliver `event: status` frames to connected clients
- * (AC5/AC6 live resident status badge).
+ * Room-centric SSE emits only alert creation/lifecycle frames; resident-keyed
+ * StatusEvent emission is retained for legacy subscribers but is not used by
+ * the room-centric ingest path.
  */
 import {
   BadRequestException,
@@ -21,7 +21,6 @@ import {
 import { Prisma } from '@prisma/client';
 import { AlertStatus, ResidentState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { AlertEventTypes } from './dto/alert-events.dto.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import {
   alertInclude,
@@ -65,6 +64,7 @@ export interface AlertUpdateEvent {
   id: string;
   facilityId: string;
   status: string;
+  spaceId: string;
   ackedById: string | null;
   ackedAt: Date | null;
   resolvedById: string | null;
@@ -83,8 +83,6 @@ export interface WriteAlertInput {
   idempotencyKey: string;
   originEventId?: string | null;
 }
-
-const CAMERA_ONLINE_TIMEOUT_MS = 30_000;
 
 type Listener = (event: AlertEvent) => void;
 type StatusListener = (event: StatusEvent) => void;
@@ -157,20 +155,6 @@ export class AlertWriterService {
       originEventId,
     } = input;
 
-    // Determine new resident state from backend-owned alert policy.
-    const newState: ResidentState =
-      type === AlertEventTypes.bedExit
-        ? ResidentState.WARNING
-        : probability >= 0.8
-          ? ResidentState.FALL
-          : probability >= 0.5
-            ? ResidentState.WARNING
-            : ResidentState.NORMAL;
-
-    const now = new Date();
-    const cameraOnline =
-      now.getTime() - detectedAt.getTime() < CAMERA_ONLINE_TIMEOUT_MS;
-
     const writeResult = await this.prisma
       .withFacilityContext(facilityId, async (tx: Prisma.TransactionClient) => {
         const created = await tx.alert.create({
@@ -191,26 +175,6 @@ export class AlertWriterService {
             space: { select: { name: true } },
           },
         });
-
-        if (residentId) {
-          await tx.residentStatus.upsert({
-            where: { residentId },
-            update: {
-              state: newState,
-              lastSeenAt: detectedAt,
-              cameraOnline,
-              sourceId: cameraId ?? undefined,
-            },
-            create: {
-              residentId,
-              facilityId,
-              state: newState,
-              lastSeenAt: detectedAt,
-              cameraOnline,
-              sourceId: cameraId ?? undefined,
-            },
-          });
-        }
 
         return { alert: created, created: true };
       })
@@ -245,18 +209,6 @@ export class AlertWriterService {
 
     // Emit alert AFTER commit (F3).
     this._emit(facilityId, event);
-
-    if (residentId) {
-      const statusEvent: StatusEvent = {
-        alertSeq: alert.alertSeq,
-        facilityId,
-        residentId,
-        state: newState,
-        cameraOnline,
-        lastSeenAt: detectedAt,
-      };
-      this._emitStatus(facilityId, statusEvent);
-    }
 
     return { ...event, created: true };
   }
@@ -340,9 +292,8 @@ export class AlertWriterService {
   }
 
   /**
-   * Resolve an alert (ACKED → RESOLVED), stamping the session actor + time.
-   * Requires a prior ACK. Idempotent for an already-RESOLVED alert (no restamp);
-   * rejects a still-NEW alert with 409.
+   * Resolve an alert (NEW/ACKED → RESOLVED), stamping the session actor + time.
+   * Idempotent for an already-RESOLVED alert (no restamp).
    */
   resolveAlert(input: {
     facilityId: string;
@@ -399,6 +350,7 @@ export class AlertWriterService {
         alertSeq: alert.alertSeq,
         id: alert.id,
         facilityId: alert.facilityId,
+        spaceId: alert.spaceId,
         status: alert.status,
         ackedById: alert.ackedById,
         ackedAt: alert.ackedAt,
@@ -428,10 +380,6 @@ export class AlertWriterService {
     actorUserId: string,
   ): Prisma.AlertUncheckedUpdateInput | null {
     if (status === AlertStatus.RESOLVED) return null; // idempotent no-op
-    if (status === AlertStatus.NEW)
-      throw new ConflictException(
-        'Alert must be acknowledged before resolution',
-      );
     return {
       status: AlertStatus.RESOLVED,
       resolvedById: actorUserId,

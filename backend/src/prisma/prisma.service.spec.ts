@@ -36,7 +36,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.guardian.deleteMany();
     await direct.camera.deleteMany();
     await direct.kakaoIdentity.deleteMany();
-    await direct.serverSession.deleteMany();
     await direct.user.deleteMany();
     await direct.resident.deleteMany();
     await direct.zone.deleteMany();

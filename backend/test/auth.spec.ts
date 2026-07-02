@@ -9,8 +9,6 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { KakaoClient } from '../src/auth/kakao.client';
 import { setOAuthStateCookie, setSessionCookie } from '../src/auth/cookie.util';
-import { SessionService } from '../src/auth/session.service';
-import { createSignedSessionToken } from '../src/auth/signed-token';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -18,27 +16,15 @@ const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 type AuthResponseBody = {
   user: {
     id: string;
-    kakaoId: string;
     email?: string;
-    sessionVersion: number;
+    sessionVersion?: number;
     facilityId: string | null;
     role?: string;
   };
 };
 
-type FacilityProbeBody = {
-  facilityId: string | null;
-};
-
 describe('auth fail-fast config and cookie attributes', () => {
-  it('fails fast for missing/short session secrets and missing Kakao env', () => {
-    expect(() =>
-      new SessionService(
-        {} as never,
-        new ConfigService({ SESSION_JWT_SECRET: 'short' }),
-      ).onModuleInit(),
-    ).toThrow(ServiceUnavailableException);
-
+  it('fails fast for missing Kakao env', () => {
     const originalKakaoKey = process.env.KAKAO_REST_API_KEY;
     const originalRedirectUri = process.env.KAKAO_REDIRECT_URI;
     delete process.env.KAKAO_REST_API_KEY;
@@ -68,7 +54,7 @@ describe('auth fail-fast config and cookie attributes', () => {
     const originalFrontOrigin = process.env.FRONT_ORIGIN;
     const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
     process.env.NODE_ENV = 'production';
-    process.env.FRONT_ORIGIN = 'https://senai.example.com';
+    process.env.FRONT_ORIGIN = 'http://senai.example.com';
     delete process.env.AUTH_COOKIE_SECURE;
     const sessionCookie = jest.fn();
     const stateCookie = jest.fn();
@@ -102,7 +88,7 @@ describe('auth fail-fast config and cookie attributes', () => {
       expect.objectContaining({
         httpOnly: true,
         secure: true,
-        sameSite: 'lax',
+        sameSite: 'strict',
         path: '/',
         maxAge: 123000,
       }),
@@ -121,7 +107,7 @@ describe('auth fail-fast config and cookie attributes', () => {
   });
 });
 
-describe('Kakao auth/session tenant boundary (e2e)', () => {
+describe('JWT-cookie auth tenant boundary (e2e)', () => {
   let app: INestApplication<App>;
   let direct: PrismaClient;
 
@@ -142,14 +128,22 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
 
   beforeEach(async () => {
     await direct.kakaoIdentity.deleteMany();
-    await direct.serverSession.deleteMany();
     await direct.user.deleteMany({ where: { kakaoId: 'kakao-e2e-user' } });
     await direct.user.deleteMany({
-      where: { email: { in: ['ulw-owner@example.test', 'dup@example.test'] } },
+      where: {
+        email: {
+          in: [
+            'ulw-owner@example.test',
+            'dup@example.test',
+            'login-200@example.test',
+          ],
+        },
+      },
     });
-    await direct.facility.deleteMany({ where: { name: 'E2E Facility' } });
     await direct.facility.deleteMany({
-      where: { name: { in: ['ULW 요양원', '중복 요양원'] } },
+      where: {
+        name: { in: ['ULW 요양원', '중복 요양원', '로그인 요양원'] },
+      },
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -186,13 +180,11 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
   });
 
   it('rejects unauthenticated protected requests with 401', async () => {
-    await request(app.getHttpServer()).get('/api/v1/auth/session').expect(401);
-    await request(app.getHttpServer())
-      .get('/api/v1/protected-probe')
-      .expect(401);
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+    await request(app.getHttpServer()).get('/api/v1/cameras').expect(401);
   });
 
-  it('registers a password owner, restores the session, and rejects duplicate signup', async () => {
+  it('registers a password owner, returns identity from /auth/me, and rejects duplicate signup', async () => {
     const registered = await request(app.getHttpServer())
       .post('/api/v1/auth/register')
       .send({
@@ -206,21 +198,29 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     const sessionCookie = extractSessionCookie(
       registered.headers['set-cookie'],
     );
+
     expect(sessionCookie).toContain('HttpOnly');
+    expect(sessionCookie).toContain('SameSite=Strict');
     expect(JSON.stringify(registered.body)).not.toContain('passwordHash');
     expect(JSON.stringify(registered.body)).not.toContain('care2026');
     const registeredBody = registered.body as unknown as AuthResponseBody;
     expect(registeredBody.user.facilityId).toBeTruthy();
 
-    const restored = await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
+    const me = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
       .set('cookie', sessionCookie)
       .expect(200);
-    expect((restored.body as unknown as AuthResponseBody).user).toMatchObject({
+    expect(me.body as AuthResponseBody['user']).toMatchObject({
       email: 'ulw-owner@example.test',
       role: 'ADMIN',
       facilityId: registeredBody.user.facilityId,
     });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/cameras')
+      .set('cookie', sessionCookie)
+      .expect(200);
+    await request(app.getHttpServer()).get('/api/v1/cameras').expect(401);
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
@@ -234,7 +234,7 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .expect(409);
   });
 
-  it('logs in an existing password user and returns 200 (not 201)', async () => {
+  it('logs in an existing password user with a strict httpOnly app_session JWT cookie and revokes it on logout', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
       .send({
@@ -250,14 +250,41 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
       .post('/api/v1/auth/login')
       .send({ email: 'login-200@example.test', password: 'care2026' })
       .expect(200);
-    expect(extractSessionCookie(loggedIn.headers['set-cookie'])).toContain(
-      'HttpOnly',
+    const sessionCookie = extractSessionCookie(loggedIn.headers['set-cookie']);
+    expect(sessionCookie).toContain('app_session=');
+    expect(sessionCookie).toContain('HttpOnly');
+    expect(sessionCookie).toContain('SameSite=Strict');
+    expect(sessionCookie.split(';')[0].split('=')[1].split('.')).toHaveLength(
+      3,
     );
     expect((loggedIn.body as unknown as AuthResponseBody).user).toMatchObject({
       email: 'login-200@example.test',
       role: 'ADMIN',
     });
     expect(JSON.stringify(loggedIn.body)).not.toContain('passwordHash');
+
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('cookie', sessionCookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/cameras')
+      .set('cookie', sessionCookie)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('cookie', sessionCookie)
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('cookie', sessionCookie)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/cameras')
+      .set('cookie', sessionCookie)
+      .expect(401);
   });
 
   it('rejects signup when required fields are missing', async () => {
@@ -306,13 +333,13 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     ).toBeNull();
   });
 
-  it('round-trips linked Kakao login, creates owner facility during onboarding, and revokes session on logout', async () => {
+  it('round-trips linked Kakao login, creates owner facility during onboarding, and exposes the facility by scoped id', async () => {
     await direct.user.create({
       data: {
         kakaoId: 'kakao-e2e-user',
         email: 'owner@example.test',
         nickname: '시설 원장',
-        role: 'STAFF',
+        role: 'ADMIN',
       },
     });
 
@@ -335,30 +362,24 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     );
     expect(callback.headers.location).toBe('http://localhost:3000/onboarding');
     expect(firstSessionCookie).toContain('HttpOnly');
-    expect(firstSessionCookie).toContain('SameSite=Lax');
+    expect(firstSessionCookie).toContain('SameSite=Strict');
 
-    const sessionBeforeFacility = await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
+    const meBeforeFacility = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
       .set('cookie', firstSessionCookie)
       .expect(200);
     expect(
-      (sessionBeforeFacility.body as unknown as AuthResponseBody).user
-        .facilityId,
+      (meBeforeFacility.body as AuthResponseBody['user']).facilityId,
     ).toBeNull();
-    expect(
-      (sessionBeforeFacility.body as unknown as AuthResponseBody).user.role,
-    ).toBe('STAFF');
-
-    await request(app.getHttpServer())
-      .get('/api/v1/facility-protected-probe')
-      .set('cookie', firstSessionCookie)
-      .expect(403);
+    expect((meBeforeFacility.body as AuthResponseBody['user']).role).toBe(
+      'ADMIN',
+    );
 
     const facilityCreate = await request(app.getHttpServer())
       .post('/api/v1/facilities')
       .set('cookie', firstSessionCookie)
       .send({
-        facilityName: 'E2E Facility',
+        facilityName: 'ULW 요양원',
       })
       .expect(201);
     const facilitySessionCookie = extractSessionCookie(
@@ -373,114 +394,18 @@ describe('Kakao auth/session tenant boundary (e2e)', () => {
     });
     expect(JSON.stringify(kakaoIdentity)).not.toContain('test-access-token');
 
-    const facilityProbe = await request(app.getHttpServer())
-      .get('/api/v1/facility-protected-probe')
+    const currentFacility = await request(app.getHttpServer())
+      .get(`/api/v1/facilities/${facilityCreateBody.user.facilityId}`)
       .set('cookie', facilitySessionCookie)
       .expect(200);
-    expect(
-      (facilityProbe.body as unknown as FacilityProbeBody).facilityId,
-    ).toBe(facilityCreateBody.user.facilityId);
-
-    const activeSession = await direct.serverSession.findFirstOrThrow({
-      where: {
-        userId: facilityCreateBody.user.id,
-        facilityId: facilityCreateBody.user.facilityId,
-        revokedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    const sessionSecret = app
-      .get(ConfigService)
-      .getOrThrow<string>('SESSION_JWT_SECRET');
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const oldToken = createSignedSessionToken(
-      {
-        sessionId: activeSession.id,
-        userId: facilityCreateBody.user.id,
-        facilityId: facilityCreateBody.user.facilityId,
-        sessionVersion: facilityCreateBody.user.sessionVersion,
-        iat: nowSeconds - 700,
-        exp: nowSeconds + 1800,
-      },
-      sessionSecret,
+    expect((currentFacility.body as { id: string }).id).toBe(
+      facilityCreateBody.user.facilityId,
     );
-    const expiredToken = createSignedSessionToken(
-      {
-        sessionId: activeSession.id,
-        userId: facilityCreateBody.user.id,
-        facilityId: facilityCreateBody.user.facilityId,
-        sessionVersion: facilityCreateBody.user.sessionVersion,
-        iat: nowSeconds - 3600,
-        exp: nowSeconds - 1,
-      },
-      sessionSecret,
-    );
-    const staleVersionToken = createSignedSessionToken(
-      {
-        sessionId: activeSession.id,
-        userId: facilityCreateBody.user.id,
-        facilityId: facilityCreateBody.user.facilityId,
-        sessionVersion: facilityCreateBody.user.sessionVersion + 1,
-        iat: nowSeconds,
-        exp: nowSeconds + 1800,
-      },
-      sessionSecret,
-    );
-    const tamperedToken = `${oldToken.slice(0, -1)}${oldToken.endsWith('a') ? 'b' : 'a'}`;
 
     await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', `app_session=${tamperedToken}`)
-      .expect(401);
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', `app_session=${expiredToken}`)
-      .expect(401);
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', `app_session=${staleVersionToken}`)
-      .expect(401);
-
-    const rotated = await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', `app_session=${oldToken}`)
-      .expect(200);
-    const rotatedCookie = extractSessionCookie(rotated.headers['set-cookie']);
-    expect(rotatedCookie).not.toContain(oldToken);
-    await expect(
-      direct.serverSession.findUniqueOrThrow({
-        where: { id: activeSession.id },
-      }),
-    ).resolves.toMatchObject({ revokedAt: expect.any(Date) as Date });
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', `app_session=${oldToken}`)
-      .expect(401);
-
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', rotatedCookie)
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/logout')
-      .set('cookie', rotatedCookie)
-      .expect(204);
-
-    await request(app.getHttpServer())
-      .get('/api/v1/auth/session')
-      .set('cookie', rotatedCookie)
-      .expect(401);
-
-    await request(app.getHttpServer())
-      .get('/api/v1/protected-probe')
-      .set('cookie', rotatedCookie)
-      .expect(401);
-
-    await request(app.getHttpServer())
-      .get('/api/v1/facility-protected-probe')
-      .set('cookie', rotatedCookie)
-      .expect(401);
+      .get('/api/v1/facilities/not-the-caller-facility')
+      .set('cookie', facilitySessionCookie)
+      .expect(404);
   });
 
   it('rejects OAuth callbacks when a state cookie is present but query state is missing or different', async () => {

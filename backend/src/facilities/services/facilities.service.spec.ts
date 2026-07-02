@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { FacilitiesService } from './facilities.service';
 
@@ -28,6 +28,31 @@ describe('FacilitiesService', () => {
       code: 'happy-home',
     });
     expect(repository.getByFacilityId).toHaveBeenCalledWith('facility-session');
+  });
+
+  it('gets the requested facility when it matches the effective facility scope', async () => {
+    const repository = {
+      getByFacilityId: jest.fn().mockResolvedValue(facility),
+    };
+    const service = new FacilitiesService(repository as never);
+    await expect(
+      service.getScoped('facility-session', 'facility-session'),
+    ).resolves.toMatchObject({
+      id: 'facility-session',
+      code: 'happy-home',
+    });
+    expect(repository.getByFacilityId).toHaveBeenCalledWith('facility-session');
+  });
+
+  it('returns not found when the requested facility is outside the effective facility scope', async () => {
+    const repository = {
+      getByFacilityId: jest.fn(),
+    };
+    const service = new FacilitiesService(repository as never);
+    await expect(
+      service.getScoped('other-facility', 'facility-session'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(repository.getByFacilityId).not.toHaveBeenCalled();
   });
 
   it('ignores immutable code updates', async () => {

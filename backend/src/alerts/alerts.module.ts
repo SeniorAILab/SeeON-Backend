@@ -25,7 +25,7 @@ import { AlertWriterService } from './alert-writer.service.js';
  *  - #105 read-model: dashboard-facing Alert queries + snapshot proxy
  *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by AuthModule.
  *  - #105 write path: AlertWriterService serializes Alert inserts (alertSeq
- *    causal order) and fans out live alert/status events for the SSE slice;
+ *    causal order) and fans out live alert events for the SSE slice;
  *    exported for the dashboard SSE transport.
  */
 @Module({
@@ -40,6 +40,11 @@ import { AlertWriterService } from './alert-writer.service.js';
     AlertsService,
     AlertWriterService,
   ],
-  exports: [AlertsService, AlertWriterService, AlertEventsService, AlertPolicyService],
+  exports: [
+    AlertsService,
+    AlertWriterService,
+    AlertEventsService,
+    AlertPolicyService,
+  ],
 })
 export class AlertsModule {}

@@ -38,7 +38,6 @@ describe('ML skeleton controllers (e2e)', () => {
 
   beforeEach(async () => {
     await direct.kakaoIdentity.deleteMany();
-    await direct.serverSession.deleteMany();
     await direct.user.deleteMany({
       where: { email: SKELETON_ADMIN_EMAIL },
     });
@@ -65,48 +64,21 @@ describe('ML skeleton controllers (e2e)', () => {
   });
 
   it.each([
-    ['GET', '/api/v1/space-statuses'],
-    ['GET', '/api/v1/resident-risk-summaries'],
-  ] as const)(
-    'requires auth before returning skeleton 501 for retained %s %s',
-    async (method, path) => {
-      await performRequest(app, method, path).expect(401);
-    },
-  );
-
-  it.each([
     ['GET', '/api/v1/alert-rules'],
     ['POST', '/api/v1/alert-rules'],
     ['PATCH', '/api/v1/alert-rules/rule-1'],
     ['DELETE', '/api/v1/alert-rules/rule-1'],
     ['GET', '/api/v1/detection-events'],
     ['PATCH', '/api/v1/detection-events/det-1'],
+    ['GET', '/api/v1/space-statuses'],
+    ['GET', '/api/v1/resident-risk-summaries'],
+    ['GET', '/api/v1/status'],
+    ['GET', '/api/v1/status/res-1'],
   ] as const)('returns 404 for removed %s %s', async (method, path) => {
     await performRequest(app, method, path)
       .set('cookie', facilitySessionCookie)
       .expect(404);
   });
-
-  it.each([
-    ['GET', '/api/v1/space-statuses', 'space-statuses is not implemented yet'],
-    [
-      'GET',
-      '/api/v1/resident-risk-summaries',
-      'resident-risk-summaries is not implemented yet',
-    ],
-  ] as const)(
-    'returns guarded 501 for retained facility-scoped %s %s',
-    async (method, path, message) => {
-      const res = await performRequest(app, method, path)
-        .set('cookie', facilitySessionCookie)
-        .expect(501);
-
-      expect(res.body).toEqual({
-        error: 'not_implemented',
-        message,
-      });
-    },
-  );
 });
 
 function performRequest(

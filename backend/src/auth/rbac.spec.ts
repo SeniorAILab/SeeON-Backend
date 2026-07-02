@@ -1,4 +1,4 @@
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import {
@@ -8,7 +8,6 @@ import {
   postLoginPathForUser,
 } from './auth.constants';
 import type { KakaoClient } from './kakao.client';
-import { SessionService } from './session.service';
 
 describe('RBAC SSOT', () => {
   beforeEach(() => {
@@ -22,6 +21,8 @@ describe('RBAC SSOT', () => {
     expect(hasRbacCapability(Role.ADMIN, 'personalLogin')).toBe(true);
     expect(hasRbacCapability(Role.STAFF, 'personalLogin')).toBe(true);
     expect(hasRbacCapability(Role.STAFF, 'monitorView')).toBe(true);
+    expect(hasRbacCapability(Role.ADMIN, 'facilityAdmin')).toBe(true);
+    expect(hasRbacCapability(Role.SUPER_ADMIN, 'facilityAdmin')).toBe(true);
     expect(RBAC_PERMISSIONS[Role.STAFF].has('facilityAdmin')).toBe(false);
     expect(
       postLoginPathForUser({ role: Role.SUPER_ADMIN, facilityId: null }),
@@ -32,41 +33,6 @@ describe('RBAC SSOT', () => {
     expect(
       postLoginPathForUser({ role: Role.STAFF, facilityId: 'fac-1' }),
     ).toBe('/dashboard/facilities/fac-1/staff');
-  });
-
-  it('creates personal sessions for staff users', async () => {
-    const prisma = {
-      db: {
-        serverSession: {
-          create: jest.fn().mockResolvedValue({
-            id: 'session-1',
-            userId: 'user-1',
-            facilityId: 'facility-1',
-            expiresAt: new Date(Date.now() + 60_000),
-            revokedAt: null,
-          }),
-        },
-      },
-    };
-    const config = {
-      get: jest.fn((key: string) =>
-        key === 'SESSION_JWT_SECRET' ? 'x'.repeat(32) : undefined,
-      ),
-    } as unknown as ConfigService;
-    const service = new SessionService(prisma as never, config);
-
-    const session = await service.createSession({
-      id: 'user-1',
-      facilityId: 'facility-1',
-      role: 'STAFF',
-      kakaoId: 'kakao-1',
-      nickname: 'Staff',
-      sessionVersion: 0,
-    });
-
-    expect(typeof session.token).toBe('string');
-    expect(typeof session.maxAgeSeconds).toBe('number');
-    expect(prisma.db.serverSession.create).toHaveBeenCalled();
   });
 
   it('updates only existing Kakao-linked users during Kakao login', async () => {
@@ -100,7 +66,8 @@ describe('RBAC SSOT', () => {
       {
         resolveScopes: jest.fn().mockReturnValue('talk_message'),
       } as unknown as KakaoClient,
-      {} as never,
+      { sign: jest.fn(() => 'jwt') } as never,
+      new ConfigService({ JWT_TTL: '12h' }),
     );
 
     await (

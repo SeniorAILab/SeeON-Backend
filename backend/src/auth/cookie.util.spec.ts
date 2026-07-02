@@ -55,7 +55,7 @@ describe('auth cookie utilities', () => {
     expect(options.secure).toBe(true);
   });
 
-  it('does not mark cookies secure for the temporary HTTP production origin', () => {
+  it('keeps cookies secure for HTTP production origins unless explicitly overridden', () => {
     process.env.NODE_ENV = 'production';
     process.env.FRONT_ORIGIN = 'http://<retired-host>';
     delete process.env.AUTH_COOKIE_SECURE;
@@ -64,7 +64,7 @@ describe('auth cookie utilities', () => {
     setOAuthStateCookie(response, 'oauth-state', 60);
 
     const [, , options] = cookieCall(response);
-    expect(options.secure).toBe(false);
+    expect(options.secure).toBe(true);
   });
 
   it('allows explicit insecure cookies for HTTP-only deployment smoke tests', () => {

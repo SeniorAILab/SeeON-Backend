@@ -10,10 +10,11 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
-import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
-import type { RequestWithAuth } from '../auth/session.guard.js';
+import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertEventTypes } from '../alerts/dto/alert-events.dto.js';
 import type {
   EventResponseDto,
@@ -39,6 +40,11 @@ export class EventsController {
     private readonly cameras: CamerasService,
   ) {}
 
+  @ApiOperation({
+    summary: 'Record an ML event',
+    description:
+      'Accepts camera-keyed ML events, resolves the facility and space from camera ownership, persists the event, and creates alerts for alert-worthy types.',
+  })
   @Post()
   async record(
     @Body() body: RecordEventRequestDto,
@@ -51,6 +57,11 @@ export class EventsController {
     };
   }
 
+  @ApiOperation({
+    summary: 'Record camera heartbeat',
+    description:
+      'Marks the resolved camera online from an ML heartbeat without creating an alert.',
+  })
   @Post('heartbeat')
   @HttpCode(200)
   async heartbeat(
@@ -62,8 +73,13 @@ export class EventsController {
     return { ok: true };
   }
 
+  @ApiOperation({
+    summary: 'List recorded events',
+    description: `Returns the authenticated facility's recorded ML event history for operational review.`,
+  })
   @Get()
-  @UseGuards(SessionGuard, RequireFacilityGuard)
+  @ApiCookieAuth()
+  @UseGuards(JwtAuthGuard, RequireFacilityGuard)
   @UseInterceptors(FacilityContextInterceptor)
   async list(@Req() req: RequestWithAuth): Promise<EventResponseDto[]> {
     const facilityId = requireFacilityId(req);
@@ -74,12 +90,7 @@ export class EventsController {
 
 function parseRecordEventRequest(body: RecordEventRequestDto) {
   const cameraId = requireString(body?.camera_id, 'camera_id');
-  const type = requireString(body?.type, 'type').trim();
-  if (!ALLOWED_EVENT_TYPE_SET.has(type.toLowerCase())) {
-    throw new BadRequestException(
-      `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
-    );
-  }
+  const type = normalizeEventType(requireString(body?.type, 'type'));
   const detectedAtRaw = requireString(body?.detected_at, 'detected_at');
   const detectedAt = new Date(detectedAtRaw);
   if (Number.isNaN(detectedAt.getTime())) {
@@ -90,6 +101,16 @@ function parseRecordEventRequest(body: RecordEventRequestDto) {
     throw new BadRequestException('confidence must be a number');
   }
   return { cameraId, type, detectedAt, confidence };
+}
+
+function normalizeEventType(rawType: string): string {
+  const type = rawType.trim().toLowerCase();
+  if (!ALLOWED_EVENT_TYPE_SET.has(type)) {
+    throw new BadRequestException(
+      `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
+    );
+  }
+  return type;
 }
 
 function requireString(value: unknown, field: string): string {

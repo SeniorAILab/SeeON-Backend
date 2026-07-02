@@ -12,12 +12,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiCookieAuth } from '@nestjs/swagger';
 import { FacilityContextInterceptor } from '../../auth/facility-context.interceptor.js';
 import {
   RequireFacilityGuard,
-  SessionGuard,
-} from '../../auth/session.guard.js';
-import type { RequestWithAuth } from '../../auth/session.guard.js';
+  JwtAuthGuard,
+} from '../../auth/jwt-auth.guard.js';
+import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
+import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
 import type {
   CreateSpaceRequestDto,
   SpaceTypeValue,
@@ -26,7 +28,8 @@ import type {
 import { SpacesService } from '../services/spaces.service.js';
 
 @Controller({ path: 'spaces', version: '1' })
-@UseGuards(SessionGuard, RequireFacilityGuard)
+@ApiCookieAuth()
+@UseGuards(JwtAuthGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class SpacesController {
   constructor(private readonly service: SpacesService) {}
@@ -48,23 +51,26 @@ export class SpacesController {
   ) {
     return this.service.getOne(requireFacilityId(req), spaceId);
   }
-  @Post() create(
-    @Req() req: RequestWithAuth,
-    @Body() body: CreateSpaceRequestDto,
-  ) {
+  @UseGuards(RolesGuard)
+  @RequireCapability('facilityAdmin')
+  @Post()
+  create(@Req() req: RequestWithAuth, @Body() body: CreateSpaceRequestDto) {
     return this.service.create(requireFacilityId(req), body);
   }
-  @Patch(':spaceId') update(
+  @UseGuards(RolesGuard)
+  @RequireCapability('facilityAdmin')
+  @Patch(':spaceId')
+  update(
     @Req() req: RequestWithAuth,
     @Param('spaceId') spaceId: string,
     @Body() body: UpdateSpaceRequestDto,
   ) {
     return this.service.update(requireFacilityId(req), spaceId, body);
   }
-  @Delete(':spaceId') remove(
-    @Req() req: RequestWithAuth,
-    @Param('spaceId') spaceId: string,
-  ) {
+  @UseGuards(RolesGuard)
+  @RequireCapability('facilityAdmin')
+  @Delete(':spaceId')
+  remove(@Req() req: RequestWithAuth, @Param('spaceId') spaceId: string) {
     return this.service.remove(requireFacilityId(req), spaceId);
   }
 }

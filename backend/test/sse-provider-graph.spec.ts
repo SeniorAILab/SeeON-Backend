@@ -7,9 +7,9 @@ import { DashboardStreamController } from '../src/dashboard/sse.controller';
 /**
  * Provider-graph closure gate (Standing Build-Closure Rule). A successful
  * compile() proves DashboardStreamController resolves its cross-module deps —
- * AlertWriterService + AlertsService (AlertsModule), StatusService
- * (StatusModule), SessionService (AuthModule) and the SSE_REAUTH_INTERVAL_MS
- * token — with no dangling providers and no DB connection opened.
+ * AlertWriterService + AlertsService (AlertsModule), JwtStrategy/JwtAuthGuard
+ * (AuthModule) and the SSE_REAUTH_INTERVAL_MS token — without the removed status read-model or dangling
+ * providers and no DB connection opened.
  */
 describe('provider graph — dashboard SSE module', () => {
   it('resolves DashboardStreamController with all live-stream deps closed', async () => {

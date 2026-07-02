@@ -71,8 +71,8 @@ export class AlertsService {
   }
 
   /**
-   * Resolve an alert (ACKED → RESOLVED). Requires a prior ACK; delegated to the
-   * writer for serialized transition + audit stamp + post-commit SSE emit.
+   * Resolve an alert (NEW/ACKED → RESOLVED). Delegated to the writer for
+   * serialized transition + audit stamp + post-commit SSE emit.
    */
   resolve(facilityId: string, id: string, actorUserId: string) {
     return this.writer.resolveAlert({ facilityId, alertId: id, actorUserId });

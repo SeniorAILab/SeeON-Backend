@@ -1,6 +1,8 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
-import { RequireFacilityGuard, type RequestWithAuth } from './session.guard';
+import { ConfigService } from '@nestjs/config';
+import { RequireFacilityGuard, type RequestWithAuth } from './jwt-auth.guard';
+import { JwtStrategy, jwtCookieExtractor } from './jwt.strategy';
 
 function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
   return {
@@ -10,8 +12,49 @@ function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+describe('JwtStrategy', () => {
+  it('extracts JWT from the httpOnly auth cookie', () => {
+    expect(
+      jwtCookieExtractor({
+        headers: { cookie: 'other=1; app_session=jwt-token' },
+      } as RequestWithAuth),
+    ).toBe('jwt-token');
+  });
+
+  it('loads the user and rejects sessionVersion mismatches', async () => {
+    const prisma = {
+      db: {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1',
+            facilityId: 'facility-1',
+            role: 'ADMIN',
+            kakaoId: null,
+            email: 'admin@example.test',
+            nickname: 'Admin',
+            sessionVersion: 8,
+          }),
+        },
+      },
+    };
+    const strategy = new JwtStrategy(
+      new ConfigService({ SESSION_JWT_SECRET: 'x'.repeat(32) }),
+      prisma as never,
+    );
+
+    await expect(
+      strategy.validate({
+        sub: 'user-1',
+        role: 'ADMIN',
+        facilityId: 'facility-1',
+        sessionVersion: 7,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
 describe('RequireFacilityGuard', () => {
-  it('uses the session facility for facility-bound users', () => {
+  it('uses the JWT user facility for facility-bound users', () => {
     const request = {
       headers: { 'x-facility-id': 'other-facility' },
       query: { facilityId: 'query-facility' },
