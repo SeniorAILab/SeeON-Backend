@@ -86,7 +86,7 @@ Research collects evidence; it does **not** decide. ADR is still the name for ar
 
 **ADR writing rule:** do not turn every remembered choice into an ADR. Write the smallest current rule in the surface that will enforce or use it:
 - `docs/rules/` for repeatable workflow, code, review, testing, or deployment conventions.
-- `docs/api/` for request/response, route, webhook, or integration contracts.
+- Wire/HTTP/SSE/ingest contracts live in code + generated OpenAPI (`@nestjs/swagger` at `/api/docs`) + contract tests — not hand-maintained prose. Cross-runtime/external (ML serving, edge ingest, Kakao) rationale goes in `docs/rules/` or `docs/decisions/`.
 - `docs/domain/` for business semantics, lifecycle states, and data meanings.
 - `docs/architecture.md` or onboarding docs for runtime topology and ownership boundaries.
 - `docs/decisions/README.md` only for rare ADR-level summaries that help future work discover the owning surface.
@@ -104,7 +104,7 @@ Plans and ADRs answer different questions with different lifespans. Never confla
 | Lifespan | Archivable when work ends | ADR is reset to zero files; add only rare current-state notes |
 | Body | Immutable after finalize; scope change → new slug | Short ADR-level note in `docs/decisions/README.md`; operational detail in the owning docs |
 | Author | omc-plan / omo / omx agents | humans / agents maintaining docs |
-| Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/README.md`, `docs/rules/`, `docs/api/`, `docs/domain/`, onboarding, or script docs |
+| Location | `docs/exec-plan/active/{slug}/plan.md` → `archive/{slug}/` | `docs/decisions/`, `docs/rules/`, `docs/domain/`, onboarding, or script docs |
 
 #### Distill rule
 
