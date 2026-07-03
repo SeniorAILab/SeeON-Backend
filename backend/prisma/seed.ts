@@ -58,7 +58,6 @@ function readNokyangDemoPassword(env: NodeJS.ProcessEnv): string {
   );
 }
 
-
 async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
   const passwordHash = await hashPassword(readNokyangDemoPassword(process.env));
   await tx.user.upsert({
