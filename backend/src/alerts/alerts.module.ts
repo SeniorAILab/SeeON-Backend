@@ -18,12 +18,13 @@ import { AlertWriterService } from './alert-writer.service.js';
 
 /**
  * AlertsModule bounds the live alert domain:
- *  - /api/v1/events is the live ML ingress; AlertEventsService owns the
- *    persisted outbox + Kakao channel fan-out used by the Event API.
- *  - AlertEventsService owns persisted outbox + Kakao channel fan-out only;
- *    live alert decisions come from pushed Event API payload confidence.
+ *  - /api/v1/events is the live ML ingress; EventAlarmService records the Event
+ *    + camera offline/online state and derives an Alert. It does not run the
+ *    outbox or Kakao fan-out on ingest.
+ *  - AlertEventsService owns the persisted outbox + Kakao channel fan-out as
+ *    separate delivery infrastructure, not part of the live Event API ingest path.
  *  - #105 read-model: dashboard-facing Alert queries + snapshot proxy
- *    (GET/PATCH/PUT api/alerts, api/snapshots), guarded by AuthModule.
+ *    (GET /api/v1/alerts, GET/PUT /api/v1/alerts/:alertId/snapshot), guarded by AuthModule.
  *  - #105 write path: AlertWriterService serializes Alert inserts (alertSeq
  *    causal order) and fans out live alert events for the SSE slice;
  *    exported for the dashboard SSE transport.

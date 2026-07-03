@@ -1,6 +1,6 @@
 # Architecture Overview — eldercare-fall-ai
 
-> Current status (2026-06-27). The live edge-push path is operating: `ml-worker` owns RTSP capture/inference/domain facts, `ml-api` relays them to backend Event API, backend persists policy-derived events/alerts, SSE pushes dashboard updates, and the ML training pipeline is operational.
+> Current status (2026-06-27). The live edge-push path is operating: `ml-worker` owns RTSP capture/inference/domain facts, `ml-api` relays them to backend Event API, backend persists events and derived dashboard alerts, SSE pushes dashboard updates, and the ML training pipeline is operational.
 
 ---
 
@@ -20,20 +20,20 @@ flowchart LR
 
   subgraph hoststack["Host stack — compose.yaml"]
     front["front :3000<br/>nginx + Vite SPA"]
-    backend["backend :8080<br/>NestJS 정책/영속/SSE"]
+    backend["backend :8080<br/>NestJS auth/RLS/events/alerts/SSE"]
     db[("PostgreSQL :5432<br/>RLS app.facility_id")]
   end
 
-  kakao["Kakao API<br/>send-to-me"]
+
 
   cam -->|"RTSP stream"| worker
   worker -->|"POST /api/v1/relay/{alerts,heartbeat}<br/>X-Edge-Relay-Token"| mlapi
   mlapi -->|"POST /api/v1/events (+heartbeat)<br/>no-HMAC · camera_id"| backend
   backend -->|"Prisma · facility-scoped RLS"| db
-  backend -->|"send-to-me (outbox/delivery)"| kakao
+  backend -->|"Prisma event/alert/camera state"| db
   user -->|"HTTPS /api/v1/*<br/>session cookie"| front
   front -->|"reverse proxy /api"| backend
-  backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · status frames"| user
+  backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · alert-updated frames"| user
   backend -.->|"ML_SERVING_URL pull seam<br/>dormant · ADR"| mlapi
 ```
 
@@ -114,11 +114,11 @@ eldercare-fall-ai/                  ← orchestration layer only (no app deps he
 
 ### 1. `front/` — Product UI
 
-Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /api/v1/auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `GET /api/v1/auth/session`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/dashboard/stream`) with cookie auth and `alertSeq` replay.
+Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defaults to real backend mode (`VITE_USE_MOCK` unset or `false`) through the apiClient seam. Login/session/facility onboarding is backend-direct in dev/prod via email/password `POST /api/v1/auth/login`, Kakao OAuth for existing Kakao-linked local accounts, `GET /api/v1/auth/me`, and `POST /api/v1/facilities`. Realtime dashboard updates arrive through backend SSE (`GET /api/v1/dashboard/stream`) with cookie auth and `alertSeq` replay.
 
 **Demo vs runtime (canonical).** The front-only mock runtime (`VITE_USE_MOCK=true` with `realtimeEngine`, `mockData`, and `DemoMode`) is the front-alone "demo" path — it exists only to run the frontend by itself without a backend. dev and prod run on the real backend + real DB (demo content is seeded via `backend/prisma/demo-nokyang.fixture.ts`); there is no mock at runtime in dev/prod. The mock survives only for automated tests. The front-only mock ("demo") is therefore being retired; removing the mock-runtime code is a tracked follow-up.
 
-**Frontend overview.** Three UI modes: system dashboard (`/dashboard` for `SUPER_ADMIN`), facility workbench (`/dashboard/facilities/:facilityId/admin` and `/dashboard/facilities/:facilityId/staff`), and monitor (fullscreen TV: `/monitor/:facilityId`). Service seam: components/pages call `src/services/*`; backend endpoint mappers live in `src/services/api/*`; UI never consumes backend DTOs directly. Key frontend domain entities (`front/src/types/index.ts`, the FE domain SSOT until Phase 2): Facility, Floor, Space, Zone, SpaceStatus, DetectionEvent, ActionLog, Resident, ResidentAssignment, ResidentRiskSummary, ResidentAction, VideoClip, VideoAccessLog, AlertRule, User, MonitorSettings, DemoMode. The frontend domain model is a UI/domain view and currently diverges from the backend DB model; alignment is tracked in a dedicated FE↔BE issue.
+**Frontend overview.** Three UI modes: system dashboard (`/dashboard` for `SUPER_ADMIN`), facility workbench (`/dashboard/facilities/:facilityId/admin` and `/dashboard/facilities/:facilityId/staff`), and the staff fullscreen monitor view under `/dashboard/facilities/:facilityId/staff`. Service seam: components/pages call `src/services/*`; backend endpoint mappers live in `src/services/api/*`; UI never consumes backend DTOs directly. Key frontend domain entities (`front/src/types/index.ts`, the FE domain SSOT until Phase 2): Facility, Floor, Space, Zone, SpaceStatus, DetectionEvent, ActionLog, Resident, ResidentAssignment, ResidentRiskSummary, ResidentAction, VideoClip, VideoAccessLog, AlertRule, User, MonitorSettings, DemoMode. The frontend domain model is a UI/domain view and currently diverges from the backend DB model; alignment is tracked in a dedicated FE↔BE issue.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
@@ -126,14 +126,13 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local default 8080 from `.env.local`).
 
-`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Placement/resident CRUD is implemented; space-status and resident-risk read models are guarded 501 skeletons pending the ML read-model, while the alert-rule and detection-event skeleton routes have been removed.
+`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Placement/resident CRUD and room-centric alert/event read models are implemented. The former status, space-status, resident-risk-summary, alert-rule, and detection-event skeleton routes are removed from the current controller surface.
 
 Key responsibilities:
 
 - Own auth/session, facility-scoped RLS (`app.facility_id`), dashboard read models, and admin CRUD.
 - Receive edge facts through backend Event API (`POST /api/v1/events` and `POST /api/v1/events/heartbeat`); the former `ML_SERVING_URL` backend-pull seam from ADR was dormant and removed; it is not part of the live path.
-- Apply alert policy (threshold, dedup key, rate-limit), persist immutable events and derived alerts, and publish SSE dashboard frames.
-- Dispatch Kakao delivery through the outbox/delivery adapter layer.
+- Accept normalized Event API facts without backend re-thresholding, cooldowns, or hourly caps; persist immutable events and derived alerts, update camera online/offline state, and publish SSE dashboard frames.
 
 Runs via: `pnpm dev:backend` → `pnpm backend:db:up` → `pnpm dev:backend:app` → `pnpm --filter backend start:dev`.
 
@@ -172,14 +171,13 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn api.main:app --reload
      │  POST /api/v1/events/heartbeat
      ▼
 [backend :8080]
- camera_id → facility/space ownership → policy → dedup sha256(cameraId|detectedAt|type)
+ camera_id → facility/space ownership → event dedup sha256(cameraId|detectedAt|type)
      │
-     ├──► [PostgreSQL] immutable Event SSOT + derived Alert
-     ├──► [SSE GET /api/v1/dashboard/stream] dashboard push
-     └──► [Kakao outbox/delivery]
+     ├──► [PostgreSQL] immutable Event SSOT + camera online/offline state + derived Alert
+     └──► [SSE GET /api/v1/dashboard/stream] dashboard push
 ```
 
-The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; worker-produced probability is relayed through `ml-api` to the backend Event API as `confidence`. `ml-api` is the only edge process that calls the backend Event API and does not serve predictions. Product policy, facility ownership, persistence, deduplication, SSE, and Kakao side effects happen in the backend.
+The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; worker-produced probability is relayed through `ml-api` to the backend Event API as `confidence`. `ml-api` is the only edge process that calls the backend Event API and does not serve predictions. Backend resolves facility ownership, persists Events, updates camera online/offline state, writes dashboard Alerts for non-`detection_lost` events, and publishes SSE frames. Current ingest does not create delivery outbox rows or dispatch Kakao.
 
 The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product frontend. It does not make `ml-api` a live prediction service.
 
@@ -193,10 +191,10 @@ The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product f
 | Relay gateway and backend Event API egress | **ML API** (`ml/api/`, `ml/events/`) | Single backend-facing edge process; worker talks only to local `/api/v1/relay/*` |
 | Fall probability score | **ML worker** (`ml/worker/`) | Worker-owned model/domain evaluation emits probability relayed as Event API `confidence` |
 | Facility/space ownership resolution | **Backend** | `camera_id` is resolved server-side; client-provided facility is ignored |
-| Alert threshold, deduplication, persistence, SSE, Kakao | **Backend** | Product policy, state, credentials, retry logic, and user-facing side effects |
+| Event persistence, deduplication, camera state, dashboard Alerts, SSE | **Backend** | Tenant ownership, durable state, and user-facing dashboard side effects |
 | Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR); backend does not own model artifacts |
 
-ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides product policy, persistence, deduplication, rate limits, tenant ownership, and user-facing side effects. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR and must not be described as the operating path.
+ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides tenant ownership, persistence, event deduplication, camera online/offline state, and dashboard alert side effects. The backend does not re-threshold, cooldown, or hourly-cap Event API facts at ingest. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR and must not be described as the operating path.
 
 ---
 ## 상세 아키텍처 (deep dives)
@@ -209,7 +207,7 @@ ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits r
 | [`onboarding/edge-device.md`](onboarding/edge-device.md) | edge device(`ml-api` + `ml-worker`) 구성과 배포/연결 |
 | [`onboarding/edge-worker-streaming.md`](onboarding/edge-worker-streaming.md) | `ml-worker` 내부 RTSP→pose→domain fact 스트리밍 절차 |
 | [`onboarding/frontend.md`](onboarding/frontend.md) | frontend SSE 수신, 서비스 seam, 컴포넌트 재사용성 |
-| [`onboarding/backend.md`](onboarding/backend.md) | backend layered 책임, RLS, Event API→SSE/Kakao 흐름 |
+| [`onboarding/backend.md`](onboarding/backend.md) | backend layered 책임, RLS, Event API→SSE 흐름 |
 
 ---
 
@@ -294,9 +292,9 @@ Architecture-level consequences are:
 | --- | --- |
 | Repo topology | Node packages use pnpm workspaces; ML is an independent `uv` project; root scripts orchestrate only. |
 | Runtime topology | Host runs `db` + `backend` + `front`; edge runs `ml-api` + `ml-worker`; daily dev is native hot reload. |
-| Backend | NestJS + Prisma + PostgreSQL; backend owns facility tenancy, alert policy, persistence, SSE, and Kakao side effects. |
+| Backend | NestJS + Prisma + PostgreSQL; backend owns facility tenancy, auth/session, event persistence, camera state, dashboard alerts, and SSE. |
 | ML | ML owns perception, model loading, frame observations, training/evaluation, and edge worker runtime. |
-| ML/backend boundary | ML emits signal-only facts through `ml-api`; backend decides product policy and side effects. |
+| ML/backend boundary | ML emits signal-only facts through `ml-api`; backend records events and dashboard side effects without re-thresholding or cooldowning ingest facts. |
 | Frontend | `front/` is Vite + React product UI; it consumes backend APIs/SSE and does not own ML policy. |
 | Data and models | `ml/data/` is domain-first and gitignored; `ml/models/` is the single model artifact root. |
 | Verification | Real E2E evidence must pass through production code paths; fake harnesses stay unit/contract/smoke only. |
