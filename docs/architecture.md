@@ -313,6 +313,6 @@ Architecture-level consequences are:
 
 ### Hubs
 
-- [`api/`](api/) — wire/API 계약
+- [`decisions/common/adr-wire-contract-ssot-code-openapi.md`](decisions/common/adr-wire-contract-ssot-code-openapi.md), [`rules/rest-api-convention.md`](rules/rest-api-convention.md), [`rules/realtime-sse-convention.md`](rules/realtime-sse-convention.md), [`rules/dto-convention.md`](rules/dto-convention.md) — wire contract SSOT and conventions
 - [`decisions/`](decisions/) — ADR
 - [`domain/`](domain/) — 데이터 모델/도메인 문서
