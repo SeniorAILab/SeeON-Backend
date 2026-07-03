@@ -30,12 +30,12 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.$connect();
     await prisma.onModuleInit();
 
+    await direct.alertNote.deleteMany();
     await direct.alert.deleteMany();
     await direct.event.deleteMany();
     await direct.camera.deleteMany();
     await direct.kakaoIdentity.deleteMany();
     await direct.user.deleteMany();
-    await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
     await direct.facility.deleteMany();
@@ -196,13 +196,13 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await expect(prisma.db.alert.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
+    await expect(prisma.db.alertNote.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
     await expect(prisma.db.floor.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
     await expect(prisma.db.space.findMany()).rejects.toBeInstanceOf(
-      MissingTenantContextError,
-    );
-    await expect(prisma.db.zone.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
     // KakaoIdentity is NOT in TENANT_MODELS — app-layer gated, not RLS-gated.
@@ -222,6 +222,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       SELECT table_name, count::int
       FROM (
         SELECT 'Alert' AS table_name, COUNT(*) AS count FROM alerts
+        UNION ALL SELECT 'AlertNote', COUNT(*) FROM alert_notes
         UNION ALL SELECT 'Camera', COUNT(*) FROM cameras
         UNION ALL SELECT 'Space', COUNT(*) FROM spaces
       ) denied_counts
@@ -231,6 +232,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     // KakaoIdentity is excluded from RLS — it is visible without a GUC (app-layer gated).
     expect(rows).toEqual([
       { table_name: 'Alert', count: 0 },
+      { table_name: 'AlertNote', count: 0 },
       { table_name: 'Camera', count: 0 },
       { table_name: 'Space', count: 0 },
     ]);
@@ -256,15 +258,31 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         const rawCrossFacilityAlerts = await tx.$queryRaw<IdRow[]>`
         SELECT id FROM alerts WHERE facility_id = 'facility-b'
       `;
+        await tx.alertNote.create({
+          data: {
+            id: 'note-a',
+            facilityId: 'facility-a',
+            alertId: 'alert-a',
+            note: 'checked',
+            createdById: 'user-a',
+            authorRole: 'ADMIN',
+          },
+        });
+        const notes = await tx.alertNote.findMany({ orderBy: { id: 'asc' } });
+        const rawCrossFacilityNotes = await tx.$queryRaw<IdRow[]>`
+        SELECT id FROM alert_notes WHERE facility_id = 'facility-b'
+      `;
         const rawCrossFacilityUpdate = await tx.$executeRaw`
         UPDATE alerts SET type = type WHERE facility_id = 'facility-b'
       `;
         return {
           alertIds: alerts.map((alert) => alert.id),
+          noteIds: notes.map((note) => note.id),
           rawAlertIds: rawAlerts.map((alert) => alert.id),
           rawCrossFacilityAlertIds: rawCrossFacilityAlerts.map(
             (alert) => alert.id,
           ),
+          rawCrossFacilityNoteIds: rawCrossFacilityNotes.map((note) => note.id),
           rawCrossFacilityUpdate,
           crossCamera: await tx.camera.findUnique({ where: { id: 'cam-b' } }),
           crossAlert: await tx.alert.findUnique({ where: { id: 'alert-b' } }),
@@ -276,12 +294,17 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     );
 
     expect(result.alertIds).toEqual(['alert-a', 'alert-c']);
+    expect(result.noteIds).toEqual(['note-a']);
     expect(result.rawAlertIds).toEqual(['alert-a', 'alert-c']);
     expect(result.rawCrossFacilityAlertIds).toEqual([]);
+    expect(result.rawCrossFacilityNoteIds).toEqual([]);
     expect(result.rawCrossFacilityUpdate).toBe(0);
     expect(result.crossCamera).toBeNull();
     expect(result.crossAlert).toBeNull();
     expect(result.crossSpace).toBeNull();
+    await expect(prisma.db.alertNote.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
 
     const afterTransaction = await prisma.db.$queryRaw<CountRow[]>`
       SELECT COUNT(*)::int AS count FROM alerts

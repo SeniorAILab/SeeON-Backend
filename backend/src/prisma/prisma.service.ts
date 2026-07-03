@@ -14,10 +14,10 @@ import { TenantContext } from '../common/tenant-context.js';
 const TENANT_MODELS = new Set([
   'Camera',
   'Alert',
+  'AlertNote',
   'Event',
   'Floor',
   'Space',
-  'Zone',
 ]);
 
 // ─── PrismaService ────────────────────────────────────────────────────────────

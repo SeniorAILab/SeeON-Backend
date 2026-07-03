@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
   HttpCode,
   Param,
+  Post,
   Put,
   Patch,
   Query,
@@ -22,6 +24,7 @@ import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertsService } from './alerts.service.js';
+import { CreateAlertNoteRequestDto } from './dto/alert-note.dto.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 
 const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
@@ -68,6 +71,30 @@ export class AlertsController {
   @Get(':id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.getOne(requireFacilityId(req), id);
+  }
+
+  @ApiOperation({
+    summary: 'Add an alert note',
+    description:
+      'Appends a facility-scoped action note to an alert with the current user and role snapshotted.',
+  })
+  @Post(':id/notes')
+  @HttpCode(201)
+  addNote(
+    @Req() req: RequestWithAuth,
+    @Param('id') id: string,
+    @Body() body: CreateAlertNoteRequestDto,
+  ) {
+    if (typeof body.note !== 'string' || body.note.trim().length === 0) {
+      throw new BadRequestException('note is required');
+    }
+    return this.service.addNote({
+      facilityId: requireFacilityId(req),
+      alertId: id,
+      note: body.note,
+      actorUserId: requireUserId(req),
+      actorRole: requireAuthorRole(req),
+    });
   }
 
   @ApiOperation({
@@ -194,4 +221,14 @@ function requireUserId(req: RequestWithAuth): string {
   const userId = req.user?.id;
   if (!userId) throw new ForbiddenException('Session user required');
   return userId;
+}
+
+function requireAuthorRole(req: RequestWithAuth): 'ADMIN' | 'STAFF' {
+  const role = req.user?.role;
+  if (role !== 'ADMIN' && role !== 'STAFF') {
+    throw new ForbiddenException(
+      'Alert notes require an ADMIN or STAFF session',
+    );
+  }
+  return role;
 }

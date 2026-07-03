@@ -7,7 +7,6 @@ import {
   nokyangFacility,
   nokyangFloors,
   nokyangSpaces,
-  nokyangZones,
   verifyNokyangFixture,
 } from './demo-nokyang.fixture';
 import { hashPassword } from '../src/auth/password';
@@ -126,19 +125,6 @@ async function upsertFacilityGraph(
       create: space,
     });
   }
-
-  for (const zone of nokyangZones) {
-    await tx.zone.upsert({
-      where: { facilityId_id: { facilityId: zone.facilityId, id: zone.id } },
-      update: {
-        name: zone.name,
-        orderIndex: zone.orderIndex,
-        spaceId: zone.spaceId,
-        type: zone.type,
-      },
-      create: zone,
-    });
-  }
 }
 
 async function upsertCameras(tx: Prisma.TransactionClient): Promise<void> {
@@ -178,7 +164,7 @@ async function main(): Promise<void> {
   console.log('Seeding 녹양역점 demo data...');
   await seedNokyangDemo();
   console.log(
-    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Zones=${nokyangZones.length} Cameras=${nokyangCameras.length}`,
+    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Cameras=${nokyangCameras.length}`,
   );
   if (process.env.SEED_BIND_DEMO_USERS === 'true') {
     const bindResult = await bindDemoUsers(prisma, parseBindArgs([]));

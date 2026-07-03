@@ -5,7 +5,6 @@ import {
   nokyangFacility,
   nokyangFloors,
   nokyangSpaces,
-  nokyangZones,
   verifyUniqueIds,
 } from '../../prisma/demo-nokyang.fixture';
 
@@ -28,33 +27,9 @@ describe('nokyang demo fixture', () => {
     expect(nokyangCameras).toHaveLength(5);
   });
 
-  it('creates 침대A and 침대B zones only for room spaces', () => {
-    const roomSpaces = nokyangSpaces.filter((space) => space.type === 'ROOM');
-
-    expect(roomSpaces).toHaveLength(30);
-    expect(nokyangZones).toHaveLength(roomSpaces.length * 2);
-    for (const room of roomSpaces) {
-      expect(nokyangZones).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: `zone_${room.id}_a`,
-            name: '침대A',
-            spaceId: room.id,
-          }),
-          expect.objectContaining({
-            id: `zone_${room.id}_b`,
-            name: '침대B',
-            spaceId: room.id,
-          }),
-        ]),
-      );
-    }
-  });
-
   it('keeps every fixture id unique within each table-shaped collection', () => {
     expect(() => verifyUniqueIds('floors', nokyangFloors)).not.toThrow();
     expect(() => verifyUniqueIds('spaces', nokyangSpaces)).not.toThrow();
-    expect(() => verifyUniqueIds('zones', nokyangZones)).not.toThrow();
     expect(() => verifyUniqueIds('cameras', nokyangCameras)).not.toThrow();
 
     expect(() =>
