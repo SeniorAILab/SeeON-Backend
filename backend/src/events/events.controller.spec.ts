@@ -24,7 +24,7 @@ describe('EventsController record', () => {
     expect(eventAlarm.record).not.toHaveBeenCalled();
   });
 
-  it('passes valid event types through to record', async () => {
+  it('canonicalizes valid event types before recording', async () => {
     const eventAlarm = {
       record: jest.fn().mockResolvedValue({
         event: { id: 'event-1' },
@@ -38,7 +38,7 @@ describe('EventsController record', () => {
     await expect(
       controller.record({
         camera_id: 'camera-1',
-        type: 'detection-lost',
+        type: ' DETECTION-LOST ',
         detected_at: '2026-06-26T01:02:03.456Z',
       }),
     ).resolves.toEqual({ id: 'event-1', status: 'created' });
@@ -65,24 +65,31 @@ describe('EventsController heartbeat', () => {
     } as unknown as jest.Mocked<CamerasService>;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
-    await expect(controller.heartbeat({ camera_id: 'camera-1' })).resolves.toEqual({ ok: true });
+    await expect(
+      controller.heartbeat({ camera_id: 'camera-1' }),
+    ).resolves.toEqual({ ok: true });
 
     expect(cameras.resolveForEventIngest).toHaveBeenCalledWith('camera-1');
-    expect(cameras.recordHeartbeat).toHaveBeenCalledWith('facility-1', 'camera-1');
+    expect(cameras.recordHeartbeat).toHaveBeenCalledWith(
+      'facility-1',
+      'camera-1',
+    );
   });
 
   it('propagates unknown camera rejection without recording a heartbeat', async () => {
     const eventAlarm = {} as EventAlarmService;
     const recorder = {} as EventRecorderService;
     const cameras = {
-      resolveForEventIngest: jest.fn().mockRejectedValue(new NotFoundException('unknown_camera')),
+      resolveForEventIngest: jest
+        .fn()
+        .mockRejectedValue(new NotFoundException('unknown_camera')),
       recordHeartbeat: jest.fn(),
     } as unknown as jest.Mocked<CamerasService>;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
-    await expect(controller.heartbeat({ camera_id: 'missing-camera' })).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      controller.heartbeat({ camera_id: 'missing-camera' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(cameras.recordHeartbeat).not.toHaveBeenCalled();
   });
 });

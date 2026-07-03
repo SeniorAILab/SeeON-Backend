@@ -22,10 +22,8 @@ describe('role_rbac_three_tier migration', () => {
     );
   });
 
-  it('forces old role-bearing sessions to re-login', () => {
+  it('forces old role-bearing JWT cookies to re-login', () => {
     expect(sql).toContain('SET session_version = session_version + 1');
-    expect(sql).toContain('UPDATE server_sessions');
-    expect(sql).toContain('SET revoked_at = CURRENT_TIMESTAMP');
   });
 });
 

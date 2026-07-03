@@ -10,8 +10,7 @@ import { TenantContext } from '../common/tenant-context.js';
 //
 // KakaoIdentity is intentionally EXCLUDED: Kakao login/onboarding happens before
 // a facility context exists (facilityId may be NULL). RLS default-deny would block those
-// rows. KakaoIdentity is gated at the app layer, like User and ServerSession.
-// See migration SQL for the matching RLS exclusion comment.
+// rows. KakaoIdentity is gated at the app layer, like User.
 const TENANT_MODELS = new Set([
   'Resident',
   'ResidentAssignment',

@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client';
-import { EventRecorderService, buildEventDedupKey } from './event-recorder.service.js';
+import {
+  EventRecorderService,
+  buildEventDedupKey,
+} from './event-recorder.service.js';
 
 describe('EventRecorderService', () => {
   const detectedAt = new Date('2026-06-26T12:34:56.789Z');
@@ -13,12 +16,20 @@ describe('EventRecorderService', () => {
       },
     };
     const prisma = {
-      withFacilityContext: jest.fn((_facilityId: string, fn: (txArg: typeof tx) => Promise<unknown>) =>
-        fn(tx),
+      withFacilityContext: jest.fn(
+        (_facilityId: string, fn: (txArg: typeof tx) => Promise<unknown>) =>
+          fn(tx),
       ),
     };
-    const cameras = { resolveForEventIngest: jest.fn().mockResolvedValue(camera) };
-    return { subject: new EventRecorderService(prisma as never, cameras as never), prisma, cameras, tx };
+    const cameras = {
+      resolveForEventIngest: jest.fn().mockResolvedValue(camera),
+    };
+    return {
+      subject: new EventRecorderService(prisma as never, cameras as never),
+      prisma,
+      cameras,
+      tx,
+    };
   }
 
   it('builds the canonical dedup key from trimmed camera, iso detectedAt, and lower-case trimmed type', () => {
@@ -27,13 +38,18 @@ describe('EventRecorderService', () => {
     );
   });
 
-  it('creates an event with the resolved facility and space', async () => {
+  it('creates an event with the resolved facility, space, and canonical lower-case type', async () => {
     const { subject, tx } = makeSubject();
     const created = { id: 'evt_1' };
     tx.event.create.mockResolvedValue(created);
 
     await expect(
-      subject.record({ cameraId: ' cam_sp_202 ', type: ' FALL ', detectedAt, confidence: 0.91 }),
+      subject.record({
+        cameraId: ' cam_sp_202 ',
+        type: ' FALL ',
+        detectedAt,
+        confidence: 0.91,
+      }),
     ).resolves.toEqual({ event: created, duplicate: false });
 
     expect(tx.event.create).toHaveBeenCalledWith({
@@ -41,25 +57,39 @@ describe('EventRecorderService', () => {
         facilityId: 'fac_1',
         cameraId: 'cam_sp_202',
         spaceId: 'space_1',
-        type: 'FALL',
+        type: 'fall',
         confidence: 0.91,
         detectedAt,
       }),
     });
   });
 
+  it('rejects unknown event types before writing', async () => {
+    const { subject, tx } = makeSubject();
+
+    await expect(
+      subject.record({ cameraId: 'cam_sp_202', type: 'wandering', detectedAt }),
+    ).rejects.toThrow('type must be one of: detection-lost, bed-exit, fall');
+    expect(tx.event.create).not.toHaveBeenCalled();
+  });
+
   it('returns the existing event as duplicate on facility/dedup unique conflict', async () => {
     const { subject, tx } = makeSubject();
-    const duplicate = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-      code: 'P2002',
-      clientVersion: 'test',
-      meta: { target: ['facility_id', 'dedup_key'] },
-    });
+    const duplicate = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['facility_id', 'dedup_key'] },
+      },
+    );
     const existing = { id: 'evt_existing' };
     tx.event.create.mockRejectedValue(duplicate);
     tx.event.findUniqueOrThrow.mockResolvedValue(existing);
 
-    await expect(subject.record({ cameraId: 'cam_sp_202', type: 'fall', detectedAt })).resolves.toEqual({
+    await expect(
+      subject.record({ cameraId: 'cam_sp_202', type: 'fall', detectedAt }),
+    ).resolves.toEqual({
       event: existing,
       duplicate: true,
     });
@@ -75,11 +105,13 @@ describe('EventRecorderService', () => {
 
   it('rejects an unknown camera before writing', async () => {
     const { subject, cameras, tx } = makeSubject();
-    cameras.resolveForEventIngest.mockRejectedValue(new Error('unknown_camera'));
-
-    await expect(subject.record({ cameraId: 'missing', type: 'fall', detectedAt })).rejects.toThrow(
-      'unknown_camera',
+    cameras.resolveForEventIngest.mockRejectedValue(
+      new Error('unknown_camera'),
     );
+
+    await expect(
+      subject.record({ cameraId: 'missing', type: 'fall', detectedAt }),
+    ).rejects.toThrow('unknown_camera');
     expect(tx.event.create).not.toHaveBeenCalled();
   });
 

@@ -15,6 +15,7 @@ import {
   verifyNokyangFixture,
 } from './demo-nokyang.fixture';
 import { hashPassword } from '../src/auth/password';
+import { bootstrapSuperAdmin, readSuperAdminConfig } from './seed-super-admin';
 
 const directUrl = process.env.DIRECT_URL;
 if (!directUrl) {
@@ -39,6 +40,8 @@ async function upsertFacility(tx: Prisma.TransactionClient): Promise<void> {
   });
 }
 
+const NOKYANG_STAFF_EMAIL = 'staff@happy-nokyang.local';
+
 async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
   const demoLoginPassword = process.env.DEMO_LOGIN_PASSWORD ?? '1234';
   const passwordHash = await hashPassword(demoLoginPassword);
@@ -58,6 +61,29 @@ async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
       nickname: '녹양역점 관리자',
       passwordHash,
       role: 'ADMIN',
+    },
+  });
+}
+
+async function upsertStaff(tx: Prisma.TransactionClient): Promise<void> {
+  const demoLoginPassword = process.env.DEMO_LOGIN_PASSWORD ?? '1234';
+  const passwordHash = await hashPassword(demoLoginPassword);
+  await tx.user.upsert({
+    where: { email: NOKYANG_STAFF_EMAIL },
+    update: {
+      facilityId: NOKYANG_FACILITY_ID,
+      nickname: '녹양역점 요양보호사',
+      passwordHash,
+      role: 'STAFF',
+      sessionVersion: { increment: 1 },
+    },
+    create: {
+      email: NOKYANG_STAFF_EMAIL,
+      facilityId: NOKYANG_FACILITY_ID,
+      id: 'user_nokyang_staff',
+      nickname: '녹양역점 요양보호사',
+      passwordHash,
+      role: 'STAFF',
     },
   });
 }
@@ -205,6 +231,7 @@ async function seedNokyangDemo(): Promise<void> {
   return prisma.$transaction(async (tx) => {
     await upsertFacility(tx);
     await upsertAdmin(tx);
+    await upsertStaff(tx);
     await upsertFacilityGraph(tx);
     await upsertResidents(tx);
     await upsertCameras(tx);
@@ -216,8 +243,17 @@ async function main(): Promise<void> {
   console.log('Seeding 녹양역점 demo data...');
   await seedNokyangDemo();
   console.log(
-    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} role=ADMIN Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Zones=${nokyangZones.length} Residents=${nokyangResidents.length} Cameras=${nokyangCameras.length}`,
+    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Zones=${nokyangZones.length} Residents=${nokyangResidents.length} Cameras=${nokyangCameras.length}`,
   );
+  const superAdminConfig = readSuperAdminConfig();
+  if (superAdminConfig.skip) {
+    console.log(`Skipping super-admin bootstrap: ${superAdminConfig.reason}.`);
+  } else {
+    const action = await bootstrapSuperAdmin(prisma, superAdminConfig);
+    console.log(
+      `Super-admin bootstrap ${action}: email=${superAdminConfig.email} role=SUPER_ADMIN facility=${superAdminConfig.facilityId ?? '<none>'}`,
+    );
+  }
   console.log('Seed complete.');
 }
 

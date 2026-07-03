@@ -1,46 +1,45 @@
 import {
-  Body,
   Controller,
   ForbiddenException,
   Get,
-  Patch,
+  Param,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import {
   RequireFacilityGuard,
-  SessionGuard,
-} from '../../auth/session.guard.js';
-import type { RequestWithAuth } from '../../auth/session.guard.js';
+  JwtAuthGuard,
+} from '../../auth/jwt-auth.guard.js';
+import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
 import { FacilitiesService } from '../services/facilities.service.js';
-import type { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 
 @Controller({ path: 'facilities', version: '1' })
-@UseGuards(SessionGuard)
+@ApiCookieAuth()
+@UseGuards(JwtAuthGuard)
 export class FacilitiesController {
   constructor(private readonly service: FacilitiesService) {}
 
+  @ApiOperation({
+    summary: 'List facilities available to the user',
+    description: `Returns every facility for super admins or the user's own facility for facility-scoped users.`,
+  })
   @Get()
   list(@Req() req: RequestWithAuth) {
     if (!req.user) throw new ForbiddenException('Session user required');
     return this.service.listForUser(req.user);
   }
 
-  @Get('current')
+  @ApiOperation({
+    summary: 'Get a facility by id',
+    description:
+      'Returns the requested facility only when it matches the caller facility scope.',
+  })
+  @Get(':id')
   @UseGuards(RequireFacilityGuard)
-  current(@Req() req: RequestWithAuth) {
-    return this.service.current(requireFacilityId(req));
+  get(@Param('id') id: string, @Req() req: RequestWithAuth) {
+    const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
+    if (!facilityId) throw new ForbiddenException('Facility context required');
+    return this.service.getScoped(id, facilityId);
   }
-
-  @Patch('current')
-  @UseGuards(RequireFacilityGuard)
-  update(@Req() req: RequestWithAuth, @Body() body: UpdateFacilityRequestDto) {
-    return this.service.update(requireFacilityId(req), body);
-  }
-}
-
-function requireFacilityId(req: RequestWithAuth): string {
-  const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
-  if (!facilityId) throw new ForbiddenException('Facility context required');
-  return facilityId;
 }

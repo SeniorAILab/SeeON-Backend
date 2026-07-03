@@ -9,7 +9,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
-import type { RequestWithAuth } from './session.guard';
+import type { RequestWithAuth } from './jwt-auth.guard';
 
 export type FacilityBoundPrismaRunner = <T>(
   fn: (tx: Prisma.TransactionClient) => Promise<T>,

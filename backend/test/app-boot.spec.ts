@@ -38,7 +38,7 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
   });
 
   it.each([
-    '/api/v1/auth/session',
+    '/api/v1/auth/me',
     '/api/v1/alerts',
     '/api/v1/residents',
     '/api/v1/guardians',

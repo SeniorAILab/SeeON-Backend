@@ -58,11 +58,7 @@ describe('AlertEventsService', () => {
       recipientRecord('user-1', encryptToken('token-1')),
       recipientRecord('user-2', encryptToken('token-2')),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',
@@ -120,11 +116,7 @@ describe('AlertEventsService', () => {
     const prisma = prismaDouble([
       recipientRecord('user-1', encryptToken('token-1')),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',
@@ -173,11 +165,7 @@ describe('AlertEventsService', () => {
       recipientRecord('user-1', encryptToken('token-1')),
       recipientRecord('user-2', encryptToken('token-2')),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',
@@ -221,11 +209,7 @@ describe('AlertEventsService', () => {
     const prisma = prismaDouble([
       recipientRecord('user-1', 'cipher', new Date('2026-06-12T00:00:00.000Z')),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',
@@ -270,11 +254,7 @@ describe('AlertEventsService', () => {
     const prisma = prismaDouble([
       recipientRecord('user-1', 'not-a-valid-cipher'),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',
@@ -330,11 +310,7 @@ describe('AlertEventsService', () => {
       recipientRecord('user-2', encryptToken('token-2')),
       recipientRecord('user-3', encryptToken('token-3')),
     ]);
-    const service = createService(
-      repository,
-      channel,
-      prisma,
-    );
+    const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
       facilityId: 'facility-1',

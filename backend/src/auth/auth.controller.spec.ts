@@ -8,8 +8,7 @@ import type { Response } from 'express';
 import { AuthController } from './auth.controller';
 import { OAUTH_STATE_COOKIE_NAME } from './auth.constants';
 import type { AuthService } from './auth.service';
-import type { SessionService } from './session.service';
-import type { RequestWithAuth } from './session.guard';
+import type { RequestWithAuth } from './jwt-auth.guard';
 
 describe('AuthController', () => {
   const makeResponse = () =>
@@ -48,10 +47,10 @@ describe('AuthController', () => {
       completeKakaoCallback: jest.fn(),
       loginWithPassword: jest.fn(),
       registerWithPassword: jest.fn(),
+      revokeAllSessions: jest.fn(),
     } as unknown as jest.Mocked<AuthService>;
     const controller = new AuthController(
       auth,
-      {} as SessionService,
       new ConfigService(frontOrigin ? { FRONT_ORIGIN: frontOrigin } : {}),
     );
     return { auth, controller };
@@ -224,6 +223,43 @@ describe('AuthController', () => {
     );
   });
 
+  it('returns /auth/me identity without legacy session fields', () => {
+    const { controller } = makeController();
+
+    const body = controller.me({
+      user: {
+        id: 'user-1',
+        facilityId: 'facility-1',
+        role: 'ADMIN',
+        kakaoId: 'kakao-1',
+        email: 'admin@example.test',
+        nickname: 'Admin',
+        sessionVersion: 3,
+      },
+    } as RequestWithAuth);
+
+    expect(body).toEqual({
+      id: 'user-1',
+      role: 'ADMIN',
+      facilityId: 'facility-1',
+      email: 'admin@example.test',
+      nickname: 'Admin',
+    });
+  });
+
+  it('logs out by bumping sessionVersion and clearing the auth cookie', async () => {
+    const { auth, controller } = makeController();
+    const response = makeResponse();
+
+    await controller.logout(
+      { user: { id: 'user-1' } } as RequestWithAuth,
+      response,
+    );
+
+    expect(auth.revokeAllSessions).toHaveBeenCalledWith('user-1');
+    expect(response.clearCookie).toHaveBeenCalled();
+  });
+
   it('logs in with email/password and does not expose passwordHash', async () => {
     const { auth, controller } = makeController();
     auth.loginWithPassword.mockResolvedValue({
@@ -232,7 +268,6 @@ describe('AuthController', () => {
       user: {
         ...makeUser('demo-facility-01'),
         email: 'admin@sen.ai',
-        passwordHash: 'hash',
       },
     });
     const response = makeResponse();
@@ -264,7 +299,6 @@ describe('AuthController', () => {
       user: {
         ...makeUser('facility-1'),
         email: 'owner@example.test',
-        passwordHash: 'hash',
         nickname: '홍원장',
       },
     });

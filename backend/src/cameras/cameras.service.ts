@@ -135,6 +135,16 @@ export class CamerasService {
         }),
     );
   }
+  async recordOffline(facilityId: string, cameraId: string) {
+    await this.prisma.withFacilityContext(
+      facilityId,
+      (tx: Prisma.TransactionClient) =>
+        tx.camera.update({
+          where: { id: cameraId },
+          data: { online: false },
+        }),
+    );
+  }
 }
 
 function toCameraDto(camera: Camera) {

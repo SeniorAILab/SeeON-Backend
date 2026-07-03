@@ -179,6 +179,8 @@ promote  -->  docs/decisions/README.md or owning rules/api/domain/onboarding/scr
 
 ## Conventions
 
+- **Product PRD SSOT**: 제품 요구사항의 단일 출처는 Obsidian <vault> vault의 `<prd-path>` 이며, PRD 작업은 Obsidian CLI 대신 이 Markdown 파일 경로에 직접 접근한다.
+
 ### Change discipline
 - 최소 변경: 목표 달성에 필요한 가장 작은 diff만 만든다 — 인접 리팩터·포맷·스코프 확장 금지.
 - 불필요한 주석 금지: 코드로 자명한 것은 주석으로 달지 않고, 스테일·장식 주석은 추가·잔존시키지 않는다.

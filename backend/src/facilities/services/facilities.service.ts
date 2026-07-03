@@ -20,12 +20,15 @@ export class FacilitiesService {
   async current(facilityId: string) {
     const facility =
       await this.facilitiesRepository.getByFacilityId(facilityId);
-    if (!facility)
-      throw new NotFoundException({
-        error: 'not_found',
-        message: 'Facility not found',
-      });
+    if (!facility) throwFacilityNotFound();
     return presentFacility(facility);
+  }
+
+  async getScoped(id: string, effectiveFacilityId: string) {
+    if (id !== effectiveFacilityId) {
+      throwFacilityNotFound();
+    }
+    return this.current(id);
   }
 
   async listForUser(user: FacilityListUser) {
@@ -58,6 +61,13 @@ export class FacilitiesService {
     );
     return presentFacility(facility);
   }
+}
+
+function throwFacilityNotFound(): never {
+  throw new NotFoundException({
+    error: 'not_found',
+    message: 'Facility not found',
+  });
 }
 
 function presentFacility(facility: Facility) {

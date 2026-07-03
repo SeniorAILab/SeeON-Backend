@@ -103,11 +103,7 @@ describe('CamerasService event ingest resolver', () => {
   it('does not return secret or other non-topology camera fields', async () => {
     const result = await service.resolveForEventIngest('event-ingest-camera');
 
-    expect(Object.keys(result).sort()).toEqual([
-      'facilityId',
-      'id',
-      'spaceId',
-    ]);
+    expect(Object.keys(result).sort()).toEqual(['facilityId', 'id', 'spaceId']);
     for (const key of [`ingest${'KeyId'}`, `ingest${'SecretHash'}`]) {
       expect(result).not.toHaveProperty(key);
     }

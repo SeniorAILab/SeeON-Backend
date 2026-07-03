@@ -19,6 +19,7 @@ async function bootstrap() {
   // Add @ApiProperty on a DTO only when its request/response shape needs to show in the schema.
   const config = new DocumentBuilder()
     .setTitle('Eldercare backend API')
+    .addCookieAuth('app_session')
     .build();
   SwaggerModule.setup(
     'api/docs',

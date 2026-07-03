@@ -13,11 +13,6 @@ const prismaDouble = {
   $connect: jest.fn(),
   $disconnect: jest.fn(),
   db: {
-    serverSession: {
-      findUnique: jest.fn(),
-      update: jest.fn(),
-      create: jest.fn(),
-    },
     user: {
       findUnique: jest.fn(),
     },
@@ -62,8 +57,8 @@ describe('global api/v1 route matrix (e2e)', () => {
   });
 
   it('moves auth session under /api/v1 and removes the unversioned alias', async () => {
-    await request(app.getHttpServer()).get('/api/v1/auth/session').expect(401);
-    await request(app.getHttpServer()).get('/auth/session').expect(404);
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+    await request(app.getHttpServer()).get('/auth/me').expect(404);
   });
 
   it('moves guarded API controllers under /api/v1', async () => {
@@ -79,10 +74,10 @@ describe('global api/v1 route matrix (e2e)', () => {
     await request(app.getHttpServer()).post('/api/v1/facilities').expect(401);
     await request(app.getHttpServer())
       .get('/api/v1/protected-probe')
-      .expect(401);
+      .expect(404);
     await request(app.getHttpServer())
       .get('/api/v1/facility-protected-probe')
-      .expect(401);
+      .expect(404);
     await request(app.getHttpServer()).post('/api/facilities').expect(404);
   });
 

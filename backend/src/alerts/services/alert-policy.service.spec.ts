@@ -1,26 +1,5 @@
-import type { ConfigService } from '@nestjs/config';
-
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
-import {
-  AlertPolicyClock,
-  AlertPolicyService,
-} from './alert-policy.service.js';
-
-class FakeClock extends AlertPolicyClock {
-  constructor(private value = 0) {
-    super();
-  }
-  set(ms: number): void {
-    this.value = ms;
-  }
-  nowMs(): number {
-    return this.value;
-  }
-}
-
-function config(values: Record<string, string | number>): ConfigService {
-  return { get: (key: string) => values[key] } as unknown as ConfigService;
-}
+import { AlertPolicyService } from './alert-policy.service.js';
 
 const fallIngress = {
   type: AlertEventTypes.fall,
@@ -30,51 +9,50 @@ const fallIngress = {
 } as const;
 
 describe('AlertPolicyService', () => {
-  it('dispatches the first event under the hourly cap', () => {
-    const service = new AlertPolicyService(config({}), new FakeClock(0));
-    expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({ kind: 'dispatch' });
-  });
+  it('dispatches fall and bed-exit events unconditionally', () => {
+    const service = new AlertPolicyService();
 
-  it('suppresses a repeat within the cooldown window', () => {
-    const clock = new FakeClock(0);
-    const service = new AlertPolicyService(
-      config({ ALERT_COOLDOWN_SEC: 60 }),
-      clock,
-    );
-    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
-    clock.set(30_000);
     expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({
-      kind: 'suppress',
-      suppressed_reason: 'cooldown',
+      kind: 'dispatch',
     });
+    expect(
+      service.evaluateIngress('facility-a', {
+        ...fallIngress,
+        type: AlertEventTypes.bedExit,
+        external_event_id: 'e-2',
+      }),
+    ).toEqual({ kind: 'dispatch' });
   });
 
-  it('suppresses once the rolling hourly cap is reached', () => {
-    const clock = new FakeClock(0);
-    const service = new AlertPolicyService(
-      config({ ALERT_HOURLY_CAP: 1, ALERT_COOLDOWN_SEC: 0 }),
-      clock,
+  it('dispatches a rapid same-camera burst of distinct events', () => {
+    const service = new AlertPolicyService();
+
+    const burst = Array.from({ length: 12 }, (_, index) =>
+      service.evaluateIngress('facility-a', {
+        ...fallIngress,
+        external_event_id: `burst-${index}`,
+      }),
     );
-    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
-    clock.set(1_000);
-    expect(service.evaluateIngress('facility-a', fallIngress)).toEqual({
-      kind: 'suppress',
-      suppressed_reason: 'hourly_cap',
-    });
+
+    expect(burst).toEqual(
+      Array.from({ length: 12 }, () => ({ kind: 'dispatch' })),
+    );
   });
 
-  it('scopes cooldown and hourly caps by facility', () => {
-    const clock = new FakeClock(0);
-    const service = new AlertPolicyService(
-      config({ ALERT_HOURLY_CAP: 1, ALERT_COOLDOWN_SEC: 60 }),
-      clock,
-    );
-    expect(service.evaluateIngress('facility-a', fallIngress).kind).toBe('dispatch');
-    clock.set(1_000);
-    expect(service.evaluateIngress('facility-a', { ...fallIngress, source_id: 'cam-2' })).toEqual({
-      kind: 'suppress',
-      suppressed_reason: 'hourly_cap',
-    });
-    expect(service.evaluateIngress('facility-b', fallIngress)).toEqual({ kind: 'dispatch' });
+  it('does not suppress below-threshold predictions', () => {
+    const service = new AlertPolicyService();
+
+    expect(
+      service.evaluatePrediction('facility-a', {
+        source_id: 'cam-1',
+        external_event_id: 'prediction-1',
+        detected_at: '2026-06-16T00:00:00.000Z',
+        prediction: {
+          is_fall: true,
+          fall_probability: 0.1,
+          operating_threshold: 0.9,
+        },
+      }),
+    ).toEqual({ kind: 'dispatch' });
   });
 });

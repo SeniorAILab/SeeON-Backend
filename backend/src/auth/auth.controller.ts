@@ -14,12 +14,12 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
-  SESSION_COOKIE_NAME,
   postLoginPathForUser,
 } from './auth.constants';
 import { AuthService } from './auth.service';
@@ -35,9 +35,9 @@ import type {
   LoginRequestDto,
   RegisterRequestDto,
 } from './dto/auth.dto';
-import { SessionService } from './session.service';
-import type { RequestWithAuth } from './session.guard';
-import { RequireFacilityGuard, SessionGuard } from './session.guard';
+import type { RequestWithAuth } from './jwt-auth.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { RequireCapability, RolesGuard } from './roles.guard';
 import type { AuthenticatedUser } from './auth.types';
 
 @Controller()
@@ -46,10 +46,14 @@ export class AuthController {
 
   constructor(
     private readonly auth: AuthService,
-    private readonly sessions: SessionService,
     private readonly config: ConfigService,
   ) {}
 
+  @ApiOperation({
+    summary: 'Start Kakao login',
+    description:
+      'Redirects the browser to Kakao OAuth after setting the short-lived OAuth state cookie.',
+  })
   @Get('auth/kakao/login')
   kakaoLogin(@Res() response: Response): void {
     const state = this.auth.createOAuthState();
@@ -70,6 +74,11 @@ export class AuthController {
     response.redirect(authorizeUrl);
   }
 
+  @ApiOperation({
+    summary: 'Complete Kakao login',
+    description:
+      'Validates the OAuth state, links the Kakao identity to an existing user, sets the JWT auth cookie, and redirects to the appropriate frontend entry point.',
+  })
   @Get('auth/kakao/callback')
   async kakaoCallback(
     @Query('code') code: string | undefined,
@@ -105,20 +114,25 @@ export class AuthController {
     );
   }
 
-  @Get('auth/session')
+  @ApiOperation({
+    summary: 'Read authenticated identity',
+    description:
+      'Reads the JWT auth cookie and returns the authenticated user identity for browser bootstrap.',
+  })
+  @ApiCookieAuth()
+  @Get('auth/me')
+  @UseGuards(JwtAuthGuard)
   @Header('cache-control', 'no-store')
-  async sessionForServerRender(
-    @Req() request: RequestWithAuth,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE_NAME);
-    const valid = await this.sessions.validateToken(token);
-    if (valid.rotatedToken) {
-      setSessionCookie(response, valid.rotatedToken, valid.maxAgeSeconds);
-    }
-    return { user: presentAuthUser(valid.user) };
+  me(@Req() request: RequestWithAuth) {
+    if (!request.user) throw new UnauthorizedException('Missing session');
+    return presentAuthUser(request.user);
   }
 
+  @ApiOperation({
+    summary: 'Log in with email and password',
+    description:
+      'Authenticates a password user, sets the httpOnly session cookie, and returns the sanitized authenticated user.',
+  })
   @Post('auth/login')
   @HttpCode(200)
   async login(
@@ -133,6 +147,11 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
+  @ApiOperation({
+    summary: 'Register a facility owner',
+    description:
+      'Creates the first admin user and facility from the signup form, starts a session, and returns the sanitized authenticated user.',
+  })
   @Post('auth/register')
   async register(
     @Body() body: RegisterRequestDto,
@@ -149,19 +168,32 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
+  @ApiOperation({
+    summary: 'Log out the current user',
+    description:
+      'Revokes existing JWT cookies by incrementing sessionVersion and clears the browser session cookie.',
+  })
   @Post('auth/logout')
-  @UseGuards(SessionGuard)
+  @ApiCookieAuth()
+  @UseGuards(JwtAuthGuard)
   @HttpCode(204)
   async logout(
     @Req() request: RequestWithAuth,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
-    if (request.sessionId) await this.sessions.revoke(request.sessionId);
+    if (!request.user) throw new UnauthorizedException('Missing session');
+    await this.auth.revokeAllSessions(request.user.id);
     clearSessionCookie(response);
   }
 
+  @ApiOperation({
+    summary: 'Create a facility during onboarding',
+    description: `Creates the authenticated user's initial facility, upgrades facility context, rotates the session cookie, and returns the updated user.`,
+  })
   @Post('facilities')
-  @UseGuards(SessionGuard)
+  @ApiCookieAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequireCapability('facilityAdmin')
   async createFacility(
     @Body() body: CreateFacilityRequestDto,
     @Req() request: RequestWithAuth,
@@ -178,41 +210,6 @@ export class AuthController {
     return { user: presentAuthUser(session.user) };
   }
 
-  @Get('protected-probe')
-  @UseGuards(SessionGuard)
-  @Header('cache-control', 'no-store')
-  protectedProbe(
-    @Req() request: RequestWithAuth,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    this.refreshRotatedCookie(request, response);
-    return { user: request.user ? presentAuthUser(request.user) : null };
-  }
-
-  @Get('facility-protected-probe')
-  @UseGuards(SessionGuard, RequireFacilityGuard)
-  @Header('cache-control', 'no-store')
-  facilityProtectedProbe(
-    @Req() request: RequestWithAuth,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    this.refreshRotatedCookie(request, response);
-    return { facilityId: request.effectiveFacilityId };
-  }
-
-  private refreshRotatedCookie(
-    request: RequestWithAuth,
-    response: Response,
-  ): void {
-    if (request.rotatedSessionToken && request.rotatedSessionMaxAgeSeconds) {
-      setSessionCookie(
-        response,
-        request.rotatedSessionToken,
-        request.rotatedSessionMaxAgeSeconds,
-      );
-    }
-  }
-
   private frontOrigin(): string {
     return (
       this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:3000'
@@ -223,22 +220,14 @@ export class AuthController {
 function presentAuthUser(
   user: Pick<
     AuthenticatedUser,
-    | 'id'
-    | 'facilityId'
-    | 'role'
-    | 'kakaoId'
-    | 'email'
-    | 'nickname'
-    | 'sessionVersion'
+    'id' | 'facilityId' | 'role' | 'email' | 'nickname'
   >,
 ) {
   return {
     id: user.id,
     facilityId: user.facilityId,
     role: user.role,
-    kakaoId: user.kakaoId,
     email: user.email,
     nickname: user.nickname,
-    sessionVersion: user.sessionVersion,
   };
 }

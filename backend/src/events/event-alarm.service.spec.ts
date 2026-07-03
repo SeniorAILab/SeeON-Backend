@@ -1,7 +1,10 @@
 import { EventAlarmService } from './event-alarm.service.js';
-import type { EventRecorderService, RecordedEventResult } from './event-recorder.service.js';
-import type { AlertPolicyService } from '../alerts/services/alert-policy.service.js';
+import type {
+  EventRecorderService,
+  RecordedEventResult,
+} from './event-recorder.service.js';
 import type { AlertWriterService } from '../alerts/alert-writer.service.js';
+import type { CamerasService } from '../cameras/cameras.service.js';
 
 const event = {
   id: 'event-1',
@@ -16,35 +19,65 @@ const event = {
   modifiedAt: new Date('2026-06-26T00:00:01.000Z'),
 };
 
-function setup(overrides: { decision?: { kind: 'dispatch' } | { kind: 'suppress'; suppressed_reason: 'cooldown' } } = {}) {
+function setup(recordedEvent = event) {
   const recorder = {
-    record: jest.fn().mockResolvedValue({ event, duplicate: false } satisfies RecordedEventResult),
+    record: jest.fn().mockResolvedValue({
+      event: recordedEvent,
+      duplicate: false,
+    } satisfies RecordedEventResult),
   } as unknown as jest.Mocked<EventRecorderService>;
-  const policy = {
-    evaluateIngress: jest.fn().mockReturnValue(overrides.decision ?? { kind: 'dispatch' }),
-  } as unknown as jest.Mocked<AlertPolicyService>;
+  const cameras = {
+    recordOffline: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<CamerasService>;
   const writer = {
     writeAlert: jest.fn().mockResolvedValue({}),
   } as unknown as jest.Mocked<AlertWriterService>;
-  return { service: new EventAlarmService(recorder, policy, writer), recorder, policy, writer };
+  return {
+    service: new EventAlarmService(recorder, cameras, writer),
+    recorder,
+    cameras,
+    writer,
+  };
 }
 
 describe('EventAlarmService', () => {
-  it('leaves SUPPRESS as Event-only and does not emit through AlertWriter', async () => {
-    const { service, writer } = setup({ decision: { kind: 'suppress', suppressed_reason: 'cooldown' } });
-    await service.record({ cameraId: event.cameraId, type: event.type, detectedAt: event.detectedAt, confidence: event.confidence });
-    expect(writer.writeAlert).not.toHaveBeenCalled();
+  it('dispatches valid events to AlertWriter with originEventId and shared dedup key', async () => {
+    const { service, writer } = setup();
+
+    await service.record({
+      cameraId: event.cameraId,
+      type: event.type,
+      detectedAt: event.detectedAt,
+      confidence: event.confidence,
+    });
+
+    expect(writer.writeAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        facilityId: event.facilityId,
+        cameraId: event.cameraId,
+        idempotencyKey: event.dedupKey,
+        originEventId: event.id,
+        type: event.type,
+        probability: event.confidence,
+      }),
+    );
   });
 
-  it('dispatches valid events to AlertWriter with originEventId and shared dedup key', async () => {
-    const { service, policy, writer } = setup();
-    await service.record({ cameraId: event.cameraId, type: event.type, detectedAt: event.detectedAt, confidence: event.confidence });
-    expect(policy.evaluateIngress).toHaveBeenCalledWith(event.facilityId, expect.objectContaining({ source_id: event.cameraId }));
-    expect(writer.writeAlert).toHaveBeenCalledWith(expect.objectContaining({
-      facilityId: event.facilityId,
-      cameraId: event.cameraId,
-      idempotencyKey: event.dedupKey,
-      originEventId: event.id,
-    }));
+  it('routes detection-lost to camera offline without writing an alert', async () => {
+    const detectionLost = { ...event, type: 'detection-lost' };
+    const { service, cameras, writer } = setup(detectionLost);
+
+    await service.record({
+      cameraId: detectionLost.cameraId,
+      type: detectionLost.type,
+      detectedAt: detectionLost.detectedAt,
+      confidence: detectionLost.confidence,
+    });
+
+    expect(cameras.recordOffline).toHaveBeenCalledWith(
+      detectionLost.facilityId,
+      detectionLost.cameraId,
+    );
+    expect(writer.writeAlert).not.toHaveBeenCalled();
   });
 });

@@ -13,5 +13,4 @@ export interface AuthenticatedUser {
 export interface AuthenticatedRequest {
   headers: { cookie?: string };
   user?: AuthenticatedUser;
-  sessionId?: string;
 }

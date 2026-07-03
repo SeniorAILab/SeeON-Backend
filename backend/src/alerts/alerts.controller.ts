@@ -13,13 +13,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseAlertStatus } from './dto/alert-status.dto.js';
-import { RequireFacilityGuard, SessionGuard } from '../auth/session.guard.js';
+import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
-import type { RequestWithAuth } from '../auth/session.guard.js';
+import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertsService } from './alerts.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 
@@ -32,11 +33,17 @@ const SNAPSHOT_EXTENSIONS = new Map<string, string>([
 ]);
 
 @Controller({ path: 'alerts', version: '1' })
-@UseGuards(SessionGuard, RequireFacilityGuard)
+@ApiCookieAuth()
+@UseGuards(JwtAuthGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class AlertsController {
   constructor(private readonly service: AlertsService) {}
 
+  @ApiOperation({
+    summary: 'List alerts',
+    description:
+      'Returns facility-scoped alerts with optional status, resident, sequence, and limit filters for dashboard history and reconciliation.',
+  })
   @Get()
   list(
     @Req() req: RequestWithAuth,
@@ -56,17 +63,20 @@ export class AlertsController {
     });
   }
 
+  @ApiOperation({
+    summary: 'Get one alert',
+    description: `Returns a single facility-scoped alert by id or 404 when it is outside the caller's facility.`,
+  })
   @Get(':id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.getOne(requireFacilityId(req), id);
   }
 
-  @Patch(':id/ack')
-  @HttpCode(200)
-  ack(@Req() req: RequestWithAuth, @Param('id') id: string) {
-    return this.service.ack(requireFacilityId(req), id, requireUserId(req));
-  }
-
+  @ApiOperation({
+    summary: 'Resolve an alert',
+    description:
+      'Marks an alert resolved by the current user and emits the live alert-updated dashboard frame.',
+  })
   @Patch(':id/resolve')
   @HttpCode(200)
   resolve(@Req() req: RequestWithAuth, @Param('id') id: string) {
@@ -77,6 +87,11 @@ export class AlertsController {
    * PUT /api/alerts/:alertId/snapshot — authenticated snapshot upload.
    * Stores bytes locally under a server-derived key; payload URLs are never fetched.
    */
+  @ApiOperation({
+    summary: 'Upload an alert snapshot',
+    description:
+      'Stores a bounded authenticated snapshot upload under a server-owned key without fetching remote URLs.',
+  })
   @Put(':alertId/snapshot')
   @HttpCode(201)
   async uploadSnapshot(
@@ -112,6 +127,11 @@ export class AlertsController {
    * Verifies alert.facilityId == req.user.facilityId, then streams file from local disk.
    * Backend never dereferences edge URLs (SSRF-safe).
    */
+  @ApiOperation({
+    summary: 'Download an alert snapshot',
+    description:
+      'Streams a stored facility-scoped alert snapshot from local storage after validating alert ownership.',
+  })
   @Get(':alertId/snapshot')
   async snapshot(
     @Req() req: RequestWithAuth,

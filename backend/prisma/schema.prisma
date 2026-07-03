@@ -84,7 +84,6 @@ model Facility {
   assignments      ResidentAssignment[]
   events           Event[]
   kakaoIdentities  KakaoIdentity[]
-  sessions         ServerSession[]
 
   @@map("facilities")
 }
@@ -107,7 +106,6 @@ model User {
 
   facility         Facility?         @relation(fields: [facilityId], references: [id])
   kakaoIdentity    KakaoIdentity?
-  sessions         ServerSession[]
   deliveryAttempts DeliveryAttempt[]
   ackedAlerts      Alert[]           @relation("AlertAckedBy")
   resolvedAlerts   Alert[]           @relation("AlertResolvedBy")
@@ -132,21 +130,6 @@ model KakaoIdentity {
   @@map("kakao_identities")
 }
 
-/// Server-side session root for JWT revocation and SSE re-auth. Session lookup is
-/// by opaque session id/user id only; tenant-domain access starts after facility GUC binding.
-model ServerSession {
-  id         String    @id @default(cuid())
-  userId     String    @map("user_id")
-  facilityId String?   @map("facility_id")
-  expiresAt  DateTime  @map("expires_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  facility Facility? @relation(fields: [facilityId], references: [id])
-
-  @@map("server_sessions")
-}
 
 // ─── Tenant tables (facilityId-scoped, RLS ENABLE + FORCE) ────────────────────────
 

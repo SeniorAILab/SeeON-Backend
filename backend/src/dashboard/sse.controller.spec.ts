@@ -4,8 +4,7 @@ import request from 'supertest';
 
 import { AlertWriterService } from '../alerts/alert-writer.service';
 import { AlertsService } from '../alerts/alerts.service';
-import { SessionService } from '../auth/session.service';
-import { StatusService } from '../status/status.service';
+import { AuthService } from '../auth/auth.service';
 import { configureVersionedTestApp } from '../../test/helpers/versioned-app';
 import {
   DashboardStreamController,
@@ -15,49 +14,91 @@ import {
 } from './sse.controller';
 
 describe('formatAlertEvent', () => {
-  it('serializes alertSeq as string with spaceId and room context', () => {
-    const frame = formatAlertEvent({
+  it('serializes exactly the pinned alert payload fields', () => {
+    const frame = formatAlertEvent(alertEvent(42n, 'alert-1'));
+    const payload = JSON.parse(frame.split('data: ')[1]) as Record<
+      string,
+      unknown
+    >;
+
+    expect(frame).toContain('id: 42\n');
+    expect(frame).toContain('event: alert\n');
+    expect(Object.keys(payload).sort()).toEqual(
+      [
+        'alertSeq',
+        'cameraId',
+        'detectedAt',
+        'id',
+        'probability',
+        'spaceId',
+        'status',
+        'type',
+      ].sort(),
+    );
+    expect(payload).toMatchObject({
+      id: 'alert-1',
+      alertSeq: '42',
+      spaceId: 'sp_201',
+      cameraId: 'cam_sp_201',
+      type: 'bed-exit',
+      status: 'NEW',
+      probability: 0.91,
+    });
+  });
+});
+
+describe('formatAlertUpdateEvent', () => {
+  it('serializes exactly the pinned alert-updated payload fields and NO id line', () => {
+    const frame = formatAlertUpdateEvent({
       alertSeq: 42n,
       id: 'alert-1',
       facilityId: 'facility-1',
-      residentId: 'resident-1',
-      cameraId: 'camera-1',
       spaceId: 'space-1',
-      room: 'Room 101',
-      space: { name: 'Room 101' },
-      type: 'fall',
-      probability: 0.91,
-      snapshotKey: null,
-      detectedAt: new Date('2026-06-22T00:00:00Z'),
-      status: 'NEW',
-      resident: { name: '홍길동' },
+      status: 'RESOLVED',
+      ackedById: null,
+      ackedAt: null,
+      resolvedById: 'user-1',
+      resolvedAt: new Date('2026-06-22T00:05:00Z'),
     });
+    const payload = JSON.parse(frame.split('data: ')[1]) as Record<
+      string,
+      unknown
+    >;
 
-    const payload = JSON.parse(frame.split('data: ')[1]) as {
-      alertSeq: string;
-      spaceId: string;
-      room: string;
-      space: { name: string };
-    };
-    expect(payload.alertSeq).toBe('42');
-    expect(payload.spaceId).toBe('space-1');
-    expect(payload.room).toBe('Room 101');
-    expect(payload.space).toEqual({ name: 'Room 101' });
+    expect(frame).toContain('event: alert-updated\n');
+    expect(frame).not.toMatch(/^id:/m);
+    expect(Object.keys(payload).sort()).toEqual(
+      [
+        'alertSeq',
+        'id',
+        'resolvedAt',
+        'resolvedById',
+        'spaceId',
+        'status',
+      ].sort(),
+    );
+    expect(payload).toMatchObject({
+      id: 'alert-1',
+      alertSeq: '42',
+      spaceId: 'space-1',
+      status: 'RESOLVED',
+      resolvedById: 'user-1',
+    });
   });
 });
 
 describe('DashboardStreamController', () => {
-  it('emits replayed alert, status snapshot, live alert, and live status frames on the dashboard stream', async () => {
+  it('emits only replayed/live alert and alert-updated frames on the dashboard stream', async () => {
     const chunks: string[] = [];
     const unsubAlert = jest.fn();
-    const unsubStatus = jest.fn();
+    const unsubUpdates = jest.fn();
     let liveAlert: ((event: unknown) => void) | undefined;
-    let liveStatus: ((event: unknown) => void) | undefined;
+    let liveUpdate: ((event: unknown) => void) | undefined;
     let closeHandler: (() => void) | undefined;
 
     const replayedAlert = alertEvent(2n, 'alert-replay');
     const liveAlertEvent = alertEvent(3n, 'alert-live');
-    const liveStatusEvent = statusEvent(4n);
+    const liveUpdateEvent = alertUpdateEvent();
     const controller = new DashboardStreamController(
       {
         subscribe: jest.fn(
@@ -66,15 +107,10 @@ describe('DashboardStreamController', () => {
             return unsubAlert;
           },
         ),
-        subscribeStatus: jest.fn(
-          (_facilityId: string, callback: (event: unknown) => void) => {
-            liveStatus = callback;
-            return unsubStatus;
-          },
-        ),
         subscribeUpdates: jest.fn(
-          (_facilityId: string, _callback: (event: unknown) => void) => {
-            return jest.fn();
+          (_facilityId: string, callback: (event: unknown) => void) => {
+            liveUpdate = callback;
+            return unsubUpdates;
           },
         ),
       } as unknown as AlertWriterService,
@@ -82,21 +118,15 @@ describe('DashboardStreamController', () => {
         replay: jest.fn().mockResolvedValue([replayedAlert]),
       } as unknown as AlertsService,
       {
-        listByFacility: jest
-          .fn()
-          .mockResolvedValue([{ residentId: 'res-1', state: 'NORMAL' }]),
-      } as unknown as StatusService,
-      {
-        checkActive: jest.fn().mockResolvedValue(true),
-      } as unknown as SessionService,
+        isSessionVersionCurrent: jest.fn().mockResolvedValue(true),
+      } as unknown as AuthService,
       60_000,
     );
 
     await controller.sse(
       {
         headers: { 'last-event-id': '1' },
-        user: { facilityId: 'facility-1', sessionVersion: 7 },
-        sessionId: 'session-1',
+        user: { id: 'user-1', facilityId: 'facility-1', sessionVersion: 7 },
         socket: { on: jest.fn() },
         on: jest.fn((_event: string, callback: () => void) => {
           closeHandler = callback;
@@ -114,20 +144,25 @@ describe('DashboardStreamController', () => {
     );
 
     liveAlert?.(liveAlertEvent);
-    liveStatus?.(liveStatusEvent);
+    liveUpdate?.(liveUpdateEvent);
     closeHandler?.();
 
     expect(chunks).toContain(': connected\n\n');
     expect(chunks).toContain(formatAlertEvent(replayedAlert));
     expect(chunks).toContain(formatAlertEvent(liveAlertEvent));
-    expect(chunks).toContain(
-      'event: status-snapshot\ndata: [{"residentId":"res-1","state":"NORMAL"}]\n\n',
-    );
-    expect(chunks).toContain(
-      'id: 4\nevent: status\ndata: {"alertSeq":"4","facilityId":"facility-1","residentId":"res-1","state":"WARNING","cameraOnline":true,"lastSeenAt":"2026-06-22T00:00:04.000Z"}\n\n',
-    );
+    expect(chunks).toContain(formatAlertUpdateEvent(liveUpdateEvent));
+    expect(
+      chunks.filter((chunk) => chunk.includes('event: alert\n')),
+    ).toHaveLength(2);
+    expect(
+      chunks.filter((chunk) => chunk.includes('event: alert-updated\n')),
+    ).toHaveLength(1);
+    expect(chunks.join('')).toContain('id: 2\nevent: alert\n');
+    expect(chunks.join('')).toContain('id: 3\nevent: alert\n');
+    expect(chunks.join('')).not.toContain('event: status\n');
+    expect(chunks.join('')).not.toContain('event: status-snapshot\n');
     expect(unsubAlert).toHaveBeenCalledTimes(1);
-    expect(unsubStatus).toHaveBeenCalledTimes(1);
+    expect(unsubUpdates).toHaveBeenCalledTimes(1);
   });
 
   it('does not register the removed bare GET /api/v1/sse route', async () => {
@@ -136,8 +171,7 @@ describe('DashboardStreamController', () => {
       providers: [
         { provide: AlertWriterService, useValue: {} },
         { provide: AlertsService, useValue: {} },
-        { provide: StatusService, useValue: {} },
-        { provide: SessionService, useValue: {} },
+        { provide: AuthService, useValue: {} },
         { provide: SSE_REAUTH_INTERVAL_MS, useValue: 60_000 },
       ],
     }).compile();
@@ -172,42 +206,16 @@ function alertEvent(alertSeq: bigint, id: string) {
   };
 }
 
-function statusEvent(alertSeq: bigint) {
+function alertUpdateEvent() {
   return {
-    alertSeq,
+    alertSeq: 3n,
+    id: 'alert-live',
     facilityId: 'facility-1',
-    residentId: 'res-1',
-    state: 'WARNING',
-    cameraOnline: true,
-    lastSeenAt: new Date('2026-06-22T00:00:04.000Z'),
+    spaceId: 'sp_201',
+    status: 'RESOLVED',
+    ackedById: null,
+    ackedAt: null,
+    resolvedById: 'user-1',
+    resolvedAt: new Date('2026-06-22T00:05:00Z'),
   };
 }
-describe('formatAlertUpdateEvent', () => {
-  it('emits a named alert-updated frame with lifecycle fields and NO id: line', () => {
-    const frame = formatAlertUpdateEvent({
-      alertSeq: 42n,
-      id: 'alert-1',
-      facilityId: 'facility-1',
-      status: 'ACKED',
-      ackedById: 'user-1',
-      ackedAt: new Date('2026-06-22T00:05:00Z'),
-      resolvedById: null,
-      resolvedAt: null,
-    });
-
-    expect(frame).toContain('event: alert-updated\n');
-    // Replay-cursor safety: lifecycle updates are live-only, never carry an SSE id.
-    expect(frame).not.toMatch(/^id:/m);
-
-    const payload = JSON.parse(frame.split('data: ')[1]) as {
-      alertSeq: string;
-      id: string;
-      status: string;
-      ackedById: string | null;
-    };
-    expect(payload.alertSeq).toBe('42');
-    expect(payload.id).toBe('alert-1');
-    expect(payload.status).toBe('ACKED');
-    expect(payload.ackedById).toBe('user-1');
-  });
-});
