@@ -1,4 +1,4 @@
-import { Level, ResidentState, SpaceType, ZoneType } from '@prisma/client';
+import { SpaceType, ZoneType } from '@prisma/client';
 
 export const NOKYANG_FACILITY_ID = 'fac_happy_nokyang';
 export const NOKYANG_ADMIN_EMAIL = 'nokyang-admin@example.com';
@@ -65,49 +65,11 @@ export type ZoneSeed = {
   readonly orderIndex: number;
 };
 
-export type ResidentSeed = {
-  readonly id: string;
-  readonly facilityId: string;
-  readonly name: string;
-  readonly gender: string;
-  readonly age: number;
-  readonly diagnosisTags: readonly string[];
-  readonly fallRiskBaseline: Level;
-  readonly isFocusResident: boolean;
-};
-
-export type AssignmentSeed = {
-  readonly id: string;
-  readonly facilityId: string;
-  readonly residentId: string;
-  readonly spaceId: string;
-  readonly zoneId: string;
-  readonly startedAt: string;
-};
-
-export type GuardianSeed = {
-  readonly id: string;
-  readonly facilityId: string;
-  readonly residentId: string;
-  readonly name: string;
-  readonly phone: string;
-  readonly relation: string;
-};
-
 export type CameraSeed = {
   readonly id: string;
   readonly facilityId: string;
   readonly spaceId: string;
   readonly label: string;
-};
-
-export type ResidentStatusSeed = {
-  readonly id: string;
-  readonly facilityId: string;
-  readonly residentId: string;
-  readonly state: ResidentState;
-  readonly cameraOnline: boolean;
-  readonly sourceId: string;
 };
 
 export const nokyangFacility: FacilitySeed = {
@@ -266,125 +228,6 @@ export const nokyangZones: readonly ZoneSeed[] = nokyangSpaces
     },
   ]);
 
-export const nokyangResidents: readonly ResidentSeed[] = [
-  {
-    id: 'res_kim',
-    facilityId: NOKYANG_FACILITY_ID,
-    name: '김○○',
-    gender: 'F',
-    age: 82,
-    diagnosisTags: ['파킨슨', '치매'],
-    fallRiskBaseline: Level.HIGH,
-    isFocusResident: true,
-  },
-  {
-    id: 'res_lee',
-    facilityId: NOKYANG_FACILITY_ID,
-    name: '이○○',
-    gender: 'F',
-    age: 79,
-    diagnosisTags: ['치매'],
-    fallRiskBaseline: Level.MEDIUM,
-    isFocusResident: true,
-  },
-  {
-    id: 'res_park',
-    facilityId: NOKYANG_FACILITY_ID,
-    name: '박○○',
-    gender: 'M',
-    age: 85,
-    diagnosisTags: ['보행 불안정'],
-    fallRiskBaseline: Level.MEDIUM,
-    isFocusResident: true,
-  },
-  {
-    id: 'res_choi',
-    facilityId: NOKYANG_FACILITY_ID,
-    name: '최○○',
-    gender: 'F',
-    age: 77,
-    diagnosisTags: ['고혈압'],
-    fallRiskBaseline: Level.LOW,
-    isFocusResident: false,
-  },
-  {
-    id: 'res_jung',
-    facilityId: NOKYANG_FACILITY_ID,
-    name: '정○○',
-    gender: 'M',
-    age: 81,
-    diagnosisTags: ['당뇨'],
-    fallRiskBaseline: Level.LOW,
-    isFocusResident: false,
-  },
-];
-
-function assignment(
-  residentId: string,
-  spaceId: string,
-  bed: 'a' | 'b',
-): AssignmentSeed {
-  return {
-    id: `asg_${residentId}`,
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId,
-    spaceId,
-    zoneId: `zone_${spaceId}_${bed}`,
-    startedAt: '2026-01-02T09:00:00+09:00',
-  };
-}
-
-export const nokyangAssignments: readonly AssignmentSeed[] = [
-  assignment('res_kim', 'sp_202', 'a'),
-  assignment('res_lee', 'sp_203', 'a'),
-  assignment('res_park', 'sp_401', 'a'),
-  assignment('res_choi', 'sp_301', 'a'),
-  assignment('res_jung', 'sp_305', 'a'),
-];
-
-export const nokyangGuardians: readonly GuardianSeed[] = [
-  {
-    id: 'grd_res_kim',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_kim',
-    name: '김보호자',
-    phone: '010-1111-2002',
-    relation: '자녀',
-  },
-  {
-    id: 'grd_res_lee',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_lee',
-    name: '이보호자',
-    phone: '010-1111-2003',
-    relation: '자녀',
-  },
-  {
-    id: 'grd_res_park',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_park',
-    name: '박보호자',
-    phone: '010-1111-2401',
-    relation: '배우자',
-  },
-  {
-    id: 'grd_res_choi',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_choi',
-    name: '최보호자',
-    phone: '010-1111-2301',
-    relation: '자녀',
-  },
-  {
-    id: 'grd_res_jung',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_jung',
-    name: '정보호자',
-    phone: '010-1111-2305',
-    relation: '자녀',
-  },
-];
-
 export const nokyangCameras: readonly CameraSeed[] = [
   {
     id: 'cam_sp_202',
@@ -418,56 +261,9 @@ export const nokyangCameras: readonly CameraSeed[] = [
   },
 ];
 
-export const nokyangStatuses: readonly ResidentStatusSeed[] = [
-  {
-    id: 'status_res_kim',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_kim',
-    state: ResidentState.WARNING,
-    cameraOnline: true,
-    sourceId: 'cam_sp_202',
-  },
-  {
-    id: 'status_res_lee',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_lee',
-    state: ResidentState.WARNING,
-    cameraOnline: true,
-    sourceId: 'cam_sp_203',
-  },
-  {
-    id: 'status_res_park',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_park',
-    state: ResidentState.NORMAL,
-    cameraOnline: true,
-    sourceId: 'cam_sp_401',
-  },
-  {
-    id: 'status_res_choi',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_choi',
-    state: ResidentState.NORMAL,
-    cameraOnline: true,
-    sourceId: 'cam_sp_301',
-  },
-  {
-    id: 'status_res_jung',
-    facilityId: NOKYANG_FACILITY_ID,
-    residentId: 'res_jung',
-    state: ResidentState.NORMAL,
-    cameraOnline: true,
-    sourceId: 'cam_sp_305',
-  },
-];
-
 export function verifyNokyangFixture(): void {
   verifyUniqueIds('floors', nokyangFloors);
   verifyUniqueIds('spaces', nokyangSpaces);
   verifyUniqueIds('zones', nokyangZones);
-  verifyUniqueIds('residents', nokyangResidents);
-  verifyUniqueIds('assignments', nokyangAssignments);
-  verifyUniqueIds('guardians', nokyangGuardians);
   verifyUniqueIds('cameras', nokyangCameras);
-  verifyUniqueIds('statuses', nokyangStatuses);
 }

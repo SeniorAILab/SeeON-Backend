@@ -7,7 +7,6 @@ import { AlertWriterService } from './alert-writer.service.js';
 import { alertInclude, presentAlert } from './alerts.presenter.js';
 
 export interface AlertQuery {
-  residentId?: string;
   status?: AlertStatusDto;
   /** Forward cursor: returns alerts with alertSeq > afterSeq. */
   afterSeq?: bigint;
@@ -24,7 +23,7 @@ export class AlertsService {
   ) {}
 
   async list(facilityId: string, query: AlertQuery = {}) {
-    const { residentId, status, afterSeq, beforeSeq, limit = 50 } = query;
+    const { status, afterSeq, beforeSeq, limit = 50 } = query;
     const take = Math.min(limit, 200);
     const alertSeqFilter: { gt?: bigint; lt?: bigint } = {};
     if (afterSeq !== undefined) alertSeqFilter.gt = afterSeq;
@@ -34,7 +33,6 @@ export class AlertsService {
       (tx: Prisma.TransactionClient) =>
         tx.alert.findMany({
           where: {
-            residentId: residentId ?? undefined,
             status: status ?? undefined,
             alertSeq:
               Object.keys(alertSeqFilter).length > 0

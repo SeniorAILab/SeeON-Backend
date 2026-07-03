@@ -23,11 +23,8 @@ describe('room-centric cross-slice regression invariants', () => {
     await app.$connect();
 
     await direct.alert.deleteMany();
-    await direct.residentStatus.deleteMany();
-    await direct.residentAssignment.deleteMany();
+    await direct.event.deleteMany();
     await direct.camera.deleteMany();
-    await direct.guardian.deleteMany();
-    await direct.resident.deleteMany();
     await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
@@ -75,13 +72,6 @@ describe('room-centric cross-slice regression invariants', () => {
           capacity: 1,
         },
       ],
-    });
-    await direct.resident.create({
-      data: {
-        id: 'regression-resident-a',
-        facilityId: 'regression-a',
-        name: 'A Resident',
-      },
     });
     await direct.camera.createMany({
       data: [
@@ -131,7 +121,6 @@ describe('room-centric cross-slice regression invariants', () => {
         SELECT 'cameras' AS table_name, COUNT(*) AS count FROM cameras
         UNION ALL SELECT 'alerts', COUNT(*) FROM alerts
         UNION ALL SELECT 'spaces', COUNT(*) FROM spaces
-        UNION ALL SELECT 'resident_statuses', COUNT(*) FROM resident_statuses
       ) denied_counts
       ORDER BY table_name
     `;
@@ -139,7 +128,6 @@ describe('room-centric cross-slice regression invariants', () => {
     expect(rows).toEqual([
       { table_name: 'alerts', count: 0 },
       { table_name: 'cameras', count: 0 },
-      { table_name: 'resident_statuses', count: 0 },
       { table_name: 'spaces', count: 0 },
     ]);
   });
@@ -159,8 +147,8 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-alert-cross-space', 'regression-a', 'regression-resident-a', 'regression-camera-a', 'regression-space-b', 'fall', 0.9, now(), 'regression-alert-cross-space-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('regression-alert-cross-space', 'regression-a', 'regression-camera-a', 'regression-space-b', 'fall', 0.9, now(), 'regression-alert-cross-space-key')
         `;
       }),
     ).rejects.toThrow();
@@ -169,33 +157,33 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-alert-cross-camera', 'regression-a', 'regression-resident-a', 'regression-camera-b', 'regression-space-a', 'fall', 0.9, now(), 'regression-alert-cross-camera-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('regression-alert-cross-camera', 'regression-a', 'regression-camera-b', 'regression-space-a', 'fall', 0.9, now(), 'regression-alert-cross-camera-key')
         `;
       }),
     ).rejects.toThrow();
   });
 
-  it('preserves empty-room alerts without fabricating ResidentStatus and duplicate idempotency uniqueness', async () => {
+  it('accepts room-anchored alerts and enforces idempotency uniqueness', async () => {
     await app.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
       await tx.$executeRaw`
-        INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-        VALUES ('regression-empty-room-alert', 'regression-a', NULL, 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-empty-room-key')
+        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+        VALUES ('regression-room-alert', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key')
       `;
     });
 
-    const statuses = await direct.residentStatus.count({
+    const alertCount = await direct.alert.count({
       where: { facilityId: 'regression-a' },
     });
-    expect(statuses).toBe(0);
+    expect(alertCount).toBe(1);
 
     await expect(
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-empty-room-alert-duplicate', 'regression-a', NULL, 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-empty-room-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('regression-room-alert-duplicate', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key')
         `;
       }),
     ).rejects.toThrow();
