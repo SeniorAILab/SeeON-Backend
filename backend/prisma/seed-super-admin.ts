@@ -1,8 +1,7 @@
 // Production super-admin bootstrap.
 //
-// This is a different layer from:
-//   - prisma/seed.ts            → demo dataset (facility/residents/cameras), only on reset-demo.
-//   - scripts/bind-demo-users.ts → ad-hoc operator promotion of EXISTING Kakao-backed users.
+// This is a different layer from the Nokyang demo dataset and optional Kakao
+// demo-user binding composed by prisma/seed.ts.
 //
 // Here we idempotently guarantee that one email/password SUPER_ADMIN exists so a
 // freshly migrated production database is operable. It runs after `prisma migrate
