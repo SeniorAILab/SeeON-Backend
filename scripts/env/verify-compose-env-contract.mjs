@@ -23,6 +23,7 @@ KAKAO_CLIENT_SECRET=prod-kakao-client-secret
 KAKAO_REDIRECT_URI=https://senai.example.com/api/v1/auth/kakao/callback
 KAKAO_SCOPES=talk_message
 KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
 BACKEND_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/backend:test
 FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
 ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test
@@ -44,6 +45,9 @@ const forbiddenHostFragments = [
   'postgresql://fall:fall@',
   'http://localhost',
   'dev-placeholder',
+  'DEMO_LOGIN_PASSWORD',
+  'DEMO_SUPER_ADMIN_KAKAO_ID',
+  'DEMO_SUPER_ADMIN_KAKAO_EMAIL',
   fixedLocalKakaoTokenKey,
   'VITE_USE_MOCK: "true"',
   'VITE_USE_MOCK: true',
@@ -175,6 +179,7 @@ function verify() {
         'https://senai.example.com',
         'prod-kakao-client-secret',
         'talk_message',
+        'NOKYANG_ADMIN_PASSWORD: prod-nokyang-password',
         'ghcr.io/seniorailab/eldercare-fall-ai/backend:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/front:test',
         'pull_policy: always',

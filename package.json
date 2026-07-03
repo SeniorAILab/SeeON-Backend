@@ -37,7 +37,7 @@
     "release:prod:manual": "node scripts/release/manual-production-deploy.mjs",
     "deploy:prod:manual": "node scripts/release/manual-production-deploy.mjs",
     "smoke:backend:no-db": "pnpm --filter backend run smoke:no-db",
-    "backend:demo:bind": "pnpm --filter backend run demo:bind"
+    "backend:demo:bind": "SEED_BIND_DEMO_USERS=true pnpm --filter backend run prisma:seed"
   },
   "devDependencies": {
     "jscpd": "^5.0.5"
