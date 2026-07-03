@@ -30,14 +30,11 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.$connect();
     await prisma.onModuleInit();
 
-    await direct.residentAssignment.deleteMany();
     await direct.alert.deleteMany();
-    await direct.residentStatus.deleteMany();
-    await direct.guardian.deleteMany();
+    await direct.event.deleteMany();
     await direct.camera.deleteMany();
     await direct.kakaoIdentity.deleteMany();
     await direct.user.deleteMany();
-    await direct.resident.deleteMany();
     await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
@@ -80,33 +77,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           userId: 'user-b',
           facilityId: 'facility-b',
           kakaoId: 'kakao-b',
-        },
-      ],
-    });
-
-    await direct.resident.createMany({
-      data: [
-        { id: 'res-a', facilityId: 'facility-a', name: 'Resident A' },
-        { id: 'res-b', facilityId: 'facility-b', name: 'Resident B' },
-        { id: 'res-c', facilityId: 'facility-a', name: 'Resident C' },
-      ],
-    });
-
-    await direct.guardian.createMany({
-      data: [
-        {
-          id: 'guard-a',
-          facilityId: 'facility-a',
-          residentId: 'res-a',
-          name: 'Guardian A',
-          phone: '010-0000-0001',
-        },
-        {
-          id: 'guard-b',
-          facilityId: 'facility-b',
-          residentId: 'res-b',
-          name: 'Guardian B',
-          phone: '010-0000-0002',
         },
       ],
     });
@@ -171,7 +141,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         {
           id: 'alert-a',
           facilityId: 'facility-a',
-          residentId: 'res-a',
           cameraId: 'cam-a',
           spaceId: 'space-a',
           type: 'fall',
@@ -180,32 +149,24 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           idempotencyKey: 'idem-a',
         },
         {
+          id: 'alert-c',
+          facilityId: 'facility-a',
+          cameraId: 'cam-a',
+          spaceId: 'space-a',
+          type: 'fall',
+          probability: 0.93,
+          detectedAt: new Date('2026-06-13T00:00:30.000Z'),
+          idempotencyKey: 'idem-c',
+        },
+        {
           id: 'alert-b',
           facilityId: 'facility-b',
-          residentId: 'res-b',
           cameraId: 'cam-b',
           spaceId: 'space-b',
           type: 'fall',
           probability: 0.92,
           detectedAt: new Date('2026-06-13T00:01:00.000Z'),
           idempotencyKey: 'idem-b',
-        },
-      ],
-    });
-
-    await direct.residentStatus.createMany({
-      data: [
-        {
-          id: 'status-a',
-          facilityId: 'facility-a',
-          residentId: 'res-a',
-          sourceId: 'cam-a',
-        },
-        {
-          id: 'status-b',
-          facilityId: 'facility-b',
-          residentId: 'res-b',
-          sourceId: 'cam-b',
         },
       ],
     });
@@ -229,19 +190,10 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
   });
 
   it('fails closed for tenant model access without an application facility context', async () => {
-    await expect(prisma.db.resident.findMany()).rejects.toBeInstanceOf(
-      MissingTenantContextError,
-    );
-    await expect(prisma.db.guardian.findMany()).rejects.toBeInstanceOf(
-      MissingTenantContextError,
-    );
     await expect(prisma.db.camera.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
     await expect(prisma.db.alert.findMany()).rejects.toBeInstanceOf(
-      MissingTenantContextError,
-    );
-    await expect(prisma.db.residentStatus.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
     await expect(prisma.db.floor.findMany()).rejects.toBeInstanceOf(
@@ -259,7 +211,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
 
   it('does not treat an unbound request TenantContext as a set_config-bound database context', async () => {
     await expect(
-      TenantContext.run('facility-a', () => prisma.db.resident.findMany()),
+      TenantContext.run('facility-a', () => prisma.db.camera.findMany()),
     ).rejects.toBeInstanceOf(MissingTenantContextError);
   });
 
@@ -269,11 +221,9 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     >`
       SELECT table_name, count::int
       FROM (
-        SELECT 'Resident' AS table_name, COUNT(*) AS count FROM residents
-        UNION ALL SELECT 'Guardian', COUNT(*) FROM guardians
+        SELECT 'Alert' AS table_name, COUNT(*) AS count FROM alerts
         UNION ALL SELECT 'Camera', COUNT(*) FROM cameras
-        UNION ALL SELECT 'Alert', COUNT(*) FROM alerts
-        UNION ALL SELECT 'ResidentStatus', COUNT(*) FROM resident_statuses
+        UNION ALL SELECT 'Space', COUNT(*) FROM spaces
       ) denied_counts
       ORDER BY table_name
     `;
@@ -282,14 +232,13 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     expect(rows).toEqual([
       { table_name: 'Alert', count: 0 },
       { table_name: 'Camera', count: 0 },
-      { table_name: 'Guardian', count: 0 },
-      { table_name: 'Resident', count: 0 },
-      { table_name: 'ResidentStatus', count: 0 },
+      { table_name: 'Space', count: 0 },
     ]);
 
     await expect(
       prisma.db.$executeRaw`
-        INSERT INTO residents (id, facility_id, name) VALUES ('raw-unscoped', 'facility-a', 'Raw Unscoped')
+        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+        VALUES ('raw-unscoped', 'facility-a', 'cam-a', 'space-a', 'fall', 0.5, now(), 'raw-unscoped-key')
       `,
     ).rejects.toThrow();
   });
@@ -298,54 +247,44 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     const result = await prisma.withFacilityContext(
       'facility-a',
       async (tx) => {
-        const residents = await tx.resident.findMany({
+        const alerts = await tx.alert.findMany({
           orderBy: { id: 'asc' },
         });
-        const rawResidents = await tx.$queryRaw<IdRow[]>`
-        SELECT id FROM residents ORDER BY id
+        const rawAlerts = await tx.$queryRaw<IdRow[]>`
+        SELECT id FROM alerts ORDER BY id
       `;
-        const rawCrossFacilityResidents = await tx.$queryRaw<IdRow[]>`
-        SELECT id FROM residents WHERE facility_id = 'facility-b'
+        const rawCrossFacilityAlerts = await tx.$queryRaw<IdRow[]>`
+        SELECT id FROM alerts WHERE facility_id = 'facility-b'
       `;
         const rawCrossFacilityUpdate = await tx.$executeRaw`
-        UPDATE residents SET name = name WHERE facility_id = 'facility-b'
+        UPDATE alerts SET type = type WHERE facility_id = 'facility-b'
       `;
         return {
-          residentIds: residents.map((resident) => resident.id),
-          rawResidentIds: rawResidents.map((resident) => resident.id),
-          rawCrossFacilityResidentIds: rawCrossFacilityResidents.map(
-            (resident) => resident.id,
+          alertIds: alerts.map((alert) => alert.id),
+          rawAlertIds: rawAlerts.map((alert) => alert.id),
+          rawCrossFacilityAlertIds: rawCrossFacilityAlerts.map(
+            (alert) => alert.id,
           ),
           rawCrossFacilityUpdate,
-          crossResident: await tx.resident.findUnique({
-            where: { id: 'res-b' },
-          }),
-          crossGuardian: await tx.guardian.findUnique({
-            where: { id: 'guard-b' },
-          }),
           crossCamera: await tx.camera.findUnique({ where: { id: 'cam-b' } }),
           crossAlert: await tx.alert.findUnique({ where: { id: 'alert-b' } }),
-          crossStatus: await tx.residentStatus.findUnique({
-            where: { id: 'status-b' },
-          }),
+          crossSpace: await tx.space.findUnique({ where: { id: 'space-b' } }),
           // KakaoIdentity is NOT RLS-protected — excluded from TENANT_MODELS and RLS.
           // crossKakaoIdentity is intentionally omitted here.
         };
       },
     );
 
-    expect(result.residentIds).toEqual(['res-a', 'res-c']);
-    expect(result.rawResidentIds).toEqual(['res-a', 'res-c']);
-    expect(result.rawCrossFacilityResidentIds).toEqual([]);
+    expect(result.alertIds).toEqual(['alert-a', 'alert-c']);
+    expect(result.rawAlertIds).toEqual(['alert-a', 'alert-c']);
+    expect(result.rawCrossFacilityAlertIds).toEqual([]);
     expect(result.rawCrossFacilityUpdate).toBe(0);
-    expect(result.crossResident).toBeNull();
-    expect(result.crossGuardian).toBeNull();
     expect(result.crossCamera).toBeNull();
     expect(result.crossAlert).toBeNull();
-    expect(result.crossStatus).toBeNull();
+    expect(result.crossSpace).toBeNull();
 
     const afterTransaction = await prisma.db.$queryRaw<CountRow[]>`
-      SELECT COUNT(*)::int AS count FROM residents
+      SELECT COUNT(*)::int AS count FROM alerts
     `;
     expect(afterTransaction[0]?.count).toBe(0);
   });
@@ -356,12 +295,13 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         'facility-a',
         async (tx) =>
           tx.$executeRaw`
-          INSERT INTO residents (id, facility_id, name) VALUES ('raw-wrong-facility', 'facility-b', 'Raw Wrong Facility')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('raw-wrong-facility', 'facility-b', 'cam-b', 'space-b', 'fall', 0.5, now(), 'raw-wrong-facility-key')
         `,
       ),
     ).rejects.toThrow();
 
-    const rows = await direct.resident.findMany({
+    const rows = await direct.alert.findMany({
       where: { id: 'raw-wrong-facility' },
     });
     expect(rows).toEqual([]);
@@ -370,35 +310,22 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
   it('keeps concurrent facility-bound transactions isolated', async () => {
     const [facilityAIds, facilityBIds] = await Promise.all([
       prisma.withFacilityContext('facility-a', async (tx) =>
-        (await tx.resident.findMany({ orderBy: { id: 'asc' } })).map(
-          (resident) => resident.id,
+        (await tx.alert.findMany({ orderBy: { id: 'asc' } })).map(
+          (alert) => alert.id,
         ),
       ),
       prisma.withFacilityContext('facility-b', async (tx) =>
-        (await tx.resident.findMany({ orderBy: { id: 'asc' } })).map(
-          (resident) => resident.id,
+        (await tx.alert.findMany({ orderBy: { id: 'asc' } })).map(
+          (alert) => alert.id,
         ),
       ),
     ]);
 
-    expect(facilityAIds).toEqual(['res-a', 'res-c']);
-    expect(facilityBIds).toEqual(['res-b']);
+    expect(facilityAIds).toEqual(['alert-a', 'alert-c']);
+    expect(facilityBIds).toEqual(['alert-b']);
   });
 
   it('rejects cross-facility composite foreign keys at the database layer', async () => {
-    await expectPrismaCode(
-      direct.guardian.create({
-        data: {
-          id: 'bad-guardian',
-          facilityId: 'facility-b',
-          residentId: 'res-a',
-          name: 'Bad Guardian',
-          phone: '010-9999-0001',
-        },
-      }),
-      'P2003',
-    );
-
     await expectPrismaCode(
       direct.camera.create({
         data: {
@@ -416,36 +343,12 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         data: {
           id: 'bad-alert',
           facilityId: 'facility-b',
-          residentId: 'res-b',
           cameraId: 'cam-a',
           spaceId: 'space-b',
           type: 'fall',
           probability: 0.99,
           detectedAt: new Date('2026-06-13T00:02:00.000Z'),
           idempotencyKey: 'bad-alert',
-        },
-      }),
-      'P2003',
-    );
-
-    await expectPrismaCode(
-      direct.residentStatus.create({
-        data: {
-          id: 'bad-status',
-          facilityId: 'facility-b',
-          residentId: 'res-c',
-        },
-      }),
-      'P2003',
-    );
-
-    await expectPrismaCode(
-      direct.residentStatus.create({
-        data: {
-          id: 'bad-status-source',
-          facilityId: 'facility-a',
-          residentId: 'res-c',
-          sourceId: 'cam-b',
         },
       }),
       'P2003',

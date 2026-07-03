@@ -22,11 +22,8 @@ describe('placement RLS tenant isolation', () => {
     await app.$connect();
 
     await direct.alert.deleteMany();
-    await direct.residentStatus.deleteMany();
-    await direct.residentAssignment.deleteMany();
+    await direct.event.deleteMany();
     await direct.camera.deleteMany();
-    await direct.guardian.deleteMany();
-    await direct.resident.deleteMany();
     await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
@@ -43,12 +40,6 @@ describe('placement RLS tenant isolation', () => {
       data: [
         { id: 'floor-a', facilityId: 'rls-a', name: 'A Floor', orderIndex: 1 },
         { id: 'floor-b', facilityId: 'rls-b', name: 'B Floor', orderIndex: 1 },
-      ],
-    });
-    await direct.resident.createMany({
-      data: [
-        { id: 'resident-a', facilityId: 'rls-a', name: 'A Resident' },
-        { id: 'resident-b', facilityId: 'rls-b', name: 'B Resident' },
       ],
     });
     await direct.space.createMany({
@@ -184,8 +175,8 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('alert-cross-space', 'rls-a', 'resident-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('alert-cross-space', 'rls-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key')
         `;
       }),
     ).rejects.toThrow();
@@ -194,8 +185,8 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, resident_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('alert-cross-camera', 'rls-a', 'resident-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
+          VALUES ('alert-cross-camera', 'rls-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key')
         `;
       }),
     ).rejects.toThrow();

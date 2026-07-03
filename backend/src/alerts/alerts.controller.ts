@@ -42,12 +42,11 @@ export class AlertsController {
   @ApiOperation({
     summary: 'List alerts',
     description:
-      'Returns facility-scoped alerts with optional status, resident, sequence, and limit filters for dashboard history and reconciliation.',
+      'Returns facility-scoped alerts with optional status, sequence, and limit filters for dashboard history and reconciliation.',
   })
   @Get()
   list(
     @Req() req: RequestWithAuth,
-    @Query('residentId') residentId?: string,
     @Query('status') status?: string,
     @Query('afterSeq') afterSeq?: string,
     @Query('beforeSeq') beforeSeq?: string,
@@ -55,7 +54,6 @@ export class AlertsController {
   ) {
     const validStatus = parseAlertStatus(status);
     return this.service.list(requireFacilityId(req), {
-      residentId,
       status: validStatus,
       afterSeq: afterSeq ? BigInt(afterSeq) : undefined,
       beforeSeq: beforeSeq ? BigInt(beforeSeq) : undefined,

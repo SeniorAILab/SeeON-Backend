@@ -89,12 +89,10 @@ describe('AlertsService (read-model)', () => {
     expect(alert.update).not.toHaveBeenCalled();
   });
 
-  it('serializes room-only alerts with null resident + lifecycle fields', async () => {
+  it('serializes room-only alerts with lifecycle fields', async () => {
     const { service, alert } = setup();
     alert.findUnique.mockResolvedValue(
       alertRow({
-        residentId: null,
-        resident: null,
         space: { name: 'Room 101' },
       }),
     );
@@ -102,8 +100,6 @@ describe('AlertsService (read-model)', () => {
     const result = await service.getOne('facility-1', 'a1');
 
     expect(result).toMatchObject({
-      residentId: null,
-      resident: null,
       spaceId: 'space-1',
       room: 'Room 101',
       ackedById: null,
@@ -117,7 +113,6 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     alertSeq: 1n,
     id: 'a1',
     facilityId: 'facility-1',
-    residentId: 'r1',
     cameraId: 'c1',
     spaceId: 'space-1',
     type: 'fall',
@@ -132,7 +127,6 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     resolvedAt: null,
     resolvedBy: null,
     createdAt: new Date('2026-06-22T00:00:01Z'),
-    resident: { name: '홍길동' },
     space: { name: 'Room 101' },
     ...overrides,
   };
