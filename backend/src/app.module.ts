@@ -5,8 +5,6 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { AuthModule } from './auth/auth.module.js';
-import { ResidentsModule } from './residents/residents.module.js';
-import { GuardiansModule } from './guardians/guardians.module.js';
 import { CamerasModule } from './cameras/cameras.module.js';
 
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -36,8 +34,6 @@ import { validateBackendEnv } from './config/env-validation.js';
     }),
     PrismaModule,
     AuthModule,
-    ResidentsModule,
-    GuardiansModule,
     CamerasModule,
     AlertsModule,
     DashboardModule,
