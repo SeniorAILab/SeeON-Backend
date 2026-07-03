@@ -192,7 +192,6 @@ function alertEvent(alertSeq: bigint, id: string) {
     alertSeq,
     id,
     facilityId: 'facility-1',
-    residentId: null,
     cameraId: 'cam_sp_201',
     spaceId: 'sp_201',
     room: '201호',
@@ -202,7 +201,6 @@ function alertEvent(alertSeq: bigint, id: string) {
     snapshotKey: null,
     detectedAt: new Date(`2026-06-22T00:00:0${alertSeq}.000Z`),
     status: 'NEW',
-    resident: null,
   };
 }
 

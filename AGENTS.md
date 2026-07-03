@@ -1,8 +1,8 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-07-03
-**Commit:** d1e8f77
-**Branch:** detached HEAD
+**Commit:** 6c57c8f
+**Branch:** codex/agents-init-deep-refresh
 
 ## Overview
 
@@ -15,7 +15,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, Prisma DB
 ├── ml/             # uv Python ML API, worker, training, demo, contracts
 ├── front/          # Vite React facility dashboard and operator UI
-├── docs/           # architecture, rules, API/domain docs, research, exec plans
+├── docs/           # architecture, rules, domain docs, research, exec plans
 ├── scripts/        # git/backend/env/release/deploy guards and automation
 ├── .github/        # CI and PR gates
 └── AGENTS.md       # root router only; scoped rules override below their dirs
@@ -94,7 +94,7 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 - Do not let frontend components call backend APIs directly; use `front/src/services/**`.
 - Do not call mock/stub/fake harnesses E2E. Real E2E claims must pass production code paths; see `docs/architecture.md`, `docs/rules/code-stability.md`, and `ml/AGENTS.md` for the owning detail.
 - Do not duplicate guard logic across CI, package scripts, or hooks. `scripts/**` owns reusable automation.
-- Do not bury new standing rules in scratch notes or memory. Promote them to `docs/rules/**`, `docs/api/**`, `docs/domain/**`, `docs/decisions/**`, or the scoped `AGENTS.md`.
+- Do not bury new standing rules in scratch notes or memory. Promote them to `docs/rules/**`, `docs/domain/**`, `docs/decisions/**`, or the scoped `AGENTS.md`.
 
 ## Notes
 

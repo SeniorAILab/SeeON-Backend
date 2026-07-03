@@ -28,12 +28,6 @@ enum AlertStatus {
   RESOLVED
 }
 
-enum ResidentState {
-  NORMAL
-  WARNING
-  FALL
-}
-
 enum SpaceType {
   ROOM
   HALLWAY
@@ -54,12 +48,6 @@ enum ZoneType {
   AREA
 }
 
-enum Level {
-  LOW
-  MEDIUM
-  HIGH
-}
-
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
@@ -72,18 +60,17 @@ model Facility {
   phone                      String?  @map("phone")
   createdAt                  DateTime @default(now()) @map("created_at")
 
-  users            User[]
-  residents        Resident[]
-  cameras          Camera[]
-  alerts           Alert[]
-  guardians        Guardian[]
-  residentStatuses ResidentStatus[]
-  floors           Floor[]
-  spaces           Space[]
-  zones            Zone[]
-  assignments      ResidentAssignment[]
-  events           Event[]
-  kakaoIdentities  KakaoIdentity[]
+  users User[]
+
+  cameras Camera[]
+  alerts  Alert[]
+
+  floors Floor[]
+  spaces Space[]
+  zones  Zone[]
+
+  events          Event[]
+  kakaoIdentities KakaoIdentity[]
 
   @@map("facilities")
 }
@@ -130,70 +117,7 @@ model KakaoIdentity {
   @@map("kakao_identities")
 }
 
-
 // ─── Tenant tables (facilityId-scoped, RLS ENABLE + FORCE) ────────────────────────
-
-/// Facility resident. RLS-protected. Composite unique (facilityId, id) allows
-/// child tables to reference residents via composite FKs (F9).
-model Resident {
-  id               String   @id @default(cuid())
-  facilityId       String   @map("facility_id")
-  name             String
-  isActive         Boolean  @default(true) @map("is_active")
-  gender           String?
-  age              Int?
-  diagnosisTags    String[] @default([]) @map("diagnosis_tags")
-  fallRiskBaseline Level?   @map("fall_risk_baseline")
-  isFocusResident  Boolean  @default(false) @map("is_focus_resident")
-  createdAt        DateTime @default(now()) @map("created_at")
-
-  facility       Facility             @relation(fields: [facilityId], references: [id])
-  guardians      Guardian[]
-  alerts         Alert[]
-  residentStatus ResidentStatus?
-  assignments    ResidentAssignment[]
-
-  @@unique([facilityId, id])
-  @@map("residents")
-}
-
-model ResidentAssignment {
-  id         String    @id @default(cuid())
-  facilityId String    @map("facility_id")
-  residentId String    @map("resident_id")
-  spaceId    String    @map("space_id")
-  zoneId     String?   @map("zone_id")
-  startedAt  DateTime  @default(now()) @map("started_at")
-  endedAt    DateTime? @map("ended_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-
-  facility Facility @relation(fields: [facilityId], references: [id])
-  resident Resident @relation(fields: [facilityId, residentId], references: [facilityId, id])
-  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  zone     Zone?    @relation(fields: [facilityId, zoneId], references: [facilityId, id])
-
-  @@unique([facilityId, id])
-  @@index([facilityId, residentId])
-  @@map("resident_assignments")
-}
-
-/// Emergency contact. Composite FK (facilityId, residentId) → Resident(facilityId, id)
-/// prevents a guardian from being linked to a resident in a different facility (F9).
-model Guardian {
-  id         String   @id @default(cuid())
-  facilityId String   @map("facility_id")
-  residentId String   @map("resident_id")
-  name       String
-  /// Phone is stored in full; masked in UI layer.
-  phone      String
-  relation   String?
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  facility Facility @relation(fields: [facilityId], references: [id])
-  resident Resident @relation(fields: [facilityId, residentId], references: [facilityId, id])
-
-  @@map("guardians")
-}
 
 /// Camera. Composite unique (facilityId, id) supports composite FK
 /// references from Alert and Event rows.
@@ -206,11 +130,11 @@ model Camera {
   online     Boolean   @default(false)
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  facility         Facility         @relation(fields: [facilityId], references: [id])
-  space            Space            @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  alerts           Alert[]
-  residentStatuses ResidentStatus[] @relation("ResidentStatusSource")
-  events           Event[]
+  facility Facility @relation(fields: [facilityId], references: [id])
+  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  alerts   Alert[]
+
+  events Event[]
 
   @@unique([facilityId, id])
   @@unique([facilityId, label])
@@ -221,11 +145,11 @@ model Camera {
 /// Alert event log. alertSeq (BIGSERIAL) is the SSE Last-Event-ID ordering key.
 /// Composite unique (facilityId, idempotencyKey) prevents exact-duplicate ingestion.
 model Alert {
-  id             String      @id @default(cuid())
+  id         String @id @default(cuid())
   /// Monotonically increasing within the table; used as SSE Last-Event-ID.
-  alertSeq       BigInt      @default(autoincrement()) @map("alert_seq")
-  facilityId     String      @map("facility_id")
-  residentId     String?     @map("resident_id")
+  alertSeq   BigInt @default(autoincrement()) @map("alert_seq")
+  facilityId String @map("facility_id")
+
   /// Nullable: alert may originate from an unconfigured camera path.
   cameraId       String?     @map("camera_id")
   spaceId        String      @map("space_id")
@@ -244,17 +168,17 @@ model Alert {
   resolvedById   String?     @map("resolved_by_id")
   resolvedAt     DateTime?   @map("resolved_at")
 
-  facility    Facility  @relation(fields: [facilityId], references: [id])
-  resident    Resident? @relation(fields: [facilityId, residentId], references: [facilityId, id])
+  facility Facility @relation(fields: [facilityId], references: [id])
+
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
-  camera      Camera?   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space       Space     @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originEvent Event?    @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
+  camera      Camera? @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space       Space   @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originEvent Event?  @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
   /// Lifecycle audit actors. Simple nullable FK → users(id); same-facility is an
   /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
-  ackedBy     User?     @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  resolvedBy  User?     @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  ackedBy     User?   @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resolvedBy  User?   @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([facilityId, idempotencyKey])
   @@index([facilityId, alertSeq])
@@ -290,28 +214,6 @@ model Event {
   @@map("events")
 }
 
-/// Current status read model for each resident. One row per resident.
-/// Composite FK (facilityId, residentId) → Resident(facilityId, id) (F9).
-model ResidentStatus {
-  id           String        @id @default(cuid())
-  residentId   String        @unique @map("resident_id")
-  facilityId   String        @map("facility_id")
-  state        ResidentState @default(NORMAL)
-  lastSeenAt   DateTime?     @map("last_seen_at")
-  cameraOnline Boolean       @default(false) @map("camera_online")
-  /// Nullable cameraId. Composite FK (facilityId, sourceId) → Camera(facilityId, id)
-  /// prevents dangling or cross-facility status source references.
-  sourceId     String?       @map("source_id")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-
-  facility Facility @relation(fields: [facilityId], references: [id])
-  resident Resident @relation(fields: [facilityId, residentId], references: [facilityId, id])
-  source   Camera?  @relation("ResidentStatusSource", fields: [facilityId, sourceId], references: [facilityId, id])
-
-  @@unique([facilityId, residentId])
-  @@map("resident_statuses")
-}
-
 /// Facility floor. RLS-protected. Composite unique (facilityId, id) supports
 /// composite child FKs from spaces.
 model Floor {
@@ -342,12 +244,12 @@ model Space {
   assignedStaff String?   @map("assigned_staff")
   createdAt     DateTime  @default(now()) @map("created_at")
 
-  facility    Facility             @relation(fields: [facilityId], references: [id])
-  floor       Floor                @relation(fields: [facilityId, floorId], references: [facilityId, id])
-  zones       Zone[]
-  assignments ResidentAssignment[]
-  camera      Camera?
-  alerts      Alert[]
+  facility Facility @relation(fields: [facilityId], references: [id])
+  floor    Floor    @relation(fields: [facilityId, floorId], references: [facilityId, id])
+  zones    Zone[]
+
+  camera Camera?
+  alerts Alert[]
 
   events Event[]
 
@@ -366,9 +268,8 @@ model Zone {
   orderIndex Int      @map("order_index")
   createdAt  DateTime @default(now()) @map("created_at")
 
-  facility    Facility             @relation(fields: [facilityId], references: [id])
-  space       Space                @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  assignments ResidentAssignment[]
+  facility Facility @relation(fields: [facilityId], references: [id])
+  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
 
   @@unique([facilityId, spaceId, name])
   @@unique([facilityId, id])

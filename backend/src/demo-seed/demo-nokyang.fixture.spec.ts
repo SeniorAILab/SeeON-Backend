@@ -1,14 +1,10 @@
 import {
   NOKYANG_ADMIN_EMAIL,
   NOKYANG_FACILITY_ID,
-  nokyangAssignments,
   nokyangCameras,
   nokyangFacility,
   nokyangFloors,
-  nokyangGuardians,
-  nokyangResidents,
   nokyangSpaces,
-  nokyangStatuses,
   nokyangZones,
   verifyUniqueIds,
 } from '../../prisma/demo-nokyang.fixture';
@@ -29,11 +25,7 @@ describe('nokyang demo fixture', () => {
       'fl_4f',
     ]);
     expect(nokyangSpaces).toHaveLength(54);
-    expect(nokyangResidents).toHaveLength(5);
-    expect(nokyangAssignments).toHaveLength(5);
-    expect(nokyangGuardians).toHaveLength(5);
     expect(nokyangCameras).toHaveLength(5);
-    expect(nokyangStatuses).toHaveLength(5);
   });
 
   it('creates 침대A and 침대B zones only for room spaces', () => {
@@ -63,13 +55,7 @@ describe('nokyang demo fixture', () => {
     expect(() => verifyUniqueIds('floors', nokyangFloors)).not.toThrow();
     expect(() => verifyUniqueIds('spaces', nokyangSpaces)).not.toThrow();
     expect(() => verifyUniqueIds('zones', nokyangZones)).not.toThrow();
-    expect(() => verifyUniqueIds('residents', nokyangResidents)).not.toThrow();
-    expect(() =>
-      verifyUniqueIds('assignments', nokyangAssignments),
-    ).not.toThrow();
-    expect(() => verifyUniqueIds('guardians', nokyangGuardians)).not.toThrow();
     expect(() => verifyUniqueIds('cameras', nokyangCameras)).not.toThrow();
-    expect(() => verifyUniqueIds('statuses', nokyangStatuses)).not.toThrow();
 
     expect(() =>
       verifyUniqueIds('duplicate sample', [{ id: 'dup' }, { id: 'dup' }]),

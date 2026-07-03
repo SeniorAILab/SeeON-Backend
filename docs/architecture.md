@@ -126,7 +126,7 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local default 8080 from `.env.local`).
 
-`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Placement/resident CRUD and room-centric alert/event read models are implemented. The former status, space-status, resident-risk-summary, alert-rule, and detection-event skeleton routes are removed from the current controller surface.
+`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, camera, alert) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Room-centric alert/event read models are implemented. The former status, space-status, resident-risk-summary, alert-rule, and detection-event skeleton routes are removed from the current controller surface.
 
 Key responsibilities:
 
