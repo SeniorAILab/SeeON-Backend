@@ -1,6 +1,6 @@
 import {
   NOKYANG_ADMIN_EMAIL,
-  NOKYANG_FACILITY_ID,
+  NOKYANG_FACILITY_CODE,
   nokyangCameras,
   nokyangFacility,
   nokyangFloors,
@@ -11,10 +11,15 @@ import {
 describe('nokyang demo fixture', () => {
   it('defines the 녹양역점 facility identity and graph shape', () => {
     expect(nokyangFacility).toMatchObject({
-      id: NOKYANG_FACILITY_ID,
-      code: 'happy-nokyang',
+      code: NOKYANG_FACILITY_CODE,
       name: '행복한요양원 녹양역점',
     });
+    expect('id' in nokyangFacility).toBe(false);
+    expect(nokyangFloors.every((floor) => !('facilityId' in floor))).toBe(true);
+    expect(nokyangSpaces.every((space) => !('facilityId' in space))).toBe(true);
+    expect(nokyangCameras.every((camera) => !('facilityId' in camera))).toBe(
+      true,
+    );
     expect(NOKYANG_ADMIN_EMAIL).toBe('nokyang-admin@example.com');
     expect(nokyangFloors.map((floor) => floor.id)).toEqual([
       'fl_b1',

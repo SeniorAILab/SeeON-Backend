@@ -1,6 +1,6 @@
 import { SpaceType } from '@prisma/client';
 
-export const NOKYANG_FACILITY_ID = 'fac_happy_nokyang';
+export const NOKYANG_FACILITY_CODE = 'happy-nokyang';
 export const NOKYANG_ADMIN_EMAIL = 'nokyang-admin@example.com';
 
 export type FixtureItem = {
@@ -31,7 +31,6 @@ export function verifyUniqueIds(
 }
 
 export type FacilitySeed = {
-  readonly id: string;
   readonly name: string;
   readonly code: string;
   readonly address: string;
@@ -41,14 +40,12 @@ export type FacilitySeed = {
 
 export type FloorSeed = {
   readonly id: string;
-  readonly facilityId: string;
   readonly name: string;
   readonly orderIndex: number;
 };
 
 export type SpaceSeed = {
   readonly id: string;
-  readonly facilityId: string;
   readonly floorId: string;
   readonly name: string;
   readonly type: SpaceType;
@@ -58,13 +55,11 @@ export type SpaceSeed = {
 
 export type CameraSeed = {
   readonly id: string;
-  readonly facilityId: string;
   readonly spaceId: string;
   readonly label: string;
 };
 
 export const nokyangFacility: FacilitySeed = {
-  id: NOKYANG_FACILITY_ID,
   name: '행복한요양원 녹양역점',
   code: 'happy-nokyang',
   address: '경기도 의정부시 녹양로 12',
@@ -73,11 +68,11 @@ export const nokyangFacility: FacilitySeed = {
 };
 
 export const nokyangFloors: readonly FloorSeed[] = [
-  { id: 'fl_b1', facilityId: NOKYANG_FACILITY_ID, name: 'B1', orderIndex: 0 },
-  { id: 'fl_1f', facilityId: NOKYANG_FACILITY_ID, name: '1F', orderIndex: 1 },
-  { id: 'fl_2f', facilityId: NOKYANG_FACILITY_ID, name: '2F', orderIndex: 2 },
-  { id: 'fl_3f', facilityId: NOKYANG_FACILITY_ID, name: '3F', orderIndex: 3 },
-  { id: 'fl_4f', facilityId: NOKYANG_FACILITY_ID, name: '4F', orderIndex: 4 },
+  { id: 'fl_b1', name: 'B1', orderIndex: 0 },
+  { id: 'fl_1f', name: '1F', orderIndex: 1 },
+  { id: 'fl_2f', name: '2F', orderIndex: 2 },
+  { id: 'fl_3f', name: '3F', orderIndex: 3 },
+  { id: 'fl_4f', name: '4F', orderIndex: 4 },
 ];
 
 function space(
@@ -90,7 +85,6 @@ function space(
 ): SpaceSeed {
   return {
     id,
-    facilityId: NOKYANG_FACILITY_ID,
     floorId,
     name,
     type,
@@ -201,31 +195,26 @@ export const nokyangSpaces: readonly SpaceSeed[] = [
 export const nokyangCameras: readonly CameraSeed[] = [
   {
     id: 'cam_sp_202',
-    facilityId: NOKYANG_FACILITY_ID,
     spaceId: 'sp_202',
     label: 'CAM-2F-202',
   },
   {
     id: 'cam_sp_203',
-    facilityId: NOKYANG_FACILITY_ID,
     spaceId: 'sp_203',
     label: 'CAM-2F-203',
   },
   {
     id: 'cam_sp_301',
-    facilityId: NOKYANG_FACILITY_ID,
     spaceId: 'sp_301',
     label: 'CAM-3F-301',
   },
   {
     id: 'cam_sp_305',
-    facilityId: NOKYANG_FACILITY_ID,
     spaceId: 'sp_305',
     label: 'CAM-3F-305',
   },
   {
     id: 'cam_sp_401',
-    facilityId: NOKYANG_FACILITY_ID,
     spaceId: 'sp_401',
     label: 'CAM-4F-401',
   },
