@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
 import {
   NOKYANG_ADMIN_EMAIL,
-  NOKYANG_FACILITY_ID,
+  NOKYANG_FACILITY_CODE,
   nokyangCameras,
   nokyangFacility,
   nokyangFloors,
@@ -22,9 +22,9 @@ const prisma = new PrismaClient({
   datasources: { db: { url: directUrl } },
 });
 
-async function upsertFacility(tx: Prisma.TransactionClient): Promise<void> {
-  await tx.facility.upsert({
-    where: { id: NOKYANG_FACILITY_ID },
+async function upsertFacility(tx: Prisma.TransactionClient): Promise<string> {
+  const facility = await tx.facility.upsert({
+    where: { code: nokyangFacility.code },
     update: {
       address: nokyangFacility.address,
       businessRegistrationNumber: nokyangFacility.businessRegistrationNumber,
@@ -34,6 +34,7 @@ async function upsertFacility(tx: Prisma.TransactionClient): Promise<void> {
     },
     create: nokyangFacility,
   });
+  return facility.id;
 }
 
 const NOKYANG_STAFF_EMAIL = 'staff@happy-nokyang.local';
@@ -53,12 +54,15 @@ function readNokyangDemoPassword(env: NodeJS.ProcessEnv): string {
   );
 }
 
-async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
+async function upsertAdmin(
+  tx: Prisma.TransactionClient,
+  facilityId: string,
+): Promise<void> {
   const passwordHash = await hashPassword(readNokyangDemoPassword(process.env));
   await tx.user.upsert({
     where: { email: NOKYANG_ADMIN_EMAIL },
     update: {
-      facilityId: NOKYANG_FACILITY_ID,
+      facilityId,
       nickname: '녹양역점 관리자',
       passwordHash,
       role: 'ADMIN',
@@ -66,7 +70,7 @@ async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
     },
     create: {
       email: NOKYANG_ADMIN_EMAIL,
-      facilityId: NOKYANG_FACILITY_ID,
+      facilityId,
       id: 'user_nokyang_admin',
       nickname: '녹양역점 관리자',
       passwordHash,
@@ -75,12 +79,15 @@ async function upsertAdmin(tx: Prisma.TransactionClient): Promise<void> {
   });
 }
 
-async function upsertStaff(tx: Prisma.TransactionClient): Promise<void> {
+async function upsertStaff(
+  tx: Prisma.TransactionClient,
+  facilityId: string,
+): Promise<void> {
   const passwordHash = await hashPassword(readNokyangDemoPassword(process.env));
   await tx.user.upsert({
     where: { email: NOKYANG_STAFF_EMAIL },
     update: {
-      facilityId: NOKYANG_FACILITY_ID,
+      facilityId,
       nickname: '녹양역점 요양보호사',
       passwordHash,
       role: 'STAFF',
@@ -88,7 +95,7 @@ async function upsertStaff(tx: Prisma.TransactionClient): Promise<void> {
     },
     create: {
       email: NOKYANG_STAFF_EMAIL,
-      facilityId: NOKYANG_FACILITY_ID,
+      facilityId,
       id: 'user_nokyang_staff',
       nickname: '녹양역점 요양보호사',
       passwordHash,
@@ -99,21 +106,22 @@ async function upsertStaff(tx: Prisma.TransactionClient): Promise<void> {
 
 async function upsertFacilityGraph(
   tx: Prisma.TransactionClient,
+  facilityId: string,
 ): Promise<void> {
   for (const floor of nokyangFloors) {
     await tx.floor.upsert({
-      where: { facilityId_id: { facilityId: floor.facilityId, id: floor.id } },
+      where: { facilityId_id: { facilityId, id: floor.id } },
       update: {
         name: floor.name,
         orderIndex: floor.orderIndex,
       },
-      create: floor,
+      create: { ...floor, facilityId },
     });
   }
 
   for (const space of nokyangSpaces) {
     await tx.space.upsert({
-      where: { facilityId_id: { facilityId: space.facilityId, id: space.id } },
+      where: { facilityId_id: { facilityId, id: space.id } },
       update: {
         assignedStaff: space.assignedStaff,
         capacity: space.capacity,
@@ -122,17 +130,20 @@ async function upsertFacilityGraph(
         name: space.name,
         type: space.type,
       },
-      create: space,
+      create: { ...space, facilityId },
     });
   }
 }
 
-async function upsertCameras(tx: Prisma.TransactionClient): Promise<void> {
+async function upsertCameras(
+  tx: Prisma.TransactionClient,
+  facilityId: string,
+): Promise<void> {
   for (const camera of nokyangCameras) {
     await tx.camera.upsert({
       where: {
         facilityId_id: {
-          facilityId: camera.facilityId,
+          facilityId,
           id: camera.id,
         },
       },
@@ -143,33 +154,35 @@ async function upsertCameras(tx: Prisma.TransactionClient): Promise<void> {
       },
       create: {
         ...camera,
+        facilityId,
         online: true,
       },
     });
   }
 }
 
-async function seedNokyangDemo(): Promise<void> {
+async function seedNokyangDemo(): Promise<string> {
   verifyNokyangFixture();
   return prisma.$transaction(async (tx) => {
-    await upsertFacility(tx);
-    await upsertAdmin(tx);
-    await upsertStaff(tx);
-    await upsertFacilityGraph(tx);
-    await upsertCameras(tx);
+    const facilityId = await upsertFacility(tx);
+    await upsertAdmin(tx, facilityId);
+    await upsertStaff(tx, facilityId);
+    await upsertFacilityGraph(tx, facilityId);
+    await upsertCameras(tx, facilityId);
+    return facilityId;
   });
 }
 
 async function main(): Promise<void> {
   console.log('Seeding 녹양역점 demo data...');
-  await seedNokyangDemo();
+  const facilityId = await seedNokyangDemo();
   console.log(
-    `Facility: ${nokyangFacility.name} (${NOKYANG_FACILITY_ID}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Cameras=${nokyangCameras.length}`,
+    `Facility: ${nokyangFacility.name} (${facilityId}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Cameras=${nokyangCameras.length}`,
   );
   if (process.env.SEED_BIND_DEMO_USERS === 'true') {
     const bindResult = await bindDemoUsers(prisma, parseBindArgs([]));
     console.log(
-      `Bound ${bindResult.boundCount} Kakao demo user(s) to ${NOKYANG_FACILITY_ID}.`,
+      `Bound ${bindResult.boundCount} Kakao demo user(s) to code ${NOKYANG_FACILITY_CODE} (${facilityId}).`,
     );
   } else {
     console.log(
