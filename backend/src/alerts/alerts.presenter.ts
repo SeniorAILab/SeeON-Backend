@@ -11,8 +11,26 @@ export const alertInclude = {
   resolvedBy: { select: { nickname: true } },
 } satisfies Prisma.AlertInclude;
 
+export const alertDetailInclude = {
+  ...alertInclude,
+  notes: {
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      note: true,
+      createdById: true,
+      authorRole: true,
+      createdAt: true,
+    },
+  },
+} satisfies Prisma.AlertInclude;
+
 export type AlertWithContext = Prisma.AlertGetPayload<{
   include: typeof alertInclude;
+}>;
+
+export type AlertDetailWithContext = Prisma.AlertGetPayload<{
+  include: typeof alertDetailInclude;
 }>;
 
 export function presentAlert(alert: AlertWithContext) {
@@ -36,5 +54,18 @@ export function presentAlert(alert: AlertWithContext) {
     resolvedBy: alert.resolvedBy,
     space: alert.space,
     createdAt: alert.createdAt,
+  };
+}
+
+export function presentAlertDetail(alert: AlertDetailWithContext) {
+  return {
+    ...presentAlert(alert),
+    notes: alert.notes.map((note) => ({
+      id: note.id,
+      note: note.note,
+      createdBy: note.createdById,
+      authorRole: note.authorRole,
+      createdAt: note.createdAt,
+    })),
   };
 }

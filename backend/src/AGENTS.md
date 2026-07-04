@@ -12,7 +12,7 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | Event ingestion | `events/` | Versioned Event API intake. |
 | Alert policy | `alerts/` | Policy, repositories, ports, Kakao fan-out. |
 | Auth/session | `auth/` | Email/password, Kakao session auth. |
-| Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs; zone routes nest under `spaces/:spaceId/zones` (ADR). |
+| Facility topology | `facilities/`, `floors/`, `spaces/`, `cameras/` | Room-centric placement APIs. |
 | Shared Nest pieces | `common/`, `config/`, `prisma/` | Filters, config, PrismaService wrapper. |
 
 ## Conventions

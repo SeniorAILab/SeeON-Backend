@@ -43,11 +43,6 @@ enum SpaceType {
   ETC
 }
 
-enum ZoneType {
-  BED
-  AREA
-}
-
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
@@ -64,10 +59,10 @@ model Facility {
 
   cameras Camera[]
   alerts  Alert[]
+  alertNotes AlertNote[]
 
   floors Floor[]
   spaces Space[]
-  zones  Zone[]
 
   events          Event[]
   kakaoIdentities KakaoIdentity[]
@@ -96,6 +91,7 @@ model User {
   deliveryAttempts DeliveryAttempt[]
   ackedAlerts      Alert[]           @relation("AlertAckedBy")
   resolvedAlerts   Alert[]           @relation("AlertResolvedBy")
+  alertNotes     AlertNote[]       @relation("AlertNoteCreatedBy")
 
   @@map("users")
 }
@@ -179,6 +175,7 @@ model Alert {
   /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
   ackedBy     User?   @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
   resolvedBy  User?   @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  notes       AlertNote[]
 
   @@unique([facilityId, idempotencyKey])
   @@index([facilityId, alertSeq])
@@ -187,6 +184,25 @@ model Alert {
   @@index([ackedById])
   @@index([resolvedById])
   @@map("alerts")
+}
+
+model AlertNote {
+  id         String   @id @default(cuid())
+  facilityId String   @map("facility_id")
+  alertId    String   @map("alert_id")
+  note       String
+  createdById String? @map("created_by_id")
+  authorRole Role     @map("author_role")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  facility  Facility @relation(fields: [facilityId], references: [id])
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy User?    @relation("AlertNoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([facilityId, alertId, createdAt])
+  @@index([alertId])
+  @@index([createdById])
+  @@map("alert_notes")
 }
 
 /// Immutable ML event SSOT. RLS-protected and append-only for the app role.
@@ -246,8 +262,6 @@ model Space {
 
   facility Facility @relation(fields: [facilityId], references: [id])
   floor    Floor    @relation(fields: [facilityId, floorId], references: [facilityId, id])
-  zones    Zone[]
-
   camera Camera?
   alerts Alert[]
 
@@ -256,24 +270,6 @@ model Space {
   @@unique([facilityId, floorId, name])
   @@unique([facilityId, id])
   @@map("spaces")
-}
-
-/// Named area inside a space.
-model Zone {
-  id         String   @id @default(cuid())
-  facilityId String   @map("facility_id")
-  spaceId    String   @map("space_id")
-  name       String
-  type       ZoneType
-  orderIndex Int      @map("order_index")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  facility Facility @relation(fields: [facilityId], references: [id])
-  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-
-  @@unique([facilityId, spaceId, name])
-  @@unique([facilityId, id])
-  @@map("zones")
 }
 
 // ─── Backend-owned alert outbox (issue #29) ─────────────────────────────────

@@ -1,4 +1,4 @@
-import { SpaceType, ZoneType } from '@prisma/client';
+import { SpaceType } from '@prisma/client';
 
 export const NOKYANG_FACILITY_ID = 'fac_happy_nokyang';
 export const NOKYANG_ADMIN_EMAIL = 'nokyang-admin@example.com';
@@ -54,15 +54,6 @@ export type SpaceSeed = {
   readonly type: SpaceType;
   readonly capacity: number;
   readonly assignedStaff: string;
-};
-
-export type ZoneSeed = {
-  readonly id: string;
-  readonly facilityId: string;
-  readonly spaceId: string;
-  readonly name: string;
-  readonly type: ZoneType;
-  readonly orderIndex: number;
 };
 
 export type CameraSeed = {
@@ -207,27 +198,6 @@ export const nokyangSpaces: readonly SpaceSeed[] = [
   ...residentialFloor(4, '윤케어'),
 ];
 
-export const nokyangZones: readonly ZoneSeed[] = nokyangSpaces
-  .filter((item) => item.type === SpaceType.ROOM)
-  .flatMap((item) => [
-    {
-      id: `zone_${item.id}_a`,
-      facilityId: NOKYANG_FACILITY_ID,
-      spaceId: item.id,
-      name: '침대A',
-      type: ZoneType.BED,
-      orderIndex: 0,
-    },
-    {
-      id: `zone_${item.id}_b`,
-      facilityId: NOKYANG_FACILITY_ID,
-      spaceId: item.id,
-      name: '침대B',
-      type: ZoneType.BED,
-      orderIndex: 1,
-    },
-  ]);
-
 export const nokyangCameras: readonly CameraSeed[] = [
   {
     id: 'cam_sp_202',
@@ -264,6 +234,5 @@ export const nokyangCameras: readonly CameraSeed[] = [
 export function verifyNokyangFixture(): void {
   verifyUniqueIds('floors', nokyangFloors);
   verifyUniqueIds('spaces', nokyangSpaces);
-  verifyUniqueIds('zones', nokyangZones);
   verifyUniqueIds('cameras', nokyangCameras);
 }

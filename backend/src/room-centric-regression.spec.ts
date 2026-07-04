@@ -1,4 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import type { App } from 'supertest/types';
+
+import { AppModule } from './app.module';
+import { configureVersionedTestApp } from '../test/helpers/versioned-app';
 
 type CountRow = { count: number };
 type NullableColumnRow = { column_name: string; is_nullable: 'YES' | 'NO' };
@@ -6,6 +13,7 @@ type NullableColumnRow = { column_name: string; is_nullable: 'YES' | 'NO' };
 describe('room-centric cross-slice regression invariants', () => {
   let direct: PrismaClient;
   let app: PrismaClient;
+  let httpApp: INestApplication;
 
   beforeAll(async () => {
     if (!process.env.DIRECT_URL || !process.env.DATABASE_URL) {
@@ -21,11 +29,15 @@ describe('room-centric cross-slice regression invariants', () => {
     });
     await direct.$connect();
     await app.$connect();
-
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    httpApp = moduleRef.createNestApplication();
+    configureVersionedTestApp(httpApp);
+    await httpApp.init();
     await direct.alert.deleteMany();
     await direct.event.deleteMany();
     await direct.camera.deleteMany();
-    await direct.zone.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
     await direct.facility.deleteMany({
@@ -92,8 +104,15 @@ describe('room-centric cross-slice regression invariants', () => {
   });
 
   afterAll(async () => {
+    await httpApp.close();
     await app.$disconnect();
     await direct.$disconnect();
+  });
+
+  it('does not mount removed space zones routes', async () => {
+    await request(httpApp.getHttpServer() as App)
+      .get('/api/v1/spaces/regression-space-a/zones')
+      .expect(404);
   });
 
   it('keeps Camera.spaceId and Alert.spaceId as NOT NULL room anchors', async () => {

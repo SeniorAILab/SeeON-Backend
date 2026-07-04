@@ -49,7 +49,6 @@ export class FloorsRepository {
       });
       const spaceIds = spaces.map((s) => s.id);
       if (spaceIds.length > 0) {
-        await tx.zone.deleteMany({ where: { spaceId: { in: spaceIds } } });
         await tx.space.deleteMany({ where: { floorId: id } });
       }
       await tx.floor.delete({ where: { id } });
