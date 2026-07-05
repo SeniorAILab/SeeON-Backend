@@ -27,17 +27,17 @@ flowchart LR
 
 
   cam -->|"RTSP stream"| worker
-  worker -->|"POST /api/v1/relay/{alerts,heartbeat}<br/>X-Edge-Relay-Token"| mlapi
-  mlapi -->|"POST /api/v1/events (+heartbeat)<br/>no-HMAC · camera_id"| backend
+  worker -->|"GET /api/v1/relay/config<br/>POST /api/v1/relay/{alerts,heartbeat}<br/>X-Edge-Relay-Token"| mlapi
+  mlapi -->|"GET /api/v1/ml-config/:facilityId<br/>POST /api/v1/events (+heartbeat)<br/>PUT /api/v1/events/:eventId/snapshot<br/>edge-LAN network trust"| backend
+  mlapi -->|"POST /api/v1/relay/restart<br/>Plane-O restart_epoch control"| mlapi
   backend -->|"Prisma · facility-scoped RLS"| db
-  backend -->|"Prisma event/alert/camera state"| db
+  backend -->|"Prisma event/alert/camera/config state"| db
   user -->|"HTTPS /api/v1/*<br/>session cookie"| front
   front -->|"reverse proxy /api"| backend
   backend -.->|"SSE /api/v1/dashboard/stream<br/>alert · alert-updated frames"| user
-  backend -.->|"ML_SERVING_URL pull seam<br/>dormant · ADR"| mlapi
 ```
 
-> 라이브 ingress는 `ml-api → backend POST /api/v1/events` 하나뿐이다. `ml-worker`는 backend를 직접 호출하지 않고 local `ml-api` relay만 부른다. SSE는 같은 nginx same-origin 프록시를 통해 backend가 브라우저로 push한다.
+> 라이브 ingress는 `ml-api → backend POST /api/v1/events` 하나뿐이다. `ml-worker`는 backend를 직접 호출하지 않고 local `ml-api` relay/config routes만 부른다. Backend is the config SSOT; `ml-api` pulls config and snapshots/events to backend, with no backend→ml-api/worker egress. SSE는 같은 nginx same-origin 프록시를 통해 backend가 브라우저로 push한다.
 
 ---
 
@@ -147,7 +147,7 @@ Independent uv project. Two distinct lifecycles share one project:
 | **Training** (batch) | `training/` (self-contained pose extraction + artifacts) | minutes–hours | manual / scheduled job    |
 | **Demo** (dev tool)  | `demo/app.py` (Streamlit)                      | interactive   | developer                 |
 
-`ml-api` exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. Prediction routes, including `POST /predict` and `POST /api/v1/debug/predict/*`, are removed. `ml-api` boots as a thin gateway (config → backend Event API gateway → heartbeat store → readiness); it does not load models, choose devices, assemble camera loops, or run worker runtime (ADR). `/api/v1/status` is derived from the relay-heartbeat store; production camera loops and classification run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json` inside worker-owned runners; model weights are gitignored and must be placed manually (or produced by training). See ADR for the `ml/models/` single-root layout.
+`ml-api` exposes unversioned probes `GET /health/live`, `GET /health/ready`, legacy `GET /health`, and versioned routes `GET /api/v1/status`, `GET /api/v1/models`, `GET /api/v1/relay/config`, `POST /api/v1/relay/restart`, `POST /api/v1/relay/alerts`, and `POST /api/v1/relay/heartbeat`. Prediction routes, including `POST /predict` and `POST /api/v1/debug/predict/*`, are removed. `ml-api` boots as a gateway (backend config pull → camera binding table → backend Event API gateway → heartbeat store → readiness); it does not load models, choose devices, assemble camera loops, or run worker runtime (ADR). `/api/v1/status` is derived from the relay-heartbeat store and includes relayed `config_version` when present; production camera loops and classification run in `ml-worker`. The fall runner loads `ml/models/fall/<model_type>/metadata.json` inside worker-owned runners; model weights are gitignored and must be placed manually (or produced by training). See ADR for the `ml/models/` single-root layout.
 
 Dependency boundaries are package-name based and enforced by `ml/tests/test_import_dependency_ladder.py`: `contracts`/`features` are shared pure foundations; live ML packages live under `worker/{sources,runners,perception,domains}`; `events` owns relay schemas/clients; `api` is an ML-free gateway; `training` imports only `contracts` and `features` from production packages. `ml-worker` owns live orchestration/state (there is no `runtime` package; ADR); `ml/core/` and `ml/util/` are removed.
 
@@ -163,21 +163,30 @@ Runs via: `pnpm dev:ml` → `uv run --directory ml uvicorn api.main:app --reload
      ▼
 [ml-worker]
  capture → pose → window → classify → domain fact
+     │  GET /api/v1/relay/config (X-Edge-Relay-Token; observes restart_epoch)
      │  POST /api/v1/relay/{alerts,heartbeat} (X-Edge-Relay-Token)
+     │  clean-exit status 0 when restart_epoch increases
      ▼
 [ml-api :8000 on edge]
- validates relay + camera inventory
+ validates relay + camera binding
+ pulls backend config at boot + per worker config request
+     │  GET /api/v1/ml-config/:facilityId
      │  POST /api/v1/events
+     │  PUT /api/v1/events/:eventId/snapshot
      │  POST /api/v1/events/heartbeat
      ▼
 [backend :8080]
  camera_id → facility/space ownership → event dedup sha256(cameraId|detectedAt|type)
+ MlFacilityConfig → config_version + facility night window
      │
-     ├──► [PostgreSQL] immutable Event SSOT + camera online/offline state + derived Alert
+     ├──► [PostgreSQL] immutable Event SSOT + audit columns + camera/config state + derived Alert
      └──► [SSE GET /api/v1/dashboard/stream] dashboard push
 ```
 
-The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; worker-produced probability is relayed through `ml-api` to the backend Event API as `confidence`. `ml-api` is the only edge process that calls the backend Event API and does not serve predictions. Backend resolves facility ownership, persists Events, updates camera online/offline state, writes dashboard Alerts for non-`detection_lost` events, and publishes SSE frames. Current ingest does not create delivery outbox rows or dispatch Kakao.
+The live path keeps ML edge-local: source decoding, pose inference, window feature extraction, domain evaluation, and heartbeat/alert fact creation happen in `ml-worker`; worker-produced probability is relayed through `ml-api` to the backend Event API as `confidence`. `ml-api` is the only edge process that calls the backend: it pulls backend-owned config, posts events/heartbeats, and uploads Event-created-first snapshots. The worker talks only to `ml-api` through `RELAY_URL`. Backend resolves facility ownership, persists Events and audit columns, updates camera online/offline state, writes dashboard Alerts for non-`detection_lost` events, and publishes SSE frames. Current ingest does not create delivery outbox rows or dispatch Kakao.
+Backend-owned config is pulled, never pushed: there is no backend→ml-api/worker egress. The worker persists last-known-good pulled config under `ML_WORKER_STATE_DIR` (default `/var/lib/ml-worker`) and uses precedence **pulled > LKG > YAML**; cold start with ml-api/backend unreachable boots from LKG when present, otherwise YAML. `restart_epoch` is a Plane-O directive exposed by `ml-api`; a worker that observes an increase over its boot value clean-exits with status `0`, and Compose `restart: unless-stopped` relaunches it. The night window is backend-owned on `MlFacilityConfig` as a facility-level policy and reaches the worker through pulled config.
+
+Phase-1 trust is edge-LAN network trust. Worker↔ml-api reuses `X-Edge-Relay-Token`; ml-api↔backend config/event/snapshot hops use the same no-HMAC network-trust posture as Event API ingress. `Camera.rtspUrl` is plaintext and write-only in browser/admin camera APIs, and it leaves the backend only in the ML config route. Phase-2 hardening covers at-rest RTSP encryption/rotation and dedicated config-service authentication.
 
 The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product frontend. It does not make `ml-api` a live prediction service.
 
@@ -188,13 +197,13 @@ The Streamlit demo (`ml/demo/app.py`) is a **developer tool**, not the product f
 | Concern | Owner | Rationale |
 | --- | --- | --- |
 | RTSP capture, pose, windowing, domain fact creation | **ML worker** (`ml/worker/`) | Edge device owns camera loops and raw video stays on-site |
-| Relay gateway and backend Event API egress | **ML API** (`ml/api/`, `ml/events/`) | Single backend-facing edge process; worker talks only to local `/api/v1/relay/*` |
+| Relay gateway, backend config pull, backend Event API egress, snapshot upload, restart directive | **ML API** (`ml/api/`, `ml/events/`) | Single backend-facing edge process; worker talks only to local `/api/v1/relay/*`; backend never calls into edge |
 | Fall probability score | **ML worker** (`ml/worker/`) | Worker-owned model/domain evaluation emits probability relayed as Event API `confidence` |
-| Facility/space ownership resolution | **Backend** | `camera_id` is resolved server-side; client-provided facility is ignored |
+| Facility/space ownership and ML config SSOT | **Backend** | `camera_id` is resolved server-side; `MlFacilityConfig` owns facility `config_version` and night window; client-provided facility is ignored |
 | Event persistence, deduplication, camera state, dashboard Alerts, SSE | **Backend** | Tenant ownership, durable state, and user-facing dashboard side effects |
 | Model versioning | **ML** (`models/fall/<model_type>/`) | Single-root layout (ADR); backend does not own model artifacts |
 
-ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides tenant ownership, persistence, event deduplication, camera online/offline state, and dashboard alert side effects. The backend does not re-threshold, cooldown, or hourly-cap Event API facts at ingest. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR and must not be described as the operating path.
+ML is intentionally edge-local and signal-only: `ml-worker` predicts and emits relay facts through `ml-api`; backend decides tenant ownership, config SSOT, persistence, event deduplication, camera online/offline state, and dashboard alert side effects. The backend does not re-threshold, cooldown, or hourly-cap Event API facts at ingest. The legacy backend-pull `ML_SERVING_URL` window-predict seam is dormant/removed from live topology by ADR and must not be described as the operating path.
 
 ---
 ## 상세 아키텍처 (deep dives)
@@ -266,7 +275,7 @@ pnpm backend:prisma:generate  # regenerate Prisma Client after schema changes
 
 The Compose stack mounts a named volume (`pgdata`) so data survives container restarts. Default local credentials (`fall`/`fall`) match `.env.local`; production overlays require `.env.host.prod`.
 
-**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm backend:db:up` is db-only with `.env.local` and is normally reached through `pnpm dev:backend`; daily dev is native hot reload via `pnpm dev:*`. `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` to `backend:8080` (same-origin); auth routes are `/api/v1/auth/*`. ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` pushes no-HMAC events to backend `POST /api/v1/events` through `API_BACKEND_EVENTS_URL`. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
+**Compose topology.** The host stack is `db` + `backend` + `front`, all in `compose.yaml` with `backend`/`front` behind the `full` profile, plus `compose.prod.yaml` as the prod overlay. `pnpm backend:db:up` is db-only with `.env.local` and is normally reached through `pnpm dev:backend`; daily dev is native hot reload via `pnpm dev:*`. `pnpm compose:local:up` brings up the whole local host stack with `.env.local`, and `pnpm compose:prod:up` brings up the same full host stack with `.env.host.prod`. There is no `compose.override.yaml`. `front` is a Vite SPA served by `nginx` that reverse-proxies `/api` to `backend:8080` (same-origin); auth routes are `/api/v1/auth/*`. ML is **not** in the host stack — it runs on the external edge device defined by `compose.edge.yaml` and `.env.edge.prod`: `ml-api` publishes `127.0.0.1:${ML_SERVING_PORT:-8000}:8000`, `ml-worker` reaches it over the Compose network at `RELAY_URL=http://ml-api:8000` with `API_EDGE_RELAY_TOKEN`, and `ml-api` is the only backend-facing edge process. `ml-api` pulls config from `API_BACKEND_CONFIG_URL` + `API_FACILITY_ID`, posts no-HMAC events to `API_BACKEND_EVENTS_URL`, uploads Event-created-first snapshots, and uses `API_CAMERA_INVENTORY` only as fallback inventory when the pull is unavailable. `ml-worker` persists LKG config under `ML_WORKER_STATE_DIR` on the edge volume. The backend `ML_SERVING_URL` pull seam stays dormant. DB backups: `scripts/db-backup.sh` (backup + restore procedure documented in its header).
 
 ---
 
