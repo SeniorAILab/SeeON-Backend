@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { bumpMlConfigVersion } from '../ml-config/ml-config.version.js';
 import type {
   CreateCameraRequestDto,
   UpdateCameraRequestDto,
@@ -53,14 +54,18 @@ export class CamerasService {
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
-        (tx: Prisma.TransactionClient) =>
-          tx.camera.create({
+        async (tx: Prisma.TransactionClient) => {
+          const camera = await tx.camera.create({
             data: {
               facilityId,
               label: dto.label.trim(),
               spaceId: dto.spaceId,
+              rtspUrl: dto.rtspUrl,
             },
-          }),
+          });
+          await bumpMlConfigVersion(tx, facilityId);
+          return camera;
+        },
       );
       return toCameraDto(camera);
     } catch (err: unknown) {
@@ -86,15 +91,19 @@ export class CamerasService {
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
-        (tx: Prisma.TransactionClient) =>
-          tx.camera.update({
+        async (tx: Prisma.TransactionClient) => {
+          const camera = await tx.camera.update({
             where: { id },
             data: {
               label: dto.label?.trim(),
               spaceId:
                 dto.spaceId === undefined ? undefined : dto.spaceId.trim(),
+              rtspUrl: dto.rtspUrl,
             },
-          }),
+          });
+          await bumpMlConfigVersion(tx, facilityId);
+          return camera;
+        },
       );
       return toCameraDto(camera);
     } catch (err: unknown) {
@@ -111,7 +120,11 @@ export class CamerasService {
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
-        (tx: Prisma.TransactionClient) => tx.camera.delete({ where: { id } }),
+        async (tx: Prisma.TransactionClient) => {
+          const camera = await tx.camera.delete({ where: { id } });
+          await bumpMlConfigVersion(tx, facilityId);
+          return camera;
+        },
       );
       return toCameraDto(camera);
     } catch (err: unknown) {

@@ -6,7 +6,7 @@ import type {
 import type { AlertWriterService } from '../alerts/alert-writer.service.js';
 import type { CamerasService } from '../cameras/cameras.service.js';
 
-const event = {
+const event: RecordedEventResult['event'] = {
   id: 'event-1',
   facilityId: 'facility-1',
   cameraId: 'camera-1',
@@ -17,6 +17,12 @@ const event = {
   dedupKey: 'dedup-1',
   createdAt: new Date('2026-06-26T00:00:01.000Z'),
   modifiedAt: new Date('2026-06-26T00:00:01.000Z'),
+  configVersion: null,
+  modelVersion: null,
+  detectorVersion: null,
+  operatingThreshold: null,
+  snapshotKey: null,
+  clockSource: null,
 };
 
 function setup(recordedEvent = event) {
@@ -48,7 +54,7 @@ describe('EventAlarmService', () => {
       cameraId: event.cameraId,
       type: event.type,
       detectedAt: event.detectedAt,
-      confidence: event.confidence,
+      confidence: event.confidence ?? undefined,
     });
 
     expect(writer.writeAlert).toHaveBeenCalledWith(
@@ -59,6 +65,24 @@ describe('EventAlarmService', () => {
         originEventId: event.id,
         type: event.type,
         probability: event.confidence,
+        snapshotKey: event.snapshotKey,
+      }),
+    );
+  });
+  it('propagates Event.snapshotKey to the derived Alert', async () => {
+    const eventWithSnapshot = { ...event, snapshotKey: 'events/event-1.jpg' };
+    const { service, writer } = setup(eventWithSnapshot);
+
+    await service.record({
+      cameraId: eventWithSnapshot.cameraId,
+      type: eventWithSnapshot.type,
+      detectedAt: eventWithSnapshot.detectedAt,
+      confidence: eventWithSnapshot.confidence ?? undefined,
+    });
+
+    expect(writer.writeAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snapshotKey: 'events/event-1.jpg',
       }),
     );
   });
@@ -71,7 +95,7 @@ describe('EventAlarmService', () => {
       cameraId: detectionLost.cameraId,
       type: detectionLost.type,
       detectedAt: detectionLost.detectedAt,
-      confidence: detectionLost.confidence,
+      confidence: detectionLost.confidence ?? undefined,
     });
 
     expect(cameras.recordOffline).toHaveBeenCalledWith(

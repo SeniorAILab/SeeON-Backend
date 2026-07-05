@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type Event } from '@prisma/client';
 import * as crypto from 'crypto';
 import { CamerasService } from '../cameras/cameras.service.js';
@@ -12,6 +12,12 @@ export interface RecordEventInput {
   type: string;
   detectedAt: Date;
   confidence?: number;
+  configVersion?: number;
+  modelVersion?: string;
+  detectorVersion?: string;
+  operatingThreshold?: number;
+  snapshotKey?: string | null;
+  clockSource?: string;
 }
 
 export interface RecordedEventResult {
@@ -54,6 +60,15 @@ export class EventRecorderService {
               confidence: input.confidence,
               detectedAt,
               dedupKey,
+              configVersion: input.configVersion ?? null,
+              modelVersion: input.modelVersion ?? null,
+              detectorVersion: input.detectorVersion ?? null,
+              operatingThreshold: input.operatingThreshold ?? null,
+              // PR-B0(f): snapshot key is ALWAYS server-derived via
+              // PUT /events/:eventId/snapshot. Any client-supplied snapshot_key
+              // is ignored at create; that upload route is the sole non-null setter.
+              snapshotKey: null,
+              clockSource: input.clockSource ?? null,
             },
           }),
       );
@@ -71,6 +86,33 @@ export class EventRecorderService {
       );
       return { event: existing, duplicate: true };
     }
+  }
+
+  async resolveForSnapshot(
+    eventId: string,
+  ): Promise<{ id: string; facilityId: string }> {
+    const rows = await this.prisma.$queryRaw<
+      { id: string; facilityId: string }[]
+    >`SELECT id, facility_id AS "facilityId" FROM get_event_for_snapshot(${eventId})`;
+
+    const event = rows[0];
+    if (!event) throw new NotFoundException('unknown_event');
+
+    return event;
+  }
+
+  async persistSnapshotKey(
+    facilityId: string,
+    eventId: string,
+    snapshotKey: string,
+  ): Promise<void> {
+    await this.prisma.$queryRaw`SELECT set_event_snapshot_key(${eventId}, ${facilityId}, ${snapshotKey})`;
+    await this.prisma.withFacilityContext(facilityId, (tx) =>
+      tx.alert.updateMany({
+        where: { originEventId: eventId },
+        data: { snapshotKey },
+      }),
+    );
   }
 
   async list(facilityId: string): Promise<Event[]> {

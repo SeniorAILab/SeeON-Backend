@@ -67,7 +67,25 @@ model Facility {
   events          Event[]
   kakaoIdentities KakaoIdentity[]
 
+  mlConfig        MlFacilityConfig?
   @@map("facilities")
+}
+
+/// Facility-level ML runtime config SSOT (Plane-P). One row per facility.
+/// Not RLS-protected (facility-scoped via explicit facilityId, like Facility); holds
+/// no PHI/credentials. configVersion is a monotonic opaque token bumped in the same
+/// transaction as any camera or night-window mutation (frozen contract PR-B0 c/d).
+model MlFacilityConfig {
+  facilityId    String   @id @map("facility_id")
+  configVersion Int      @default(0) @map("config_version")
+  nightStart    String   @default("21:00") @map("night_start")
+  nightEnd      String   @default("07:00") @map("night_end")
+  tz            String   @default("Asia/Seoul")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  facility Facility @relation(fields: [facilityId], references: [id])
+
+  @@map("ml_facility_config")
 }
 
 /// Platform identity root. facilityId is nullable until onboarding completes; auth code
@@ -122,6 +140,7 @@ model Camera {
   facilityId String    @map("facility_id")
   spaceId    String    @map("space_id")
   label      String
+  rtspUrl   String?   @map("rtsp_url")
   lastSeenAt DateTime? @map("last_seen_at")
   online     Boolean   @default(false)
   createdAt  DateTime  @default(now()) @map("created_at")
@@ -207,16 +226,22 @@ model AlertNote {
 
 /// Immutable ML event SSOT. RLS-protected and append-only for the app role.
 model Event {
-  id         String   @id @default(cuid())
-  facilityId String   @map("facility_id")
-  cameraId   String   @map("camera_id")
-  spaceId    String   @map("space_id")
-  type       String
-  confidence Float?
-  detectedAt DateTime @map("detected_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  modifiedAt DateTime @updatedAt @map("modified_at")
-  dedupKey   String   @map("dedup_key")
+  id                 String   @id @default(cuid())
+  facilityId         String   @map("facility_id")
+  cameraId           String   @map("camera_id")
+  spaceId            String   @map("space_id")
+  type               String
+  confidence         Float?
+  detectedAt         DateTime @map("detected_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  modifiedAt         DateTime @updatedAt @map("modified_at")
+  dedupKey           String   @map("dedup_key")
+  configVersion      Int?    @map("config_version")
+  modelVersion       String? @map("model_version")
+  detectorVersion    String? @map("detector_version")
+  operatingThreshold Float?  @map("operating_threshold")
+  snapshotKey        String? @map("snapshot_key")
+  clockSource        String? @map("clock_source")
 
   facility     Facility @relation(fields: [facilityId], references: [id])
   camera       Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])

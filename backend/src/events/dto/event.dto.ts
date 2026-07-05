@@ -3,6 +3,12 @@ export interface RecordEventRequestDto {
   type: string;
   detected_at: string;
   confidence?: number;
+  config_version?: number;
+  model_version?: string;
+  detector_version?: string;
+  operating_threshold?: number;
+  snapshot_key?: string | null;
+  clock_source?: string;
   facility_id?: string;
 }
 export interface RecordHeartbeatRequestDto {
@@ -28,4 +34,10 @@ export interface EventResponseDto {
   detectedAt: Date;
   createdAt: Date;
   modifiedAt: Date;
+  configVersion: number | null;
+  modelVersion: string | null;
+  detectorVersion: string | null;
+  operatingThreshold: number | null;
+  snapshotKey: string | null;
+  clockSource: string | null;
 }

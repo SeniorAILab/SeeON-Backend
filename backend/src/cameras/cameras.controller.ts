@@ -59,6 +59,7 @@ export class CamerasController {
     return this.service.create(requireFacilityId(req), {
       label: body.label,
       spaceId: body.spaceId,
+      rtspUrl: body.rtspUrl,
     });
   }
 
