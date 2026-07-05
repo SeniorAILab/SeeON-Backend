@@ -36,7 +36,8 @@ ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test
 ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test
 API_BACKEND_EVENTS_URL=https://senai.example.com/api/v1/events
 API_EDGE_RELAY_TOKEN=edge-relay-token-minimum-32-chars
-API_CAMERA_INVENTORY=[{"camera_id":"cam-edge-01","facility_id":"facility-prod","resident_id":"resident-prod"}]
+API_BACKEND_CONFIG_URL=https://senai.example.com/api/v1/ml-config
+API_FACILITY_ID=facility-prod
 `;
 
 const forbiddenHostFragments = [
@@ -200,7 +201,9 @@ function verify() {
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test',
         'API_BACKEND_EVENTS_URL: https://senai.example.com/api/v1/events',
         'API_EDGE_RELAY_TOKEN: edge-relay-token-minimum-32-chars',
-        'API_CAMERA_INVENTORY:',
+        'API_BACKEND_CONFIG_URL: https://senai.example.com/api/v1/ml-config',
+        'API_FACILITY_ID: facility-prod',
+        'ML_WORKER_STATE_DIR: /var/lib/ml-worker',
         'RELAY_TOKEN: edge-relay-token-minimum-32-chars',
       ]);
     },
