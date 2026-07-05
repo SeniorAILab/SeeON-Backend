@@ -23,14 +23,13 @@ import { FacilityContextInterceptor } from '../auth/facility-context.interceptor
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertsService } from './alerts.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
-
-const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
-const SNAPSHOT_EXTENSIONS = new Map<string, string>([
-  ['image/jpeg', 'jpg'],
-  ['image/png', 'png'],
-  ['application/octet-stream', 'bin'],
-  ['multipart/form-data', 'bin'],
-]);
+import {
+  MAX_SNAPSHOT_BYTES,
+  SNAPSHOT_EXTENSIONS,
+  readRequestBody,
+  resolveSnapshotPath,
+  snapshotRoot,
+} from '../common/snapshot-storage.js';
 
 @Controller({ path: 'alerts', version: '1' })
 @ApiCookieAuth()
@@ -155,36 +154,6 @@ export class AlertsController {
   }
 }
 
-function snapshotRoot(): string {
-  return process.env.SNAPSHOT_DIR ?? path.join(process.cwd(), 'snapshots');
-}
-
-function resolveSnapshotPath(snapshotDir: string, snapshotKey: string): string {
-  const root = path.resolve(snapshotDir);
-  const resolved = path.resolve(root, snapshotKey);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new FacilityScopedNotFoundException('snapshot');
-  }
-  return resolved;
-}
-
-async function readRequestBody(
-  req: RequestWithAuth,
-  maxBytes: number,
-): Promise<Buffer> {
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for await (const chunk of req as AsyncIterable<Buffer | string>) {
-    const buffer: Uint8Array =
-      typeof chunk === 'string' ? Buffer.from(chunk) : new Uint8Array(chunk);
-    total += buffer.length;
-    if (total > maxBytes) {
-      throw new BadRequestException('Snapshot exceeds size limit');
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
 
 function requireFacilityId(req: RequestWithAuth): string {
   const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;

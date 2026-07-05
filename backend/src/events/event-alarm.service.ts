@@ -36,7 +36,7 @@ export class EventAlarmService {
       spaceId: result.event.spaceId,
       type: result.event.type,
       probability: result.event.confidence ?? 0,
-      snapshotKey: null,
+      snapshotKey: result.event.snapshotKey,
       detectedAt: result.event.detectedAt,
       idempotencyKey: result.event.dedupKey,
       originEventId: result.event.id,
