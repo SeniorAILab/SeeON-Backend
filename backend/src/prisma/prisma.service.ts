@@ -12,16 +12,12 @@ import { TenantContext } from '../common/tenant-context.js';
 // a facility context exists (facilityId may be NULL). RLS default-deny would block those
 // rows. KakaoIdentity is gated at the app layer, like User.
 const TENANT_MODELS = new Set([
-  'Resident',
-  'ResidentAssignment',
-  'Guardian',
   'Camera',
   'Alert',
+  'AlertNote',
   'Event',
-  'ResidentStatus',
   'Floor',
   'Space',
-  'Zone',
 ]);
 
 // ─── PrismaService ────────────────────────────────────────────────────────────

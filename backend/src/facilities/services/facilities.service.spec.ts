@@ -65,7 +65,7 @@ describe('FacilitiesService', () => {
     await service.update('facility-session', {
       name: 'New Name',
       code: 'evil',
-    });
+    } as unknown as Parameters<FacilitiesService['update']>[1]);
     expect(repository.updateByFacilityId).toHaveBeenCalledWith(
       'facility-session',
       { name: 'New Name', address: undefined, phone: undefined },

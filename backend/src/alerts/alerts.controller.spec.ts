@@ -5,8 +5,9 @@ import { AlertsController } from './alerts.controller';
 
 function setup() {
   const resolve = jest.fn().mockResolvedValue({ id: 'a1', status: 'RESOLVED' });
-  const service = { resolve } as unknown as AlertsService;
-  return { controller: new AlertsController(service), resolve };
+  const addNote = jest.fn().mockResolvedValue({ id: 'n1', note: 'checked' });
+  const service = { resolve, addNote } as unknown as AlertsService;
+  return { controller: new AlertsController(service), resolve, addNote };
 }
 
 function req(user: Record<string, unknown> | undefined): RequestWithAuth {
@@ -22,6 +23,23 @@ describe('AlertsController lifecycle routes', () => {
     );
     expect(resolve).toHaveBeenCalledWith('facility-1', 'a1', 'user-2');
     expect(result).toMatchObject({ status: 'RESOLVED' });
+  });
+
+  it('addNote passes facility, actor id, and role snapshot', async () => {
+    const { controller, addNote } = setup();
+    const result = await controller.addNote(
+      req({ id: 'user-2', facilityId: 'facility-1', role: 'STAFF' }),
+      'a1',
+      { note: 'checked' },
+    );
+    expect(addNote).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'a1',
+      note: 'checked',
+      actorUserId: 'user-2',
+      actorRole: 'STAFF',
+    });
+    expect(result).toMatchObject({ note: 'checked' });
   });
 
   it('rejects when the session has no facility context', () => {

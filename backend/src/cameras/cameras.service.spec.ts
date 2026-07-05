@@ -6,7 +6,10 @@ import { CamerasService } from './cameras.service';
 
 type CameraCreateArg = {
   data: {
+    facilityId: string;
+    label: string;
     spaceId: string;
+    rtspUrl?: string | null;
   };
 };
 
@@ -17,6 +20,10 @@ type CameraDelegate = {
   update: jest.Mock;
   delete: jest.Mock;
 };
+type MlFacilityConfigDelegate = {
+  upsert: jest.Mock;
+};
+
 
 function setup() {
   const camera: CameraDelegate = {
@@ -26,13 +33,21 @@ function setup() {
     update: jest.fn(),
     delete: jest.fn(),
   };
+  const mlFacilityConfig: MlFacilityConfigDelegate = {
+    upsert: jest.fn(),
+  };
   const prisma = {
     withFacilityContext: jest.fn(
-      (_facilityId: string, cb: (tx: { camera: CameraDelegate }) => unknown) =>
-        cb({ camera }),
+      (
+        _facilityId: string,
+        cb: (tx: {
+          camera: CameraDelegate;
+          mlFacilityConfig: MlFacilityConfigDelegate;
+        }) => unknown,
+      ) => cb({ camera, mlFacilityConfig }),
     ),
   } as unknown as PrismaService;
-  return { service: new CamerasService(prisma), camera };
+  return { service: new CamerasService(prisma), camera, mlFacilityConfig };
 }
 
 const fullCamera = {
@@ -43,6 +58,7 @@ const fullCamera = {
   lastSeenAt: null,
   online: false,
   createdAt: new Date('2026-06-16T00:00:00.000Z'),
+  rtspUrl: 'rtsp://example.internal/stream',
 };
 
 describe('CamerasService', () => {
@@ -81,6 +97,118 @@ describe('CamerasService', () => {
     }
     expect(result.spaceId).toBe('space-1');
     expect(result).not.toHaveProperty('residentId');
+  });
+  it('persists rtspUrl on creation without returning it', async () => {
+    const { service, camera } = setup();
+    camera.create.mockResolvedValue(fullCamera);
+
+    const result = await service.create('facility-1', {
+      label: 'Room 1',
+      spaceId: 'space-1',
+      rtspUrl: 'rtsp://user:pass@camera.local/live',
+    });
+
+    expect(camera.create.mock.calls[0][0].data).toMatchObject({
+      rtspUrl: 'rtsp://user:pass@camera.local/live',
+    });
+    expect(result).not.toHaveProperty('rtspUrl');
+  });
+
+  it('bumps ml config version inside the create transaction', async () => {
+    const { service, camera, mlFacilityConfig } = setup();
+    camera.create.mockResolvedValue(fullCamera);
+
+    await service.create('facility-1', {
+      label: 'Room 1',
+      spaceId: 'space-1',
+    });
+
+    expect(mlFacilityConfig.upsert).toHaveBeenCalledWith({
+      where: { facilityId: 'facility-1' },
+      create: { facilityId: 'facility-1', configVersion: 1 },
+      update: { configVersion: { increment: 1 } },
+    });
+  });
+
+  it('persists rtspUrl on update without returning it', async () => {
+    const { service, camera } = setup();
+    camera.findUnique.mockResolvedValue(fullCamera);
+    camera.update.mockResolvedValue(fullCamera);
+
+    const result = await service.update('facility-1', 'c1', {
+      rtspUrl: 'rtsp://user:pass@camera.local/updated',
+    });
+
+    expect(camera.update.mock.calls[0][0].data).toMatchObject({
+      rtspUrl: 'rtsp://user:pass@camera.local/updated',
+    });
+    expect(result).not.toHaveProperty('rtspUrl');
+  });
+
+  it('bumps ml config version inside the update transaction', async () => {
+    const { service, camera, mlFacilityConfig } = setup();
+    camera.findUnique.mockResolvedValue(fullCamera);
+    camera.update.mockResolvedValue(fullCamera);
+
+    await service.update('facility-1', 'c1', { label: 'Updated' });
+
+    expect(mlFacilityConfig.upsert).toHaveBeenCalledWith({
+      where: { facilityId: 'facility-1' },
+      create: { facilityId: 'facility-1', configVersion: 1 },
+      update: { configVersion: { increment: 1 } },
+    });
+  });
+
+  it('excludes rtspUrl from list and getOne responses', async () => {
+    const { service, camera } = setup();
+    camera.findMany.mockResolvedValue([fullCamera]);
+    camera.findUnique.mockResolvedValue(fullCamera);
+
+    await expect(service.list('facility-1')).resolves.toEqual([
+      {
+        id: 'c1',
+        facilityId: 'facility-1',
+        spaceId: 'space-1',
+        label: 'Room 1',
+        lastSeenAt: null,
+        online: false,
+        createdAt: fullCamera.createdAt,
+      },
+    ]);
+    await expect(service.getOne('facility-1', 'c1')).resolves.not.toHaveProperty(
+      'rtspUrl',
+    );
+  });
+
+  it('does not log rtspUrl during create or update', async () => {
+    const { service, camera } = setup();
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    camera.findUnique.mockResolvedValue(fullCamera);
+    camera.create.mockResolvedValue(fullCamera);
+    camera.update.mockResolvedValue(fullCamera);
+
+    try {
+      await service.create('facility-1', {
+        label: 'Room 1',
+        spaceId: 'space-1',
+        rtspUrl: 'rtsp://user:pass@camera.local/create',
+      });
+      await service.update('facility-1', 'c1', {
+        rtspUrl: 'rtsp://user:pass@camera.local/update',
+      });
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    for (const spy of [logSpy, warnSpy, errorSpy]) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain('rtsp://');
+      }
+    }
   });
 
   it('throws NotFound when getOne misses', async () => {
@@ -129,5 +257,19 @@ describe('CamerasService', () => {
     await expect(service.remove('facility-1', 'c1')).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  it('bumps ml config version inside the remove transaction', async () => {
+    const { service, camera, mlFacilityConfig } = setup();
+    camera.findUnique.mockResolvedValue(fullCamera);
+    camera.delete.mockResolvedValue(fullCamera);
+
+    await service.remove('facility-1', 'c1');
+
+    expect(mlFacilityConfig.upsert).toHaveBeenCalledWith({
+      where: { facilityId: 'facility-1' },
+      create: { facilityId: 'facility-1', configVersion: 1 },
+      update: { configVersion: { increment: 1 } },
+    });
   });
 });

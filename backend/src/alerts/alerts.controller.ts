@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
   HttpCode,
   Param,
+  Post,
   Put,
   Patch,
   Query,
@@ -22,15 +24,15 @@ import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertsService } from './alerts.service.js';
+import { CreateAlertNoteRequestDto } from './dto/alert-note.dto.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
-
-const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024;
-const SNAPSHOT_EXTENSIONS = new Map<string, string>([
-  ['image/jpeg', 'jpg'],
-  ['image/png', 'png'],
-  ['application/octet-stream', 'bin'],
-  ['multipart/form-data', 'bin'],
-]);
+import {
+  MAX_SNAPSHOT_BYTES,
+  SNAPSHOT_EXTENSIONS,
+  readRequestBody,
+  resolveSnapshotPath,
+  snapshotRoot,
+} from '../common/snapshot-storage.js';
 
 @Controller({ path: 'alerts', version: '1' })
 @ApiCookieAuth()
@@ -42,12 +44,11 @@ export class AlertsController {
   @ApiOperation({
     summary: 'List alerts',
     description:
-      'Returns facility-scoped alerts with optional status, resident, sequence, and limit filters for dashboard history and reconciliation.',
+      'Returns facility-scoped alerts with optional status, sequence, and limit filters for dashboard history and reconciliation.',
   })
   @Get()
   list(
     @Req() req: RequestWithAuth,
-    @Query('residentId') residentId?: string,
     @Query('status') status?: string,
     @Query('afterSeq') afterSeq?: string,
     @Query('beforeSeq') beforeSeq?: string,
@@ -55,7 +56,6 @@ export class AlertsController {
   ) {
     const validStatus = parseAlertStatus(status);
     return this.service.list(requireFacilityId(req), {
-      residentId,
       status: validStatus,
       afterSeq: afterSeq ? BigInt(afterSeq) : undefined,
       beforeSeq: beforeSeq ? BigInt(beforeSeq) : undefined,
@@ -70,6 +70,30 @@ export class AlertsController {
   @Get(':id')
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.getOne(requireFacilityId(req), id);
+  }
+
+  @ApiOperation({
+    summary: 'Add an alert note',
+    description:
+      'Appends a facility-scoped action note to an alert with the current user and role snapshotted.',
+  })
+  @Post(':id/notes')
+  @HttpCode(201)
+  addNote(
+    @Req() req: RequestWithAuth,
+    @Param('id') id: string,
+    @Body() body: CreateAlertNoteRequestDto,
+  ) {
+    if (typeof body.note !== 'string' || body.note.trim().length === 0) {
+      throw new BadRequestException('note is required');
+    }
+    return this.service.addNote({
+      facilityId: requireFacilityId(req),
+      alertId: id,
+      note: body.note,
+      actorUserId: requireUserId(req),
+      actorRole: requireAuthorRole(req),
+    });
   }
 
   @ApiOperation({
@@ -155,36 +179,6 @@ export class AlertsController {
   }
 }
 
-function snapshotRoot(): string {
-  return process.env.SNAPSHOT_DIR ?? path.join(process.cwd(), 'snapshots');
-}
-
-function resolveSnapshotPath(snapshotDir: string, snapshotKey: string): string {
-  const root = path.resolve(snapshotDir);
-  const resolved = path.resolve(root, snapshotKey);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new FacilityScopedNotFoundException('snapshot');
-  }
-  return resolved;
-}
-
-async function readRequestBody(
-  req: RequestWithAuth,
-  maxBytes: number,
-): Promise<Buffer> {
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for await (const chunk of req as AsyncIterable<Buffer | string>) {
-    const buffer: Uint8Array =
-      typeof chunk === 'string' ? Buffer.from(chunk) : new Uint8Array(chunk);
-    total += buffer.length;
-    if (total > maxBytes) {
-      throw new BadRequestException('Snapshot exceeds size limit');
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
 
 function requireFacilityId(req: RequestWithAuth): string {
   const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
@@ -196,4 +190,14 @@ function requireUserId(req: RequestWithAuth): string {
   const userId = req.user?.id;
   if (!userId) throw new ForbiddenException('Session user required');
   return userId;
+}
+
+function requireAuthorRole(req: RequestWithAuth): 'ADMIN' | 'STAFF' {
+  const role = req.user?.role;
+  if (role !== 'ADMIN' && role !== 'STAFF') {
+    throw new ForbiddenException(
+      'Alert notes require an ADMIN or STAFF session',
+    );
+  }
+  return role;
 }

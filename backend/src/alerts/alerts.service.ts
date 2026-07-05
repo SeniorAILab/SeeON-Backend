@@ -4,10 +4,14 @@ import type { AlertStatusDto } from './dto/alert-status.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import { AlertWriterService } from './alert-writer.service.js';
-import { alertInclude, presentAlert } from './alerts.presenter.js';
+import {
+  alertDetailInclude,
+  alertInclude,
+  presentAlert,
+  presentAlertDetail,
+} from './alerts.presenter.js';
 
 export interface AlertQuery {
-  residentId?: string;
   status?: AlertStatusDto;
   /** Forward cursor: returns alerts with alertSeq > afterSeq. */
   afterSeq?: bigint;
@@ -24,7 +28,7 @@ export class AlertsService {
   ) {}
 
   async list(facilityId: string, query: AlertQuery = {}) {
-    const { residentId, status, afterSeq, beforeSeq, limit = 50 } = query;
+    const { status, afterSeq, beforeSeq, limit = 50 } = query;
     const take = Math.min(limit, 200);
     const alertSeqFilter: { gt?: bigint; lt?: bigint } = {};
     if (afterSeq !== undefined) alertSeqFilter.gt = afterSeq;
@@ -34,7 +38,6 @@ export class AlertsService {
       (tx: Prisma.TransactionClient) =>
         tx.alert.findMany({
           where: {
-            residentId: residentId ?? undefined,
             status: status ?? undefined,
             alertSeq:
               Object.keys(alertSeqFilter).length > 0
@@ -55,11 +58,11 @@ export class AlertsService {
       (tx: Prisma.TransactionClient) =>
         tx.alert.findUnique({
           where: { id },
-          include: alertInclude,
+          include: alertDetailInclude,
         }),
     );
     if (!alert) throw new FacilityScopedNotFoundException('alert');
-    return presentAlert(alert);
+    return presentAlertDetail(alert);
   }
 
   /**
@@ -78,6 +81,49 @@ export class AlertsService {
     return this.writer.resolveAlert({ facilityId, alertId: id, actorUserId });
   }
 
+  async addNote(input: {
+    facilityId: string;
+    alertId: string;
+    note: string;
+    actorUserId: string;
+    actorRole: 'ADMIN' | 'STAFF';
+  }) {
+    const trimmedNote = input.note.trim();
+    if (!trimmedNote) throw new FacilityScopedNotFoundException('alert');
+    return this.prisma.withFacilityContext(
+      input.facilityId,
+      async (tx: Prisma.TransactionClient) => {
+        const alert = await tx.alert.findUnique({
+          where: { id: input.alertId },
+          select: { id: true, facilityId: true },
+        });
+        if (!alert) throw new FacilityScopedNotFoundException('alert');
+        const created = await tx.alertNote.create({
+          data: {
+            facilityId: alert.facilityId,
+            alertId: alert.id,
+            note: trimmedNote,
+            createdById: input.actorUserId,
+            authorRole: input.actorRole,
+          },
+          select: {
+            id: true,
+            note: true,
+            createdById: true,
+            authorRole: true,
+            createdAt: true,
+          },
+        });
+        return {
+          id: created.id,
+          note: created.note,
+          createdBy: created.createdById,
+          authorRole: created.authorRole,
+          createdAt: created.createdAt,
+        };
+      },
+    );
+  }
   async setSnapshotKey(facilityId: string, id: string, snapshotKey: string) {
     const existing = await this.prisma.withFacilityContext(
       facilityId,

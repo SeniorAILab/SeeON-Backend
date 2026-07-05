@@ -6,14 +6,31 @@ import type { Prisma } from '@prisma/client';
  * replay carry current status + who/when for SSE-update recovery.
  */
 export const alertInclude = {
-  resident: { select: { name: true } },
   space: { select: { name: true } },
   ackedBy: { select: { nickname: true } },
   resolvedBy: { select: { nickname: true } },
 } satisfies Prisma.AlertInclude;
 
+export const alertDetailInclude = {
+  ...alertInclude,
+  notes: {
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      note: true,
+      createdById: true,
+      authorRole: true,
+      createdAt: true,
+    },
+  },
+} satisfies Prisma.AlertInclude;
+
 export type AlertWithContext = Prisma.AlertGetPayload<{
   include: typeof alertInclude;
+}>;
+
+export type AlertDetailWithContext = Prisma.AlertGetPayload<{
+  include: typeof alertDetailInclude;
 }>;
 
 export function presentAlert(alert: AlertWithContext) {
@@ -21,7 +38,6 @@ export function presentAlert(alert: AlertWithContext) {
     alertSeq: alert.alertSeq.toString(),
     id: alert.id,
     facilityId: alert.facilityId,
-    residentId: alert.residentId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,
     room: alert.space.name,
@@ -36,8 +52,20 @@ export function presentAlert(alert: AlertWithContext) {
     resolvedById: alert.resolvedById,
     resolvedAt: alert.resolvedAt,
     resolvedBy: alert.resolvedBy,
-    resident: alert.resident,
     space: alert.space,
     createdAt: alert.createdAt,
+  };
+}
+
+export function presentAlertDetail(alert: AlertDetailWithContext) {
+  return {
+    ...presentAlert(alert),
+    notes: alert.notes.map((note) => ({
+      id: note.id,
+      note: note.note,
+      createdBy: note.createdById,
+      authorRole: note.authorRole,
+      createdAt: note.createdAt,
+    })),
   };
 }

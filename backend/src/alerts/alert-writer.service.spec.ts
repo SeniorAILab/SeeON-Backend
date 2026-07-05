@@ -6,7 +6,6 @@ import type { PrismaService } from '../prisma/prisma.service';
 import {
   AlertWriterService,
   type AlertEvent,
-  type StatusEvent,
   type AlertUpdateEvent,
 } from './alert-writer.service';
 import { FacilityScopedNotFoundException } from '../common/domain-errors';
@@ -19,7 +18,6 @@ function setup() {
           alertSeq: 1n,
           id: 'a1',
           status: 'NEW',
-          resident: null,
           space: { name: 'Room 101' },
           ...data,
         }),
@@ -37,7 +35,6 @@ function setup() {
 function input(probability: number) {
   return {
     facilityId: 'facility-1',
-    residentId: 'r1',
     cameraId: 'c1',
     spaceId: 'space-1',
     type: AlertEventTypes.fall,
@@ -57,27 +54,22 @@ describe('AlertWriterService', () => {
     const event = await service.writeAlert(input(0.9));
     expect(event.created).toBe(true);
     expect(event.id).toBe('a1');
-    expect(event.residentId).toBe('r1');
     expect(event.spaceId).toBe('space-1');
     expect(event.room).toBe('Room 101');
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
   });
-  it('persists room-centric alerts without creating ResidentStatus or status events', async () => {
+  it('logs a room-centric write without leaking resident-keyed data', async () => {
     const logSpy = jest
       .spyOn(Logger.prototype, 'log')
       .mockImplementation(() => undefined);
     const { service } = setup();
-    const statuses: StatusEvent[] = [];
-    service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
-    const event = await service.writeAlert({ ...input(0.9), residentId: null });
+    const event = await service.writeAlert(input(0.9));
 
-    expect(event.residentId).toBeNull();
     expect(event.room).toBe('Room 101');
-    expect(statuses).toHaveLength(0);
     expect(logSpy).toHaveBeenCalledWith({
-      event: 'alert.empty_room_written',
+      event: 'alert.room_written',
       facilityId: 'facility-1',
       spaceId: 'space-1',
       cameraId: 'c1',
@@ -100,10 +92,8 @@ describe('AlertWriterService', () => {
     expect(tx.alert.create).not.toHaveBeenCalled();
   });
 
-  it('persists ML type and probability as-is without resident-keyed status emission', async () => {
+  it('persists ML type and probability as-is', async () => {
     const { service, tx } = setup();
-    const statuses: StatusEvent[] = [];
-    service.subscribeStatus('facility-1', (e) => statuses.push(e));
 
     await service.writeAlert({ ...input(0.1), type: AlertEventTypes.fall });
 
@@ -115,7 +105,6 @@ describe('AlertWriterService', () => {
         }),
       }),
     );
-    expect(statuses).toHaveLength(0);
   });
 
   it('stops delivering after unsubscribe', async () => {
@@ -144,7 +133,6 @@ function lifecycleRow(
     alertSeq: 1n,
     id: 'a1',
     facilityId: 'facility-1',
-    residentId: 'r1',
     cameraId: 'c1',
     spaceId: 'space-1',
     type: 'fall',
@@ -159,7 +147,6 @@ function lifecycleRow(
     resolvedAt: null,
     resolvedBy: null,
     createdAt: new Date('2026-06-22T00:00:01Z'),
-    resident: { name: '홍길동' },
     space: { name: 'Room 101' },
     ...overrides,
   };
