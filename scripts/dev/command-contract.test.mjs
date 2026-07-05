@@ -43,7 +43,7 @@ test('Given root package scripts When ML component commands are inspected Then t
   );
   assert.equal(
     scripts['dev:ml:worker'],
-    'uv run --directory ml python -m worker --config config/ml-worker.local.yaml',
+    'uv run --directory ml python -m worker --config worker/ml-worker.local.yaml',
   );
   assert.equal(scripts['dev:ml:demo'], 'uv run --directory ml --group demo streamlit run demo/app.py');
 });

@@ -14,7 +14,7 @@
     "dev:backend:app": "pnpm --filter backend start:dev",
     "dev:ml": "pnpm dev:ml:api",
     "dev:ml:api": "uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000",
-    "dev:ml:worker": "uv run --directory ml python -m worker --config config/ml-worker.local.yaml",
+    "dev:ml:worker": "uv run --directory ml python -m worker --config worker/ml-worker.local.yaml",
     "dev:ml:demo": "uv run --directory ml --group demo streamlit run demo/app.py",
     "build:front": "pnpm --filter front build",
     "build:backend": "pnpm --filter backend build",
