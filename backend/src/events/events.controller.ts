@@ -19,13 +19,12 @@ import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
-import { AlertEventTypes } from '../alerts/dto/alert-events.dto.js';
-import type {
-  EventResponseDto,
+import {
+  type EventResponseDto,
   RecordEventRequestDto,
   RecordHeartbeatRequestDto,
-  RecordHeartbeatResponseDto,
-  RecordEventResponseDto,
+  type RecordHeartbeatResponseDto,
+  type RecordEventResponseDto,
 } from './dto/event.dto.js';
 import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
@@ -37,11 +36,6 @@ import {
   resolveSnapshotPath,
   snapshotRoot,
 } from '../common/snapshot-storage.js';
-
-const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
-const ALLOWED_EVENT_TYPE_SET = new Set(
-  ALLOWED_EVENT_TYPES.map((type) => type.toLowerCase()),
-);
 
 @Controller({ path: 'events', version: '1' })
 export class EventsController {
@@ -60,8 +54,22 @@ export class EventsController {
   async record(
     @Body() body: RecordEventRequestDto,
   ): Promise<RecordEventResponseDto> {
-    const input = parseRecordEventRequest(body);
-    const result = await this.eventAlarm.record(input);
+    // camera_id trim/blank checks, type canonicalization + enum membership,
+    // and detected_at timestamp validity are all independently re-validated
+    // by EventRecorderService.record(); the DTO's decorators only guarantee
+    // these arrive as the right JS types.
+    const result = await this.eventAlarm.record({
+      cameraId: body.camera_id,
+      type: body.type,
+      detectedAt: new Date(body.detected_at),
+      confidence: body.confidence,
+      configVersion: body.config_version,
+      modelVersion: body.model_version,
+      detectorVersion: body.detector_version,
+      operatingThreshold: body.operating_threshold,
+      snapshotKey: body.snapshot_key,
+      clockSource: body.clock_source,
+    });
     return {
       id: result.event.id,
       status: result.duplicate ? 'duplicate' : 'created',
@@ -141,82 +149,13 @@ export class EventsController {
   }
 }
 
-function parseRecordEventRequest(body: RecordEventRequestDto) {
-  const cameraId = requireString(body?.camera_id, 'camera_id');
-  const type = normalizeEventType(requireString(body?.type, 'type'));
-  const detectedAtRaw = requireString(body?.detected_at, 'detected_at');
-  const detectedAt = new Date(detectedAtRaw);
-  if (Number.isNaN(detectedAt.getTime())) {
-    throw new BadRequestException('detected_at must be a valid timestamp');
-  }
-  const confidence = optionalNumber(body.confidence, 'confidence');
-  const configVersion = optionalNumber(body.config_version, 'config_version');
-  const modelVersion = optionalString(body.model_version, 'model_version');
-  const detectorVersion = optionalString(
-    body.detector_version,
-    'detector_version',
-  );
-  const operatingThreshold = optionalNumber(
-    body.operating_threshold,
-    'operating_threshold',
-  );
-  const snapshotKey = optionalNullableString(body.snapshot_key, 'snapshot_key');
-  const clockSource = optionalString(body.clock_source, 'clock_source');
-  return {
-    cameraId,
-    type,
-    detectedAt,
-    confidence,
-    configVersion,
-    modelVersion,
-    detectorVersion,
-    operatingThreshold,
-    snapshotKey,
-    clockSource,
-  };
-}
-
-function normalizeEventType(rawType: string): string {
-  const type = rawType.trim().toLowerCase();
-  if (!ALLOWED_EVENT_TYPE_SET.has(type)) {
-    throw new BadRequestException(
-      `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
-    );
-  }
-  return type;
-}
-
+// Kept for heartbeat(): cameras.service.ts's resolveForEventIngest() 404s
+// (unknown_camera) rather than 400s on a blank camera_id, so this blank
+// check cannot be replaced by the DTO's @IsString() alone without changing
+// the status code for that edge case.
 function requireString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
     throw new BadRequestException(`${field} is required`);
-  }
-  return value;
-}
-
-function optionalNumber(value: unknown, field: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number') {
-    throw new BadRequestException(`${field} must be a number`);
-  }
-  return value;
-}
-
-function optionalString(value: unknown, field: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') {
-    throw new BadRequestException(`${field} must be a string`);
-  }
-  return value;
-}
-
-function optionalNullableString(
-  value: unknown,
-  field: string,
-): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (typeof value !== 'string') {
-    throw new BadRequestException(`${field} must be a string or null`);
   }
   return value;
 }

@@ -8,9 +8,24 @@ import * as os from 'os';
 import * as path from 'path';
 
 describe('EventsController record', () => {
-  it('rejects unsupported event types before recording', async () => {
+  // Event-type canonicalization (trim+lowercase) and enum-membership
+  // rejection now live entirely in EventRecorderService.record() (see
+  // event-recorder.service.spec.ts's "rejects unknown event types before
+  // writing" and "creates an event with ... canonical lower-case type"),
+  // reached through the ValidationPipe + DTO on a real request. These two
+  // tests instantiate the controller directly (bypassing both the pipe and
+  // the recorder), so they now verify the controller's own remaining
+  // responsibility: passing camera_id/type/detected_at through unmodified
+  // and propagating whatever the recorder decides.
+  it('propagates a rejection from the recorder for unsupported event types', async () => {
     const eventAlarm = {
-      record: jest.fn(),
+      record: jest
+        .fn()
+        .mockRejectedValue(
+          new BadRequestException(
+            'type must be one of: detection-lost, bed-exit, fall',
+          ),
+        ),
     } as unknown as jest.Mocked<EventAlarmService>;
     const recorder = {} as EventRecorderService;
     const cameras = {} as CamerasService;
@@ -20,14 +35,16 @@ describe('EventsController record', () => {
       controller.record({
         camera_id: 'camera-1',
         type: 'foo',
-        detected_at: '2026-06-26T01:02:03.456Z',
+        detected_at: new Date('2026-06-26T01:02:03.456Z'),
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(eventAlarm.record).not.toHaveBeenCalled();
+    expect(eventAlarm.record).toHaveBeenCalledWith(
+      expect.objectContaining({ cameraId: 'camera-1', type: 'foo' }),
+    );
   });
 
-  it('canonicalizes valid event types before recording', async () => {
+  it('passes the raw event type through for the recorder to canonicalize', async () => {
     const eventAlarm = {
       record: jest.fn().mockResolvedValue({
         event: { id: 'event-1' },
@@ -42,13 +59,13 @@ describe('EventsController record', () => {
       controller.record({
         camera_id: 'camera-1',
         type: ' DETECTION-LOST ',
-        detected_at: '2026-06-26T01:02:03.456Z',
+        detected_at: new Date('2026-06-26T01:02:03.456Z'),
       }),
     ).resolves.toEqual({ id: 'event-1', status: 'created' });
 
     expect(eventAlarm.record).toHaveBeenCalledWith({
       cameraId: 'camera-1',
-      type: 'detection-lost',
+      type: ' DETECTION-LOST ',
       detectedAt: new Date('2026-06-26T01:02:03.456Z'),
       confidence: undefined,
       configVersion: undefined,
@@ -74,7 +91,7 @@ describe('EventsController record', () => {
       controller.record({
         camera_id: 'camera-1',
         type: 'fall',
-        detected_at: '2026-06-26T01:02:03.456Z',
+        detected_at: new Date('2026-06-26T01:02:03.456Z'),
         confidence: 0.91,
         config_version: 7,
         model_version: 'rf-nh-2026-07-04',

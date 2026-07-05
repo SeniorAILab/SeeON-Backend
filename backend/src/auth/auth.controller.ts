@@ -30,7 +30,7 @@ import {
   setOAuthStateCookie,
   setSessionCookie,
 } from './cookie.util';
-import type {
+import {
   CreateFacilityRequestDto,
   LoginRequestDto,
   RegisterRequestDto,
@@ -200,11 +200,9 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     if (!request.user) throw new BadRequestException('Missing user');
-    const facilityName =
-      typeof body.facilityName === 'string' ? body.facilityName : '';
     const session = await this.auth.createFacilityForUser(
       request.user.id,
-      facilityName,
+      body.facilityName,
     );
     setSessionCookie(response, session.token, session.maxAgeSeconds);
     return { user: presentAuthUser(session.user) };

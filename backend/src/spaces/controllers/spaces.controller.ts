@@ -20,9 +20,9 @@ import {
 } from '../../auth/jwt-auth.guard.js';
 import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
 import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
-import type {
+import {
   CreateSpaceRequestDto,
-  SpaceTypeValue,
+  type SpaceTypeValue,
   UpdateSpaceRequestDto,
 } from '../dto/space.dto.js';
 import { SpacesService } from '../services/spaces.service.js';
