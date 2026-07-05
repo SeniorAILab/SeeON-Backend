@@ -16,6 +16,7 @@ import { SpacesModule } from './spaces/spaces.module.js';
 import { ZonesModule } from './zones/zones.module.js';
 import { EventsModule } from './events/events.module.js';
 import { backendEnvFilePaths } from './config/env-files.js';
+import { MlConfigModule } from './ml-config/ml-config.module.js';
 import { validateBackendEnv } from './config/env-validation.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
@@ -46,6 +47,7 @@ import { validateBackendEnv } from './config/env-validation.js';
     SpacesModule,
     ZonesModule,
     EventsModule,
+    MlConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService],
