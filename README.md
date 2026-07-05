@@ -35,7 +35,7 @@ pnpm dev:backend:fresh
 # 5. Start other app services in separate terminals
 pnpm dev:front       # http://localhost:3000
 pnpm dev:ml          # ml-api / FastAPI private-local surface on http://localhost:8000
-pnpm dev:ml:worker   # reads gitignored ml/config/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
+pnpm dev:ml:worker   # reads gitignored ml/worker/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
 
 # 6. Register git hooks (core.hooksPath + guard scripts; run once per clone)
 bash scripts/git-guard/setup-hooks.sh
@@ -66,7 +66,7 @@ pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
 Edge Compose is separate from the host stack and runs the two ML edge services:
 
 ```bash
-EDGE_CAMERA_CONFIG=./ml/config/ml-worker.local.yaml \
+EDGE_CAMERA_CONFIG=./ml/worker/ml-worker.local.yaml \
   docker compose -f compose.edge.yaml up -d --build
 ```
 
@@ -85,7 +85,7 @@ On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work
 | `pnpm dev:backend:fresh` | Guard-reset `.env.local` DB, replay migrations/seed demo data, then start NestJS watch mode (`backend/`) |
 | `pnpm dev:backend:app` | NestJS dev server only; use when DB is already managed externally |
 | `pnpm dev:ml` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
-| `pnpm dev:ml:worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `config/ml-worker.local.yaml` (1회 `cp ml/config/ml-worker.example.yaml ml/config/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
+| `pnpm dev:ml:worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `worker/ml-worker.local.yaml` (1회 `cp ml/worker/ml-worker.example.yaml ml/worker/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
 | `pnpm dev:ml:demo` | Streamlit demo UI (`ml/demo/`) |
 | `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
 | `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |

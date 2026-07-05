@@ -62,8 +62,8 @@ ml/config/edge-cameras.local*.json
 ml/config/edge-cameras.*.local.json
 
 # ml-worker runtime configs carry RTSP URLs / relay token — keep only the example tracked.
-ml/config/ml-worker.local.yaml
-ml/config/ml-worker.*.local.yaml
+ml/worker/ml-worker.local.yaml
+ml/worker/ml-worker.*.local.yaml
 
 # ...but the training source package is code, not weights — keep it tracked.
 # (Weight files inside it are still caught by the *.pt/*.pth rules above.)

@@ -31,7 +31,7 @@ ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test
 `;
 
 const completeEdgeEnv = `ML_SERVING_PORT=8000
-EDGE_CAMERA_CONFIG=./ml/config/ml-worker.example.yaml
+EDGE_CAMERA_CONFIG=./ml/worker/ml-worker.example.yaml
 ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test
 ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test
 API_BACKEND_EVENTS_URL=https://senai.example.com/api/v1/events
@@ -196,7 +196,7 @@ function verify() {
         'ml-worker',
         'worker.edge_worker',
         '/run/secrets/ml-worker.yaml',
-        'ml/config/ml-worker.example.yaml',
+        'ml/worker/ml-worker.example.yaml',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test',
         'API_BACKEND_EVENTS_URL: https://senai.example.com/api/v1/events',
