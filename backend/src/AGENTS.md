@@ -11,9 +11,8 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | Bootstrap composition | `app.module.ts`, `main.ts` | Process wiring and global Nest setup. |
 | Event ingestion | `events/` | Versioned Event API intake. |
 | Alert policy | `alerts/` | Policy, repositories, ports, Kakao fan-out. |
-| Auth/session | `auth/`, `guardians/` | Email/password, Kakao, guardian domain. |
-| Facility topology | `facilities/`, `floors/`, `spaces/`, `zones/`, `cameras/` | Room-centric placement APIs; zone routes nest under `spaces/:spaceId/zones` (ADR). |
-| Resident domain | `residents/` | Resident CRUD + assignments (incl. `GET /residents/assignments`). |
+| Auth/session | `auth/` | Email/password, Kakao session auth. |
+| Facility topology | `facilities/`, `floors/`, `spaces/`, `cameras/` | Room-centric placement APIs. |
 | Shared Nest pieces | `common/`, `config/`, `prisma/` | Filters, config, PrismaService wrapper. |
 
 ## Conventions

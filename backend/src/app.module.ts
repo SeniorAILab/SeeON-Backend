@@ -5,16 +5,14 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { AuthModule } from './auth/auth.module.js';
-import { ResidentsModule } from './residents/residents.module.js';
-import { GuardiansModule } from './guardians/guardians.module.js';
 import { CamerasModule } from './cameras/cameras.module.js';
 
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { FacilitiesModule } from './facilities/facilities.module.js';
 import { FloorsModule } from './floors/floors.module.js';
 import { SpacesModule } from './spaces/spaces.module.js';
-import { ZonesModule } from './zones/zones.module.js';
 import { EventsModule } from './events/events.module.js';
+import { UsersModule } from './users/users.module.js';
 import { backendEnvFilePaths } from './config/env-files.js';
 import { validateBackendEnv } from './config/env-validation.js';
 
@@ -36,16 +34,14 @@ import { validateBackendEnv } from './config/env-validation.js';
     }),
     PrismaModule,
     AuthModule,
-    ResidentsModule,
-    GuardiansModule,
     CamerasModule,
     AlertsModule,
     DashboardModule,
     FacilitiesModule,
     FloorsModule,
     SpacesModule,
-    ZonesModule,
     EventsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

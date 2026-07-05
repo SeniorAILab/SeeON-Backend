@@ -6,9 +6,8 @@
 backend/src/
 ├── events/                       # ML event intake: POST /api/v1/events
 ├── alerts/                       # alert policy + Kakao fan-out (event/alarm split: issue #388)
-├── residents/ resident-assignments/ resident-risk-summaries/   # resident domain
-├── facilities/ floors/ spaces/ zones/ space-statuses/ cameras/ # facility topology
-├── guardians/ auth/              # guardians + authentication
+├── facilities/ floors/ spaces/ cameras/ # facility topology
+├── auth/                         # authentication
 ├── dashboard/ status/            # read-side APIs
 ├── prisma/                       # PrismaService (schema: backend/prisma/schema.prisma)
 └── common/                       # shared guards, filters, decorators
@@ -29,6 +28,15 @@ See `src/AGENTS.md` before changing Nest application code. See
 - `POST /api/v1/events` and `POST /api/v1/events/heartbeat` are the only live ML ingress endpoints.
 - Removed machine-ingest routes, camera HMAC credentials, and `Camera.ingestMode` must stay removed rather than lingering as compatibility aliases.
 - `CamerasService.recordHeartbeat` remains used by `EventsController.heartbeat`.
+
+## Data model (v1 is room-centric)
+- v1 monitors at **room (space) granularity only**. There is no resident/guardian domain: `residents`, `resident_assignments`, `resident_statuses`, and `guardians` (tables + CRUD API) were dropped and return in v2. Alerts key off `spaceId`/`cameraId`, never a resident.
+- Table roles (keep these boundaries when adding columns/tables):
+  - **Append-only history / event log** — insert-and-keep, never repurposed as mutable state: `events` (immutable ML event SSOT), `alerts` (alert log; `alertSeq` is the SSE Last-Event-ID), `alert_events` + `delivery_attempts` (Kakao delivery outbox). New audit/history goes here as append rows.
+  - **Facility topology / config** — mutable domain rows: `facilities`, `floors`, `spaces`, `cameras`.
+  - **Identity / auth** — `users`, `kakao_identities`; app-layer gated, NOT RLS tenant models (see `TENANT_MODELS` in `src/prisma/prisma.service.ts`).
+- Re-adding resident/guardian in v2 is a schema+API addition, not a revival of the removed columns on `alerts`.
+
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).
 - lint: `pnpm --filter backend lint` (check) / `pnpm --filter backend lint:fix` (autofix). Convention: ADR.

@@ -3,6 +3,9 @@ import { EventsController } from './events.controller.js';
 import type { EventAlarmService } from './event-alarm.service.js';
 import type { EventRecorderService } from './event-recorder.service.js';
 import type { CamerasService } from '../cameras/cameras.service.js';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 describe('EventsController record', () => {
   it('rejects unsupported event types before recording', async () => {
@@ -48,6 +51,51 @@ describe('EventsController record', () => {
       type: 'detection-lost',
       detectedAt: new Date('2026-06-26T01:02:03.456Z'),
       confidence: undefined,
+      configVersion: undefined,
+      modelVersion: undefined,
+      detectorVersion: undefined,
+      operatingThreshold: undefined,
+      snapshotKey: undefined,
+      clockSource: undefined,
+    });
+  });
+  it('accepts optional audit envelope fields and maps them to recorder input', async () => {
+    const eventAlarm = {
+      record: jest.fn().mockResolvedValue({
+        event: { id: 'event-1' },
+        duplicate: false,
+      }),
+    } as unknown as jest.Mocked<EventAlarmService>;
+    const recorder = {} as EventRecorderService;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.record({
+        camera_id: 'camera-1',
+        type: 'fall',
+        detected_at: '2026-06-26T01:02:03.456Z',
+        confidence: 0.91,
+        config_version: 7,
+        model_version: 'rf-nh-2026-07-04',
+        detector_version: 'edge-detector-1.2.3',
+        operating_threshold: 0.42,
+        snapshot_key: 'events/event-1.jpg',
+        clock_source: 'edge_wall_clock',
+      }),
+    ).resolves.toEqual({ id: 'event-1', status: 'created' });
+
+    expect(eventAlarm.record).toHaveBeenCalledWith({
+      cameraId: 'camera-1',
+      type: 'fall',
+      detectedAt: new Date('2026-06-26T01:02:03.456Z'),
+      confidence: 0.91,
+      configVersion: 7,
+      modelVersion: 'rf-nh-2026-07-04',
+      detectorVersion: 'edge-detector-1.2.3',
+      operatingThreshold: 0.42,
+      snapshotKey: 'events/event-1.jpg',
+      clockSource: 'edge_wall_clock',
     });
   });
 });
@@ -91,5 +139,115 @@ describe('EventsController heartbeat', () => {
       controller.heartbeat({ camera_id: 'missing-camera' }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(cameras.recordHeartbeat).not.toHaveBeenCalled();
+  });
+});
+
+describe('EventsController uploadSnapshot', () => {
+  let snapshotDir: string | undefined;
+
+  afterEach(async () => {
+    if (snapshotDir) {
+      await fs.promises.rm(snapshotDir, { recursive: true, force: true });
+      snapshotDir = undefined;
+    }
+    delete process.env.SNAPSHOT_DIR;
+  });
+
+  function makeRawRequest(
+    body: Buffer,
+    options: {
+      contentType?: string;
+      query?: Record<string, unknown>;
+      parsedBody?: unknown;
+    } = {},
+  ) {
+    return {
+      headers: { 'content-type': options.contentType ?? 'image/jpeg' },
+      query: options.query,
+      body: options.parsedBody,
+      async *[Symbol.asyncIterator]() {
+        yield body;
+      },
+    };
+  }
+
+  it('derives the snapshot key from the resolved event id and persists it', async () => {
+    snapshotDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'event-snapshot-'),
+    );
+    process.env.SNAPSHOT_DIR = snapshotDir;
+    const eventAlarm = {} as EventAlarmService;
+    const recorder = {
+      resolveForSnapshot: jest.fn().mockResolvedValue({
+        id: 'event-created-id',
+        facilityId: 'facility-1',
+      }),
+      persistSnapshotKey: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<EventRecorderService>;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+    const req = makeRawRequest(Buffer.from('jpeg-bytes'));
+
+    await expect(
+      controller.uploadSnapshot(req as never, 'client-route-id'),
+    ).resolves.toEqual({ snapshotKey: 'facility-1/event-created-id.jpg' });
+
+    expect(recorder.resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
+    expect(recorder.persistSnapshotKey).toHaveBeenCalledWith(
+      'facility-1',
+      'event-created-id',
+      'facility-1/event-created-id.jpg',
+    );
+    await expect(
+      fs.promises.readFile(
+        path.join(snapshotDir, 'facility-1', 'event-created-id.jpg'),
+      ),
+    ).resolves.toEqual(Buffer.from('jpeg-bytes'));
+  });
+
+  it('rejects client-supplied snapshot keys', async () => {
+    const eventAlarm = {} as EventAlarmService;
+    const recorder = {
+      resolveForSnapshot: jest.fn(),
+      persistSnapshotKey: jest.fn(),
+    } as unknown as jest.Mocked<EventRecorderService>;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.uploadSnapshot(
+        makeRawRequest(Buffer.from('jpeg-bytes'), {
+          query: { snapshotKey: 'facility-1/client.jpg' },
+        }) as never,
+        'event-1',
+      ),
+    ).rejects.toThrow('snapshot key is server-derived');
+    await expect(
+      controller.uploadSnapshot(
+        makeRawRequest(Buffer.from('jpeg-bytes'), {
+          parsedBody: { snapshot_key: 'facility-1/client.jpg' },
+        }) as never,
+        'event-1',
+      ),
+    ).rejects.toThrow('snapshot key is server-derived');
+    expect(recorder.resolveForSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported snapshot content types', async () => {
+    const eventAlarm = {} as EventAlarmService;
+    const recorder = {
+      resolveForSnapshot: jest.fn(),
+      persistSnapshotKey: jest.fn(),
+    } as unknown as jest.Mocked<EventRecorderService>;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.uploadSnapshot(
+        makeRawRequest(Buffer.from('gif-bytes'), { contentType: 'image/gif' }) as never,
+        'event-1',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(recorder.resolveForSnapshot).not.toHaveBeenCalled();
   });
 });
