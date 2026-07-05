@@ -37,19 +37,16 @@ describe('AppModule boot + wiring smoke (e2e)', () => {
     expect(app).toBeDefined();
   });
 
-  it.each([
-    '/api/v1/auth/me',
-    '/api/v1/alerts',
-    '/api/v1/residents',
-    '/api/v1/guardians',
-    '/api/v1/cameras',
-  ])('mounts guarded route %s (401, not 404)', async (path) => {
-    const server = app.getHttpServer() as unknown as Parameters<
-      typeof request
-    >[0];
-    const res = await request(server).get(path);
-    expect(res.status).toBe(401);
-  });
+  it.each(['/api/v1/auth/me', '/api/v1/alerts', '/api/v1/cameras'])(
+    'mounts guarded route %s (401, not 404)',
+    async (path) => {
+      const server = app.getHttpServer() as unknown as Parameters<
+        typeof request
+      >[0];
+      const res = await request(server).get(path);
+      expect(res.status).toBe(401);
+    },
+  );
 
   it('serializes BigInt (Alert.alertSeq) in JSON instead of throwing', () => {
     expect(() => JSON.stringify({ alertSeq: 1n })).not.toThrow();

@@ -118,7 +118,7 @@ Vite 5 + React 18 + Tailwind CSS v3, React Router for routing. The frontend defa
 
 **Demo vs runtime (canonical).** The front-only mock runtime (`VITE_USE_MOCK=true` with `realtimeEngine`, `mockData`, and `DemoMode`) is the front-alone "demo" path — it exists only to run the frontend by itself without a backend. dev and prod run on the real backend + real DB (demo content is seeded via `backend/prisma/demo-nokyang.fixture.ts`); there is no mock at runtime in dev/prod. The mock survives only for automated tests. The front-only mock ("demo") is therefore being retired; removing the mock-runtime code is a tracked follow-up.
 
-**Frontend overview.** Three UI modes: system dashboard (`/dashboard` for `SUPER_ADMIN`), facility workbench (`/dashboard/facilities/:facilityId/admin` and `/dashboard/facilities/:facilityId/staff`), and the staff fullscreen monitor view under `/dashboard/facilities/:facilityId/staff`. Service seam: components/pages call `src/services/*`; backend endpoint mappers live in `src/services/api/*`; UI never consumes backend DTOs directly. Key frontend domain entities (`front/src/types/index.ts`, the FE domain SSOT until Phase 2): Facility, Floor, Space, Zone, SpaceStatus, DetectionEvent, ActionLog, Resident, ResidentAssignment, ResidentRiskSummary, ResidentAction, VideoClip, VideoAccessLog, AlertRule, User, MonitorSettings, DemoMode. The frontend domain model is a UI/domain view and currently diverges from the backend DB model; alignment is tracked in a dedicated FE↔BE issue.
+**Frontend overview.** Three UI modes: system dashboard (`/dashboard` for `SUPER_ADMIN`), facility workbench (`/dashboard/facilities/:facilityId/admin` and `/dashboard/facilities/:facilityId/staff`), and the staff fullscreen monitor view under `/dashboard/facilities/:facilityId/staff`. Service seam: components/pages call `src/services/*`; backend endpoint mappers live in `src/services/api/*`; UI never consumes backend DTOs directly. Key frontend domain entities (`front/src/types/index.ts`, the FE domain SSOT until Phase 2): Facility, Floor, Space, SpaceStatus, DetectionEvent, ActionLog, Resident, ResidentAssignment, ResidentRiskSummary, ResidentAction, VideoClip, VideoAccessLog, AlertRule, User, MonitorSettings, DemoMode. The frontend domain model is a UI/domain view and currently diverges from the backend DB model; alignment is tracked in a dedicated FE↔BE issue.
 
 Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
@@ -126,7 +126,7 @@ Runs via: `pnpm dev:front` → `pnpm --filter front dev`
 
 NestJS 11, `@nestjs/config`, Prisma 6 (PostgreSQL). Listens on `PORT` (local default 8080 from `.env.local`).
 
-`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, zone, resident, residentAssignment, guardian, camera, alert, residentStatus) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Placement/resident CRUD and room-centric alert/event read models are implemented. The former status, space-status, resident-risk-summary, alert-rule, and detection-event skeleton routes are removed from the current controller surface.
+`AppModule` wires `ConfigModule` (global, reads root `.env.local` for native/local runs) and `PrismaModule`. The domain model (facility tenant root, auth/session, floor, space, camera, alert) is defined in the Prisma schema with facility-scoped row-level security on the `app.facility_id` GUC. Room-centric alert/event read models are implemented. The former status, space-status, resident-risk-summary, alert-rule, detection-event, and zone skeleton routes are removed from the current controller surface.
 
 Key responsibilities:
 
@@ -313,6 +313,6 @@ Architecture-level consequences are:
 
 ### Hubs
 
-- [`api/`](api/) — wire/API 계약
+- [`decisions/common/adr-wire-contract-ssot-code-openapi.md`](decisions/common/adr-wire-contract-ssot-code-openapi.md), [`rules/rest-api-convention.md`](rules/rest-api-convention.md), [`rules/realtime-sse-convention.md`](rules/realtime-sse-convention.md), [`rules/dto-convention.md`](rules/dto-convention.md) — wire contract SSOT and conventions
 - [`decisions/`](decisions/) — ADR
 - [`domain/`](domain/) — 데이터 모델/도메인 문서

@@ -57,7 +57,7 @@ describe('FloorsService', () => {
     expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
   });
 
-  it('cascade-removes soft-deleted child spaces and their zones before deleting the floor', async () => {
+  it('cascade-removes soft-deleted child spaces before deleting the floor', async () => {
     const { service, repository } = serviceWith({
       findById: jest.fn().mockResolvedValue(floor),
       countActiveSpaces: jest.fn().mockResolvedValue(0),

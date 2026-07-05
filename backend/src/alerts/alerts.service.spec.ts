@@ -15,16 +15,28 @@ type AlertDelegate = {
   update: jest.Mock;
 };
 
+type AlertNoteDelegate = {
+  create: jest.Mock;
+};
+
 function setup() {
   const alert: AlertDelegate = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
   };
+  const alertNote: AlertNoteDelegate = {
+    create: jest.fn(),
+  };
   const prisma = {
     withFacilityContext: jest.fn(
-      (_facilityId: string, cb: (tx: { alert: AlertDelegate }) => unknown) =>
-        cb({ alert }),
+      (
+        _facilityId: string,
+        cb: (tx: {
+          alert: AlertDelegate;
+          alertNote: AlertNoteDelegate;
+        }) => unknown,
+      ) => cb({ alert, alertNote }),
     ),
   } as unknown as PrismaService;
   const ackAlert = jest.fn();
@@ -33,6 +45,7 @@ function setup() {
   return {
     service: new AlertsService(prisma, writer),
     alert,
+    alertNote,
     ackAlert,
     resolveAlert,
   };
@@ -89,12 +102,52 @@ describe('AlertsService (read-model)', () => {
     expect(alert.update).not.toHaveBeenCalled();
   });
 
-  it('serializes room-only alerts with null resident + lifecycle fields', async () => {
+  it('creates an alert note with alert-derived facility and snapshotted actor role', async () => {
+    const { service, alert, alertNote } = setup();
+    alert.findUnique.mockResolvedValue({ id: 'a1', facilityId: 'facility-1' });
+    alertNote.create.mockResolvedValue({
+      id: 'note-1',
+      note: 'checked with nurse',
+      createdById: 'user-1',
+      authorRole: 'STAFF',
+      createdAt: new Date('2026-07-03T00:00:00Z'),
+    });
+
+    const result = await service.addNote({
+      facilityId: 'facility-1',
+      alertId: 'a1',
+      note: ' checked with nurse ',
+      actorUserId: 'user-1',
+      actorRole: 'STAFF',
+    });
+
+    expect(alertNote.create).toHaveBeenCalledWith({
+      data: {
+        facilityId: 'facility-1',
+        alertId: 'a1',
+        note: 'checked with nurse',
+        createdById: 'user-1',
+        authorRole: 'STAFF',
+      },
+      select: {
+        id: true,
+        note: true,
+        createdById: true,
+        authorRole: true,
+        createdAt: true,
+      },
+    });
+    expect(result).toMatchObject({
+      note: 'checked with nurse',
+      createdBy: 'user-1',
+      authorRole: 'STAFF',
+    });
+  });
+
+  it('serializes room-only alerts with lifecycle fields', async () => {
     const { service, alert } = setup();
     alert.findUnique.mockResolvedValue(
       alertRow({
-        residentId: null,
-        resident: null,
         space: { name: 'Room 101' },
       }),
     );
@@ -102,8 +155,6 @@ describe('AlertsService (read-model)', () => {
     const result = await service.getOne('facility-1', 'a1');
 
     expect(result).toMatchObject({
-      residentId: null,
-      resident: null,
       spaceId: 'space-1',
       room: 'Room 101',
       ackedById: null,
@@ -117,7 +168,6 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     alertSeq: 1n,
     id: 'a1',
     facilityId: 'facility-1',
-    residentId: 'r1',
     cameraId: 'c1',
     spaceId: 'space-1',
     type: 'fall',
@@ -132,8 +182,8 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     resolvedAt: null,
     resolvedBy: null,
     createdAt: new Date('2026-06-22T00:00:01Z'),
-    resident: { name: '홍길동' },
     space: { name: 'Room 101' },
+    notes: [],
     ...overrides,
   };
 }

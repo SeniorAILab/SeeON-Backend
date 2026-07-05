@@ -1,17 +1,22 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Param,
+  Patch,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBody, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import {
   RequireFacilityGuard,
   JwtAuthGuard,
 } from '../../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
+import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
+import { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
 import { FacilitiesService } from '../services/facilities.service.js';
 
 @Controller({ path: 'facilities', version: '1' })
@@ -41,5 +46,38 @@ export class FacilitiesController {
     const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
     if (!facilityId) throw new ForbiddenException('Facility context required');
     return this.service.getScoped(id, facilityId);
+  }
+
+  @ApiOperation({
+    summary: 'Update a facility',
+    description:
+      'Updates name, address, and phone for the authenticated facility. Facility code is immutable.',
+  })
+  @ApiBody({ type: UpdateFacilityRequestDto })
+  @Patch(':id')
+  @UseGuards(RequireFacilityGuard, RolesGuard)
+  @RequireCapability('facilityAdmin')
+  update(
+    @Param('id') id: string,
+    @Req() req: RequestWithAuth,
+    @Body() body: UpdateFacilityRequestDto,
+  ) {
+    rejectUnsupportedFacilityUpdateKeys(body);
+    const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
+    if (!facilityId) throw new ForbiddenException('Facility context required');
+    if (id !== facilityId)
+      throw new ForbiddenException('Facility scope mismatch');
+    return this.service.update(id, body);
+  }
+}
+function rejectUnsupportedFacilityUpdateKeys(body: UpdateFacilityRequestDto) {
+  const allowedKeys = new Set(['name', 'address', 'phone']);
+  for (const key of Object.keys(body)) {
+    if (!allowedKeys.has(key)) {
+      throw new BadRequestException({
+        error: 'bad_request',
+        message: 'Only name, address, and phone may be updated',
+      });
+    }
   }
 }

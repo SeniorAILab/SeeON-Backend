@@ -31,7 +31,6 @@ export class EventAlarmService {
 
     await this.writer.writeAlert({
       facilityId: result.event.facilityId,
-      residentId: null,
       cameraId: result.event.cameraId,
       spaceId: result.event.spaceId,
       type: result.event.type,

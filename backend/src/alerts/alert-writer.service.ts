@@ -8,9 +8,8 @@
  * SSE clients subscribe via `subscribe(facilityId, fn)` and receive emitted events
  * for their facility. Unsubscribe by calling the returned cleanup function.
  *
- * Room-centric SSE emits only alert creation/lifecycle frames; resident-keyed
- * StatusEvent emission is retained for legacy subscribers but is not used by
- * the room-centric ingest path.
+ * Room-centric: alerts are keyed by space/room only and SSE emits alert
+ * creation/lifecycle frames.
  */
 import {
   BadRequestException,
@@ -19,7 +18,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AlertStatus, ResidentState } from '@prisma/client';
+import { AlertStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import {
@@ -32,7 +31,6 @@ export interface AlertEvent {
   alertSeq: bigint;
   id: string;
   facilityId: string;
-  residentId: string | null;
   cameraId: string | null;
   spaceId: string | null;
   type: string;
@@ -40,22 +38,11 @@ export interface AlertEvent {
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
-  resident?: { name: string } | null;
   space?: { name: string } | null;
   room: string | null;
 }
 export interface WriteAlertResult extends AlertEvent {
   created: boolean;
-}
-
-/** Emitted after each committed alert; carries the new ResidentStatus state. */
-export interface StatusEvent {
-  alertSeq: bigint;
-  facilityId: string;
-  residentId: string;
-  state: ResidentState;
-  cameraOnline: boolean;
-  lastSeenAt: Date | null;
 }
 
 /** Emitted after an alert lifecycle transition (ack/resolve) commits. Live-only, non-replayed. */
@@ -73,7 +60,6 @@ export interface AlertUpdateEvent {
 
 export interface WriteAlertInput {
   facilityId: string;
-  residentId: string | null;
   cameraId: string | null;
   spaceId: string;
   type: string;
@@ -85,13 +71,11 @@ export interface WriteAlertInput {
 }
 
 type Listener = (event: AlertEvent) => void;
-type StatusListener = (event: StatusEvent) => void;
 type UpdateListener = (event: AlertUpdateEvent) => void;
 
 @Injectable()
 export class AlertWriterService {
   private readonly _listeners = new Map<string, Set<Listener>>();
-  private readonly _statusListeners = new Map<string, Set<StatusListener>>();
   private readonly _updateListeners = new Map<string, Set<UpdateListener>>();
   private _queue: Promise<unknown> = Promise.resolve();
   private readonly logger = new Logger(AlertWriterService.name);
@@ -113,20 +97,6 @@ export class AlertWriterService {
   }
 
   /**
-   * Subscribe to live status-change events for facilityId (AC5/AC6).
-   * Returns an unsubscribe function.
-   */
-  subscribeStatus(facilityId: string, fn: StatusListener): () => void {
-    let listeners = this._statusListeners.get(facilityId);
-    if (!listeners) {
-      listeners = new Set();
-      this._statusListeners.set(facilityId, listeners);
-    }
-    listeners.add(fn);
-    return () => this._statusListeners.get(facilityId)?.delete(fn);
-  }
-
-  /**
    * Enqueue an alert write. Returns the committed alert with its alertSeq.
    * Serialized: each call runs only after the previous one has committed.
    * F3: assign alertSeq + commit + emit happen in causal order.
@@ -144,7 +114,6 @@ export class AlertWriterService {
   private async _doWrite(input: WriteAlertInput): Promise<WriteAlertResult> {
     const {
       facilityId,
-      residentId,
       cameraId,
       spaceId,
       type,
@@ -160,7 +129,6 @@ export class AlertWriterService {
         const created = await tx.alert.create({
           data: {
             facilityId,
-            residentId,
             cameraId: cameraId ?? undefined,
             spaceId: spaceId.trim(),
             type,
@@ -171,7 +139,6 @@ export class AlertWriterService {
             originEventId: originEventId ?? undefined,
           },
           include: {
-            resident: { select: { name: true } },
             space: { select: { name: true } },
           },
         });
@@ -194,16 +161,14 @@ export class AlertWriterService {
       return { ...toAlertEvent(alert), created: false };
     }
 
-    if (!residentId) {
-      this.logger.log({
-        event: 'alert.empty_room_written',
-        facilityId,
-        spaceId: alert.spaceId,
-        cameraId: alert.cameraId,
-        alertId: alert.id,
-        alertSeq: alert.alertSeq.toString(),
-      });
-    }
+    this.logger.log({
+      event: 'alert.room_written',
+      facilityId,
+      spaceId: alert.spaceId,
+      cameraId: alert.cameraId,
+      alertId: alert.id,
+      alertSeq: alert.alertSeq.toString(),
+    });
 
     const event: AlertEvent = toAlertEvent(alert);
 
@@ -230,7 +195,6 @@ export class AlertWriterService {
             ],
           },
           include: {
-            resident: { select: { name: true } },
             space: { select: { name: true } },
           },
           orderBy: { alertSeq: 'asc' },
@@ -240,18 +204,6 @@ export class AlertWriterService {
 
   private _emit(facilityId: string, event: AlertEvent): void {
     const listeners = this._listeners.get(facilityId);
-    if (!listeners) return;
-    for (const fn of listeners) {
-      try {
-        fn(event);
-      } catch {
-        // listener errors must not crash the writer
-      }
-    }
-  }
-
-  private _emitStatus(facilityId: string, event: StatusEvent): void {
-    const listeners = this._statusListeners.get(facilityId);
     if (!listeners) return;
     for (const fn of listeners) {
       try {
@@ -404,7 +356,6 @@ function toAlertEvent(alert: {
   alertSeq: bigint;
   id: string;
   facilityId: string;
-  residentId: string | null;
   cameraId: string | null;
   spaceId: string;
   type: string;
@@ -412,14 +363,12 @@ function toAlertEvent(alert: {
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
-  resident: { name: string } | null;
   space: { name: string };
 }): AlertEvent {
   return {
     alertSeq: alert.alertSeq,
     id: alert.id,
     facilityId: alert.facilityId,
-    residentId: alert.residentId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,
     type: alert.type,
@@ -427,7 +376,6 @@ function toAlertEvent(alert: {
     snapshotKey: alert.snapshotKey,
     detectedAt: alert.detectedAt,
     status: alert.status,
-    resident: alert.resident,
     space: alert.space,
     room: alert.space.name,
   };
