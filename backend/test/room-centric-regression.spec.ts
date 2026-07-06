@@ -4,8 +4,8 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
-import { AppModule } from './app.module';
-import { configureVersionedTestApp } from '../test/helpers/versioned-app';
+import { AppModule } from '../src/app.module';
+import { configureVersionedTestApp } from './helpers/versioned-app';
 
 type CountRow = { count: number };
 type NullableColumnRow = { column_name: string; is_nullable: 'YES' | 'NO' };
