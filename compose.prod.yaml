@@ -36,6 +36,8 @@ services:
       SUPER_ADMIN_NICKNAME: ${SUPER_ADMIN_NICKNAME:-}
       SUPER_ADMIN_FACILITY_ID: ${SUPER_ADMIN_FACILITY_ID:-}
     ports: !reset []
+    volumes:
+      - snapshots:/app/backend/snapshots
 
   front:
     image: ${FRONT_IMAGE:?FRONT_IMAGE is required in prod}
@@ -44,3 +46,6 @@ services:
     restart: unless-stopped
     ports: !override
       - "80:3000"
+
+volumes:
+  snapshots:
