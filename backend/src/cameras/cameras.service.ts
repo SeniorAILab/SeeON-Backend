@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { bumpMlConfigVersion } from '../ml-config/ml-config.version.js';
 import type {
   CreateCameraRequestDto,
+  EdgeCameraMappingRequestDto,
+  EdgeCameraMappingResponseDto,
   UpdateCameraRequestDto,
 } from './dto/camera.dto.js';
 
@@ -28,6 +30,37 @@ export class CamerasService {
     if (!camera) throw new NotFoundException('unknown_camera');
 
     return camera;
+  }
+
+  async upsertEdgeCameraMapping(
+    facilityId: string,
+    dto: EdgeCameraMappingRequestDto,
+  ): Promise<EdgeCameraMappingResponseDto> {
+    requireNonBlankString(dto.edge_camera_ref, 'edge_camera_ref');
+    const label = requireNonBlankString(dto.label, 'label');
+    const spaceId = requireNonBlankString(dto.spaceId, 'spaceId');
+
+    try {
+      const camera = await this.prisma.withFacilityContext(
+        facilityId,
+        async (tx: Prisma.TransactionClient) => {
+          const camera = await tx.camera.upsert({
+            where: { facilityId_spaceId: { facilityId, spaceId } },
+            create: { facilityId, label, spaceId },
+            update: { label },
+          });
+          await bumpMlConfigVersion(tx, facilityId);
+          return camera;
+        },
+      );
+      return {
+        cameraId: camera.id,
+        facilityId: camera.facilityId,
+        spaceId: camera.spaceId,
+      };
+    } catch (err: unknown) {
+      throwCameraWriteConflict(err);
+    }
   }
 
   async list(facilityId: string) {
@@ -170,6 +203,13 @@ function toCameraDto(camera: Camera) {
     online: camera.online,
     createdAt: camera.createdAt,
   };
+}
+
+function requireNonBlankString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new ConflictException(`${field} is required`);
+  }
+  return value.trim();
 }
 
 function throwCameraWriteConflict(err: unknown): never {

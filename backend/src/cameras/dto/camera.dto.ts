@@ -1,6 +1,8 @@
-// Permissive by design: CamerasService enforces required-field/format rules
-// via ConflictException (409); the global ValidationPipe must not preempt
-// those with a 400, so these classes carry no class-validator decorators.
+import { IsString } from 'class-validator';
+
+// Existing authenticated camera write endpoints are permissive by design:
+// CamerasService enforces required-field/format rules via ConflictException
+// (409), so the global ValidationPipe must not preempt those with a 400.
 export class CreateCameraRequestDto {
   label!: string;
   spaceId!: string;
@@ -15,4 +17,21 @@ export class UpdateCameraRequestDto {
   spaceId?: string;
   // Write-only (see CreateCameraRequestDto).
   rtspUrl?: string | null;
+}
+
+export class EdgeCameraMappingRequestDto {
+  @IsString()
+  edge_camera_ref!: string;
+
+  @IsString()
+  label!: string;
+
+  @IsString()
+  spaceId!: string;
+}
+
+export interface EdgeCameraMappingResponseDto {
+  cameraId: string;
+  spaceId: string;
+  facilityId: string;
 }
