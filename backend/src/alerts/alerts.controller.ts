@@ -84,9 +84,6 @@ export class AlertsController {
     @Param('id') id: string,
     @Body() body: CreateAlertNoteRequestDto,
   ) {
-    if (typeof body.note !== 'string' || body.note.trim().length === 0) {
-      throw new BadRequestException('note is required');
-    }
     return this.service.addNote({
       facilityId: requireFacilityId(req),
       alertId: id,

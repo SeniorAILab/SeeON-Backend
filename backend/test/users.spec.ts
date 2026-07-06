@@ -227,8 +227,16 @@ describe('facility-scoped users API (e2e)', () => {
         initialPassword: ISSUED_PASSWORD,
       })
       .expect(400);
+    // ValidationPipe's default exception factory wraps class-validator
+    // messages as message: string[] (rather than the single string the old
+    // manual BadRequestException threw); statusCode stays 400 either way.
     expect(superCreate.body).toEqual(
-      expect.objectContaining({ statusCode: 400, message: expect.any(String) }),
+      expect.objectContaining({
+        statusCode: 400,
+        message: expect.arrayContaining([
+          expect.stringContaining('Only ADMIN and STAFF roles may be assigned'),
+        ]),
+      }),
     );
 
     const create = await request(app.getHttpServer())
@@ -265,8 +273,16 @@ describe('facility-scoped users API (e2e)', () => {
       .set('cookie', adminACookie)
       .send({ role: 'SUPER_ADMIN' })
       .expect(400);
+    // ValidationPipe's default exception factory wraps class-validator
+    // messages as message: string[] (rather than the single string the old
+    // manual BadRequestException threw); statusCode stays 400 either way.
     expect(superPatch.body).toEqual(
-      expect.objectContaining({ statusCode: 400, message: expect.any(String) }),
+      expect.objectContaining({
+        statusCode: 400,
+        message: expect.arrayContaining([
+          expect.stringContaining('Only ADMIN and STAFF roles may be assigned'),
+        ]),
+      }),
     );
   });
 

@@ -23,7 +23,9 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 - Controllers must not import Prisma, repositories, or concrete adapters.
 - Services depend on ports or repositories, not concrete delivery adapters.
 - DTO request/response contracts live in domain `dto/*.dto.ts` files.
-- `@Body()` types must be exported `*Dto` classes/interfaces from DTO files.
+- `@Body()` types must be exported `*Dto` classes: class-validator-decorated
+  DTO classes + global `ValidationPipe`; no manual typeof parsing in
+  controllers.
 - Schema changes belong under `backend/prisma/`; read `../prisma/AGENTS.md`
   first.
 - Runtime env comes from the repo-root `.env.local`; do not create

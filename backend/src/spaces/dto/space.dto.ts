@@ -11,7 +11,10 @@ export type SpaceTypeValue =
   | 'STORAGE'
   | 'STAFF_LOUNGE'
   | 'ETC';
-export interface CreateSpaceRequestDto {
+// Permissive by design: SpacesService enforces required-field/format rules
+// via ConflictException (409); the global ValidationPipe must not preempt
+// those with a 400, so these classes carry no class-validator decorators.
+export class CreateSpaceRequestDto {
   floorId?: string;
   name?: string;
   type?: SpaceTypeValue;
@@ -20,7 +23,7 @@ export interface CreateSpaceRequestDto {
   assignedStaff?: string | null;
   facilityId?: string;
 }
-export interface UpdateSpaceRequestDto {
+export class UpdateSpaceRequestDto {
   floorId?: string;
   name?: string;
   type?: SpaceTypeValue;

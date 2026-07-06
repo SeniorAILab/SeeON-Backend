@@ -17,7 +17,7 @@ import { RequireCapability, RolesGuard } from '../auth/roles.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { CamerasService } from './cameras.service.js';
-import type {
+import {
   CreateCameraRequestDto,
   UpdateCameraRequestDto,
 } from './dto/camera.dto.js';

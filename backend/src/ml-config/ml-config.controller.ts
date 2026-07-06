@@ -14,8 +14,8 @@ import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { JwtAuthGuard, RequireFacilityGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
-import type {
-  MlConfigResponseDto,
+import {
+  type MlConfigResponseDto,
   UpdateNightWindowRequestDto,
 } from './dto/ml-config.dto.js';
 import { MlConfigService } from './ml-config.service.js';

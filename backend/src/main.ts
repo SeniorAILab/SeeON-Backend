@@ -1,4 +1,4 @@
-import { RequestMethod, VersioningType } from '@nestjs/common';
+import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -15,6 +15,9 @@ async function bootstrap() {
     type: VersioningType.URI,
     defaultVersion: '1',
   });
+  // whitelist/forbidNonWhitelisted intentionally left off: unknown body fields
+  // stay tolerated, matching pre-migration manual-parsing behavior.
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
   // ponytail: routes/methods auto-discovered from controllers; no per-route decorators.
   // Add @ApiProperty on a DTO only when its request/response shape needs to show in the schema.
   const config = new DocumentBuilder()

@@ -1,3 +1,5 @@
+import { IsString } from 'class-validator';
+
 interface MlConfigCameraDto {
   id: string;
   spaceId: string;
@@ -16,8 +18,16 @@ export interface MlConfigResponseDto {
   cameras: MlConfigCameraDto[];
 }
 
-export interface UpdateNightWindowRequestDto {
-  start: string;
-  end: string;
-  tz: string;
+// HH:MM format and blank-tz checks stay in MlConfigService as business-rule
+// validation; these decorators only add crash-safety type checks so the
+// service's regex/trim logic never runs against a non-string value.
+export class UpdateNightWindowRequestDto {
+  @IsString()
+  start!: string;
+
+  @IsString()
+  end!: string;
+
+  @IsString()
+  tz!: string;
 }
