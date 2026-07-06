@@ -106,13 +106,15 @@ export class EventRecorderService {
     eventId: string,
     snapshotKey: string,
   ): Promise<void> {
-    await this.prisma.$queryRaw`SELECT set_event_snapshot_key(${eventId}, ${facilityId}, ${snapshotKey})`;
-    await this.prisma.withFacilityContext(facilityId, (tx) =>
-      tx.alert.updateMany({
+    // Existing rows with events.snapshot_key set but alerts.snapshot_key null
+    // require a one-time ops backfill script; this request path stays atomic.
+    await this.prisma.withFacilityContext(facilityId, async (tx) => {
+      await tx.$queryRaw`SELECT set_event_snapshot_key(${eventId}, ${facilityId}, ${snapshotKey})`;
+      await tx.alert.updateMany({
         where: { originEventId: eventId },
         data: { snapshotKey },
-      }),
-    );
+      });
+    });
   }
 
   async list(facilityId: string): Promise<Event[]> {
