@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsDate,
   IsNumber,
@@ -20,7 +20,12 @@ export class RecordEventRequestDto {
   @IsString()
   type!: string;
 
-  @Type(() => Date)
+  // Only strings are coerced to Date; other JS types (number epoch millis,
+  // boolean, etc.) pass through unchanged so @IsDate rejects them with 400,
+  // matching the pre-migration requireString(...) + Date(...) + NaN reject.
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? new Date(value) : value,
+  )
   @IsDate()
   detected_at!: Date;
 

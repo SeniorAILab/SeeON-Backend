@@ -192,6 +192,47 @@ describe('Events API (e2e)', () => {
     ).resolves.toBe(before);
   });
 
+  it('rejects non-string detected_at values without persisting an Event row', async () => {
+    const seeded = await seedFacilityGraph('bad-detected-at');
+    const before = await direct.event.count({
+      where: { facilityId: seeded.facilityId },
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'fall',
+        detected_at: 1750900923456,
+        confidence: 0.5,
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'fall',
+        detected_at: true,
+        confidence: 0.5,
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'fall',
+        detected_at: 'not-a-real-date',
+        confidence: 0.5,
+      })
+      .expect(400);
+
+    await expect(
+      direct.event.count({ where: { facilityId: seeded.facilityId } }),
+    ).resolves.toBe(before);
+  });
+
   it('accepts detection-lost events', async () => {
     const seeded = await seedFacilityGraph('detection-lost');
 
