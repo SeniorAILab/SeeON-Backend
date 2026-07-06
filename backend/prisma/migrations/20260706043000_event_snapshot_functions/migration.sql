@@ -25,13 +25,15 @@ $$;
 REVOKE EXECUTE ON FUNCTION get_event_for_snapshot(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION get_event_for_snapshot(TEXT) TO fall_app;
 
+-- RETURNS TEXT (not void): the backend invokes this via prisma.$queryRaw,
+-- which cannot deserialize a void result column.
 DROP FUNCTION IF EXISTS set_event_snapshot_key(TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION set_event_snapshot_key(
   p_event_id TEXT,
   p_facility_id TEXT,
   p_snapshot_key TEXT
 )
-RETURNS void
+RETURNS TEXT
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public, pg_temp
@@ -40,7 +42,8 @@ AS $$
   SET snapshot_key = p_snapshot_key,
       modified_at = CURRENT_TIMESTAMP
   WHERE id = p_event_id
-    AND facility_id = p_facility_id;
+    AND facility_id = p_facility_id
+  RETURNING id;
 $$;
 
 REVOKE EXECUTE ON FUNCTION set_event_snapshot_key(TEXT, TEXT, TEXT) FROM PUBLIC;
