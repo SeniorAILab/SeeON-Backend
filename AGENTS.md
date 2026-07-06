@@ -13,7 +13,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 ```text
 .
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, Prisma DB
-├── ml/             # uv Python ML API, worker, training, demo, contracts
+├── ml/             # uv Python ML API, worker, demo, contracts (training moved to eldercare-dataset-ops, ADR-0004)
 ├── front/          # Vite React facility dashboard and operator UI
 ├── docs/           # architecture, rules, domain docs, research, exec plans
 ├── scripts/        # git/backend/env/release/deploy guards and automation
@@ -48,7 +48,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 | ML API | `ml/api/main.py`, `ml/api/routes/` | Gateway/status/relay API; no model loading. |
 | ML worker | `ml/worker/__main__.py`, `edge_worker.py`, `camera_worker.py` | Long-running stream consumer and orchestration state. |
 | Perception | `ml/worker/sources/`, `runners/`, `perception/`, `domains/` | Frame intake, model runners, observations, domain events. |
-| Training | `ml/training/` | Batch artifact creation/evaluation only. |
+| Training | eldercare-dataset-ops (sibling repo) | Batch artifact creation/evaluation; moved out of this repo per ADR-0004. `ml/artifact_metadata/` keeps only the read-side schema for the live demo. |
 | Front app | `front/src/main.tsx`, `router.tsx`, `pages/`, `components/` | Facility dashboard routes and views. |
 | Front API seam | `front/src/services/`, `front/src/services/api/` | Backend DTO mapping; components must not fetch directly. |
 
