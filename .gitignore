@@ -58,6 +58,7 @@ ml/artifacts
 # ml-worker runtime configs carry RTSP URLs / relay token — keep only the example tracked.
 ml/worker/ml-worker.local.yaml
 ml/worker/ml-worker.*.local.yaml
+ml/.runtime/
 
 # ...but the training source package is code, not weights — keep it tracked.
 # (Weight files inside it are still caught by the *.pt/*.pth rules above.)
