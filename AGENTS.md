@@ -31,7 +31,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 | Docs scaffold | `docs/research/`, `docs/exec-plan/`, `docs/decisions/`, `docs/rules/` | Init-owned scaffold only; ADRs are explicit-request only. |
 | Backend API / DB | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Controllers/services/repositories, Prisma schema, migrations. |
 | ML runtime | `ml/AGENTS.md`, `ml/worker/AGENTS.md`, `ml/api/AGENTS.md` | Import ladder, RTSP worker, relay API, model boundaries. |
-| Nursing-home edge dashboard access | `docs/rules/nursing-home-edge-dashboard-access.md`, `ml/dashboard/README.md` | Direct tailnet `:5173` access, firewall check, fallback boundary, and no secrets/topology in docs or logs. |
+| Nursing-home edge dashboard access | `docs/rules/nursing-home-edge-dashboard-access.md` | Direct tailnet `:5173` access, firewall check, fallback boundary, and no secrets/topology in docs or logs. |
 | Frontend | `front/AGENTS.md`, `front/src/AGENTS.md` | API seam, mock mode boundary, UI state. |
 | Scripts / guards | `scripts/AGENTS.md`, `scripts/backend-guard/README.md` | Hard gates and deploy/release automation. |
 | CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | Size/base checks and package CI. |
