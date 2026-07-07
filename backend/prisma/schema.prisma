@@ -242,6 +242,7 @@ model Event {
   operatingThreshold Float?  @map("operating_threshold")
   snapshotKey        String? @map("snapshot_key")
   clockSource        String? @map("clock_source")
+  clipId             String? @map("clip_id")
 
   facility     Facility @relation(fields: [facilityId], references: [id])
   camera       Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])

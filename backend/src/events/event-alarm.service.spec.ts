@@ -23,6 +23,7 @@ const event: RecordedEventResult['event'] = {
   operatingThreshold: null,
   snapshotKey: null,
   clockSource: null,
+  clipId: null,
 };
 
 function setup(recordedEvent = event) {

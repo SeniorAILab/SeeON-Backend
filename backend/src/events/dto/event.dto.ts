@@ -55,6 +55,10 @@ export class RecordEventRequestDto {
   @IsString()
   snapshot_key?: string | null;
 
+  @ValidateIf((o: RecordEventRequestDto) => o.clip_id !== undefined)
+  @IsString()
+  clip_id?: string;
+
   @ValidateIf((o: RecordEventRequestDto) => o.clock_source !== undefined)
   @IsString()
   clock_source?: string;
@@ -85,6 +89,7 @@ export interface EventResponseDto {
   type: string;
   confidence: number | null;
   detectedAt: Date;
+  clipId: string | null;
   createdAt: Date;
   modifiedAt: Date;
   configVersion: number | null;

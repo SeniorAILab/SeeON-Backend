@@ -55,6 +55,7 @@ describe('EventRecorderService', () => {
         type: ' FALL ',
         detectedAt,
         confidence: 0.91,
+        clipId: 'clip-123',
       }),
     ).resolves.toEqual({ event: created, duplicate: false });
 
@@ -66,6 +67,7 @@ describe('EventRecorderService', () => {
         type: 'fall',
         confidence: 0.91,
         detectedAt,
+        clipId: 'clip-123',
         configVersion: null,
         modelVersion: null,
         detectorVersion: null,

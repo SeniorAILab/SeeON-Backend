@@ -18,6 +18,7 @@ export interface RecordEventInput {
   operatingThreshold?: number;
   snapshotKey?: string | null;
   clockSource?: string;
+  clipId?: string;
 }
 
 export interface RecordedEventResult {
@@ -60,6 +61,7 @@ export class EventRecorderService {
               confidence: input.confidence,
               detectedAt,
               dedupKey,
+              clipId: input.clipId ?? null,
               configVersion: input.configVersion ?? null,
               modelVersion: input.modelVersion ?? null,
               detectorVersion: input.detectorVersion ?? null,

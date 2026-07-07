@@ -74,7 +74,31 @@ describe('EventsController record', () => {
       operatingThreshold: undefined,
       snapshotKey: undefined,
       clockSource: undefined,
+      clipId: undefined,
     });
+  });
+
+  it('passes optional clip_id through as clipId', async () => {
+    const eventAlarm = {
+      record: jest.fn().mockResolvedValue({
+        event: { id: 'event-1' },
+        duplicate: false,
+      }),
+    } as unknown as jest.Mocked<EventAlarmService>;
+    const recorder = {} as EventRecorderService;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await controller.record({
+      camera_id: 'camera-1',
+      type: 'fall',
+      detected_at: new Date('2026-06-26T01:02:03.456Z'),
+      clip_id: ' clip-123 ',
+    });
+
+    expect(eventAlarm.record).toHaveBeenCalledWith(
+      expect.objectContaining({ clipId: 'clip-123' }),
+    );
   });
   it('accepts optional audit envelope fields and maps them to recorder input', async () => {
     const eventAlarm = {
@@ -113,6 +137,7 @@ describe('EventsController record', () => {
       operatingThreshold: 0.42,
       snapshotKey: 'events/event-1.jpg',
       clockSource: 'edge_wall_clock',
+      clipId: undefined,
     });
   });
 });
