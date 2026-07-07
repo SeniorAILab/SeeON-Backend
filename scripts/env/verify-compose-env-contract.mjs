@@ -195,8 +195,11 @@ function verify() {
         'ml-api',
         'ml-worker',
         'worker.edge_worker',
-        '/run/secrets/ml-worker.yaml',
-        'ml/worker/ml-worker.example.yaml',
+        // Pull-first: worker boots from ml-api config pull; the ml-worker YAML
+        // secret is an optional offline-dev escape hatch, not a required prod
+        // fragment (adr-edge-* / registry cutover). clip-store is the evidence
+        // volume shared worker rw / ml-api ro.
+        'clip-store',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test',
         'API_BACKEND_EVENTS_URL: https://senai.example.com/api/v1/events',
