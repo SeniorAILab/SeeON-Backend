@@ -10,6 +10,7 @@ describe('EventRecorderService', () => {
 
   function makeSubject() {
     const tx = {
+      $queryRaw: jest.fn(),
       event: {
         create: jest.fn(),
         findUniqueOrThrow: jest.fn(),
@@ -54,6 +55,7 @@ describe('EventRecorderService', () => {
         type: ' FALL ',
         detectedAt,
         confidence: 0.91,
+        clipId: 'clip-123',
       }),
     ).resolves.toEqual({ event: created, duplicate: false });
 
@@ -65,6 +67,7 @@ describe('EventRecorderService', () => {
         type: 'fall',
         confidence: 0.91,
         detectedAt,
+        clipId: 'clip-123',
         configVersion: null,
         modelVersion: null,
         detectorVersion: null,
@@ -180,7 +183,7 @@ describe('EventRecorderService', () => {
     );
   });
 
-  it('persists snapshot keys through the security definer setter and derived alert backfill only', async () => {
+  it('persists snapshot keys and alert propagation in one facility transaction', async () => {
     const { subject, prisma, tx } = makeSubject();
     tx.alert.updateMany.mockResolvedValue({ count: 1 });
 
@@ -188,11 +191,12 @@ describe('EventRecorderService', () => {
       subject.persistSnapshotKey('fac_1', 'evt_1', 'fac_1/evt_1.jpg'),
     ).resolves.toBeUndefined();
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.withFacilityContext).toHaveBeenCalledWith(
       'fac_1',
       expect.any(Function),
     );
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(tx.alert.updateMany).toHaveBeenCalledWith({
       where: { originEventId: 'evt_1' },
       data: { snapshotKey: 'fac_1/evt_1.jpg' },

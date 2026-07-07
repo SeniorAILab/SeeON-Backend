@@ -4,9 +4,11 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
+  Put,
   Req,
   UseGuards,
   UseInterceptors,
@@ -19,8 +21,13 @@ import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { CamerasService } from './cameras.service.js';
 import {
   CreateCameraRequestDto,
+  EdgeCameraMappingRequestDto,
   UpdateCameraRequestDto,
 } from './dto/camera.dto.js';
+import {
+  EdgeFacilityTokenGuard,
+  type EdgeFacilityRequest,
+} from './edge-facility-token.guard.js';
 
 @Controller({ path: 'cameras', version: '1' })
 @ApiCookieAuth()
@@ -91,8 +98,38 @@ export class CamerasController {
   }
 }
 
+@Controller({ path: 'edge/cameras', version: '1' })
+@UseGuards(EdgeFacilityTokenGuard)
+export class EdgeCamerasController {
+  constructor(private readonly service: CamerasService) {}
+
+  @ApiOperation({
+    summary: 'Upsert edge camera mapping',
+    description:
+      'Maps an edge-local camera reference to a backend canonical camera id for the facility token scope.',
+  })
+  @Put()
+  @HttpCode(200)
+  upsert(
+    @Req() req: EdgeFacilityRequest,
+    @Body() body: EdgeCameraMappingRequestDto,
+  ) {
+    return this.service.upsertEdgeCameraMapping(
+      requireEdgeFacilityId(req),
+      body,
+    );
+  }
+}
+
 function requireFacilityId(req: RequestWithAuth): string {
   const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
   if (!facilityId) throw new ForbiddenException('Facility context required');
   return facilityId;
+}
+
+function requireEdgeFacilityId(req: EdgeFacilityRequest): string {
+  if (!req.edgeFacilityId) {
+    throw new ForbiddenException('Facility context required');
+  }
+  return req.edgeFacilityId;
 }

@@ -69,6 +69,7 @@ export class EventsController {
       operatingThreshold: body.operating_threshold,
       snapshotKey: body.snapshot_key,
       clockSource: body.clock_source,
+      clipId: optionalTrimmedString(body.clip_id),
     });
     return {
       id: result.event.id,
@@ -160,6 +161,13 @@ function requireString(value: unknown, field: string): string {
   return value;
 }
 
+
+function optionalTrimmedString(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
 function rejectClientSuppliedSnapshotKey(req: RequestWithAuth): void {
   const query = req.query as Record<string, unknown> | undefined;
   if (
@@ -208,6 +216,7 @@ function toEventResponseDto(event: Event): EventResponseDto {
     type: event.type,
     confidence: event.confidence,
     detectedAt: event.detectedAt,
+    clipId: event.clipId,
     createdAt: event.createdAt,
     modifiedAt: event.modifiedAt,
     configVersion: event.configVersion,

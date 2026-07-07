@@ -121,7 +121,7 @@ eldercare-fall-ai/
 │   ├── events/     # L4 alert/event schemas and publisher (-> POST /api/v1/events)
 │   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
 │   ├── demo/       # Streamlit demo UI (fall classification via api)
-│   ├── training/   # Batch training pipeline
+│   ├── dashboard/  # ml-api edge ops dashboard (React+Vite+Tailwind SPA)
 │   ├── data/       # Video dataset — domain-first layout (gitignored; ADR)
 │   └── models/     # Model single root (gitignored; ADR)
 ├── docs/
