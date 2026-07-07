@@ -5,9 +5,9 @@
 `scripts/git-guard/lib.sh` 헬퍼(`gg_warn`/`gg_die`)를 재사용합니다.
 
 > 결정 근거: backend layering rule, DTO hard gate, single-source guard invocation,
-> and the warn-tier boundary for reversible convention checks.
-> 자세한 결정은 `docs/decisions/README.md`
-> 와 `docs/rules/backend-architecture-lint-and-guard.md` 참고.
+> and the warn-tier boundary for reversible convention checks. If this becomes an
+> explicit decision-record task, file it through `docs/decisions/README.md`;
+> otherwise this README is the operational source for the guard behavior.
 
 ## 무엇을 어디서 검사하나 (경계)
 

@@ -15,7 +15,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, Prisma DB
 ├── ml/             # uv Python ML API, worker, demo, contracts (training moved to eldercare-dataset-ops, ADR-0004)
 ├── front/          # Vite React facility dashboard and operator UI
-├── docs/           # architecture, rules, domain docs, research, exec plans
+├── docs/           # architecture, rules, research, exec plans
 ├── scripts/        # git/backend/env/release/deploy guards and automation
 ├── .github/        # CI and PR gates
 └── AGENTS.md       # root router only; scoped rules override below their dirs
@@ -27,10 +27,11 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 
 | Task | Location | Notes |
 | --- | --- | --- |
-| System topology | `docs/architecture.md`, `docs/onboarding/` | Runtime split and edge/backend/frontend flow. |
-| Docs governance | `docs/AGENTS.md`, `docs/exec-plan/README.md` | Artifact ownership, plans, decisions, and rules. |
+| System topology | `docs/architecture.md` | Runtime split and edge/backend/frontend flow when explicitly authored. |
+| Docs scaffold | `docs/research/`, `docs/exec-plan/`, `docs/decisions/`, `docs/rules/` | Init-owned scaffold only; ADRs are explicit-request only. |
 | Backend API / DB | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Controllers/services/repositories, Prisma schema, migrations. |
 | ML runtime | `ml/AGENTS.md`, `ml/worker/AGENTS.md`, `ml/api/AGENTS.md` | Import ladder, RTSP worker, relay API, model boundaries. |
+| Nursing-home edge dashboard access | `docs/rules/nursing-home-edge-dashboard-access.md` | Direct tailnet `:5173` access, firewall check, fallback boundary, and no secrets/topology in docs or logs. |
 | Frontend | `front/AGENTS.md`, `front/src/AGENTS.md` | API seam, mock mode boundary, UI state. |
 | Scripts / guards | `scripts/AGENTS.md`, `scripts/backend-guard/README.md` | Hard gates and deploy/release automation. |
 | CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | Size/base checks and package CI. |
@@ -78,8 +79,8 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 
 - Use `pnpm` for Node packages and `uv` for `ml/`; do not add npm/yarn/pip lockfiles.
 - Local/native/Prisma/Compose env comes from root `.env.local`; host prod from `.env.host.prod`; edge prod from `.env.edge.prod`. Do not create package-local `.env*`.
-- Root `AGENTS.md` is a router. Put durable implementation rules in the owning scoped `AGENTS.md`, `docs/AGENTS.md`, or `docs/rules/**`, not here.
-- For docs artifacts, follow `docs/AGENTS.md`; root should not restate detailed document rules.
+- Root `AGENTS.md` is a router. Put durable implementation rules in the owning scoped `AGENTS.md` or `docs/rules/**`, not here.
+- ADRs or decision records belong in `docs/decisions/**` only when the user explicitly asks for them.
 - Split backend, front, ml-api, and ml-worker work into separate PRs by default.
 - Cross-surface work proceeds only through agreed API, DTO, event, or schema contracts.
 - Run dependency-free backend/front/ML slices in parallel instead of serializing them.
@@ -92,11 +93,11 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 - Do not put model loading or prediction routes in `ml-api`; live ML belongs in `ml-worker`.
 - Do not add RTSP publishers, MediaMTX, FFmpeg file-to-RTSP helpers, or synthetic camera servers inside this repo. `ml-worker` consumes configured streams.
 - Do not let frontend components call backend APIs directly; use `front/src/services/**`.
-- Do not call mock/stub/fake harnesses E2E. Real E2E claims must pass production code paths; see `docs/architecture.md`, `docs/rules/code-stability.md`, and `ml/AGENTS.md` for the owning detail.
+- Do not call mock/stub/fake harnesses E2E. Real E2E claims must pass production code paths; use the owning scoped `AGENTS.md` for detail.
 - Do not duplicate guard logic across CI, package scripts, or hooks. `scripts/**` owns reusable automation.
-- Do not bury new standing rules in scratch notes or memory. Promote them to `docs/rules/**`, `docs/domain/**`, `docs/decisions/**`, or the scoped `AGENTS.md`.
+- Do not bury new standing rules in scratch notes or memory. Promote them to `docs/rules/**` or the scoped `AGENTS.md`; use `docs/decisions/**` only on explicit ADR requests.
 
 ## Notes
 
-- Existing scoped `AGENTS.md` files are intentional for `backend`, `ml`, `front`, `docs`, `scripts`, `.github`, and high-complexity subtrees. Read the nearest one before editing files under that directory.
+- Existing scoped `AGENTS.md` files are intentional for `backend`, `ml`, `front`, `scripts`, `.github`, and high-complexity subtrees. Read the nearest one before editing files under that directory.
 - CI has separate backend, frontend, ML, and env-contract jobs plus an aggregate `ci-gate`. PR checks enforce base branch policy, same-repo `main` head rejection, and logic-churn size limits.
