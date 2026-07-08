@@ -85,6 +85,7 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 - Cross-surface work proceeds only through agreed API, DTO, event, or schema contracts.
 - Run dependency-free backend/front/ML slices in parallel instead of serializing them.
 - PRs targeting `main` should be feature-sized and MECE, without hidden dependencies on sibling PRs.
+- When scope expands mid-implementation, record non-blocking additions as follow-up issues and finish the already-scoped deliverable first.
 - Default verification is targeted: changed behavior first, then package lint/type/test gates that cover the touched surface.
 
 ## Anti-Patterns

@@ -66,13 +66,16 @@ pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
 Edge Compose is separate from the host stack and runs the two ML edge services:
 
 ```bash
-EDGE_CAMERA_CONFIG=./ml/worker/ml-worker.local.yaml \
-  docker compose -f compose.edge.yaml up -d --build
+pnpm edge:preflight
+docker compose --env-file .env.edge.prod -f compose.edge.yaml pull
+docker compose --env-file .env.edge.prod -f compose.edge.yaml up -d
 ```
 
-`EDGE_CAMERA_CONFIG` points to a gitignored per-camera YAML file with RTSP URLs,
-relay URL/token, camera identity, and the LSTM fall-model artifact contract.
-Backend Event API URL (`API_BACKEND_EVENTS_URL`) and the worker→ml-api relay token live in edge `ml-api`/Compose configuration per ADR.
+Edge production uses already-built image refs from `.env.edge.prod`; do not use
+`--build` on the edge host. `pnpm edge:preflight` fails before `docker compose`
+when Docker cannot expose the NVIDIA runtime needed by `ml-worker`. Backend Event
+API URL (`API_BACKEND_EVENTS_URL`) and the worker->ml-api relay token live in
+edge `ml-api`/Compose configuration per ADR.
 
 On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR).
 

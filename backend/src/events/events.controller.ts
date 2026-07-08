@@ -19,6 +19,7 @@ import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
+import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
 import {
   type EventResponseDto,
   RecordEventRequestDto,
@@ -51,6 +52,7 @@ export class EventsController {
       'Accepts camera-keyed ML events, resolves the facility and space from camera ownership, persists the event, and creates alerts for alert-worthy types.',
   })
   @Post()
+  @UseGuards(EdgeIngestTokenGuard)
   async record(
     @Body() body: RecordEventRequestDto,
   ): Promise<RecordEventResponseDto> {
@@ -84,6 +86,7 @@ export class EventsController {
   })
   @Post('heartbeat')
   @HttpCode(200)
+  @UseGuards(EdgeIngestTokenGuard)
   async heartbeat(
     @Body() body: RecordHeartbeatRequestDto,
   ): Promise<RecordHeartbeatResponseDto> {

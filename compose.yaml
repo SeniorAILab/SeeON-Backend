@@ -1,6 +1,6 @@
 # Host stack (single host): db + backend + front(nginx). ML runs on the external
-# edge device — see compose.edge.yaml (ML inference pushes signed events to the
-# backend /ingest endpoint, so ml-serving is not part of this stack).
+# edge device — see compose.edge.yaml (ML inference pushes bearer-token-authenticated
+# events to the backend Event API, so ml-serving is not part of this stack).
 # App services (backend, front) are gated behind the `full` profile so the default
 # `docker compose up` / `pnpm backend:db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
@@ -59,6 +59,10 @@ services:
       # KAKAO_TOKEN_ENC_KEY encrypts per-user Kakao access tokens at rest (AES-256-GCM).
       # Dev placeholder is a fixed 32-byte hex key; override with a real random key in prod.
       KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
+      # Must match the edge's EDGE_FACILITY_TOKEN exactly; dev placeholder unblocks
+      # `docker compose --profile full up` out of the box.
+      EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:-dev-only-edge-facility-token-change-me}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
