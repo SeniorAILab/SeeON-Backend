@@ -15,6 +15,7 @@ import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 const PREFIX = 'events-pr3-e2e';
+const EDGE_TOKEN = 'events-pr3-e2e-edge-token';
 
 describe('Events API (e2e)', () => {
   let app: INestApplication<App>;
@@ -29,6 +30,7 @@ describe('Events API (e2e)', () => {
     process.env.KAKAO_TOKEN_ENC_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
+    process.env.EDGE_FACILITY_TOKEN = EDGE_TOKEN;
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },
@@ -63,10 +65,9 @@ describe('Events API (e2e)', () => {
   it('records a no-HMAC versioned camera heartbeat and rejects unknown cameras', async () => {
     const seeded = await seedFacilityGraph('heartbeat');
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events/heartbeat')
-      .send({ camera_id: seeded.cameraId })
-      .expect(200, { ok: true });
+    await postHeartbeat({ camera_id: seeded.cameraId }).expect(200, {
+      ok: true,
+    });
 
     const camera = await direct.camera.findUniqueOrThrow({
       where: { id: seeded.cameraId },
@@ -74,10 +75,53 @@ describe('Events API (e2e)', () => {
     expect(camera.online).toBe(true);
     expect(camera.lastSeenAt).toBeInstanceOf(Date);
 
+    await postHeartbeat({
+      camera_id: `${PREFIX}-missing-heartbeat`,
+    }).expect(404);
+  });
+
+  it('rejects unauthenticated event and heartbeat ingest', async () => {
+    const seeded = await seedFacilityGraph('unauth');
+
     await request(app.getHttpServer())
       .post('/api/v1/events/heartbeat')
-      .send({ camera_id: `${PREFIX}-missing-heartbeat` })
-      .expect(404);
+      .send({ camera_id: seeded.cameraId })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'fall',
+        detected_at: '2026-06-26T04:00:00.000Z',
+        confidence: 0.9,
+      })
+      .expect(401);
+
+    expect(
+      await direct.event.count({ where: { facilityId: seeded.facilityId } }),
+    ).toBe(0);
+  });
+
+  it('rejects event and heartbeat ingest with a mismatched bearer token', async () => {
+    const seeded = await seedFacilityGraph('wrong-token');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events/heartbeat')
+      .set('Authorization', 'Bearer wrong-token')
+      .send({ camera_id: seeded.cameraId })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', 'Bearer wrong-token')
+      .send({
+        camera_id: seeded.cameraId,
+        type: 'fall',
+        detected_at: '2026-06-26T04:00:01.000Z',
+        confidence: 0.9,
+      })
+      .expect(403);
   });
   it('records events idempotently, scopes GET by facility, denies unbound/RLS and UPDATE/DELETE', async () => {
     const first = await seedFacilityGraph('a');
@@ -92,38 +136,26 @@ describe('Events API (e2e)', () => {
       confidence: 0.88,
     };
 
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send(body)
-      .expect(201);
+    const created = await postEvent(body).expect(201);
     expect(created.body).toMatchObject({ status: 'created' });
 
-    const duplicate = await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({ ...body, type: 'fall' })
-      .expect(201);
+    const duplicate = await postEvent({ ...body, type: 'fall' }).expect(201);
     expect(duplicate.body).toEqual({
       id: created.body.id,
       status: 'duplicate',
     });
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: second.cameraId,
-        type: 'bed-exit',
-        detected_at: '2026-06-26T01:02:04.456Z',
-      })
-      .expect(201);
+    await postEvent({
+      camera_id: second.cameraId,
+      type: 'bed-exit',
+      detected_at: '2026-06-26T01:02:04.456Z',
+    }).expect(201);
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: `${PREFIX}-missing`,
-        type: 'fall',
-        detected_at: '2026-06-26T01:02:03.456Z',
-      })
-      .expect(404);
+    await postEvent({
+      camera_id: `${PREFIX}-missing`,
+      type: 'fall',
+      detected_at: '2026-06-26T01:02:03.456Z',
+    }).expect(404);
 
     const rows = await direct.event.findMany({
       where: { id: created.body.id },
@@ -177,15 +209,12 @@ describe('Events API (e2e)', () => {
       where: { facilityId: seeded.facilityId },
     });
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: seeded.cameraId,
-        type: 'foo',
-        detected_at: '2026-06-26T02:00:00.000Z',
-        confidence: 0.5,
-      })
-      .expect(400);
+    await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'foo',
+      detected_at: '2026-06-26T02:00:00.000Z',
+      confidence: 0.5,
+    }).expect(400);
 
     await expect(
       direct.event.count({ where: { facilityId: seeded.facilityId } }),
@@ -198,35 +227,26 @@ describe('Events API (e2e)', () => {
       where: { facilityId: seeded.facilityId },
     });
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: seeded.cameraId,
-        type: 'fall',
-        detected_at: 1750900923456,
-        confidence: 0.5,
-      })
-      .expect(400);
+    await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'fall',
+      detected_at: 1750900923456,
+      confidence: 0.5,
+    }).expect(400);
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: seeded.cameraId,
-        type: 'fall',
-        detected_at: true,
-        confidence: 0.5,
-      })
-      .expect(400);
+    await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'fall',
+      detected_at: true,
+      confidence: 0.5,
+    }).expect(400);
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: seeded.cameraId,
-        type: 'fall',
-        detected_at: 'not-a-real-date',
-        confidence: 0.5,
-      })
-      .expect(400);
+    await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'fall',
+      detected_at: 'not-a-real-date',
+      confidence: 0.5,
+    }).expect(400);
 
     await expect(
       direct.event.count({ where: { facilityId: seeded.facilityId } }),
@@ -236,14 +256,11 @@ describe('Events API (e2e)', () => {
   it('accepts detection-lost events', async () => {
     const seeded = await seedFacilityGraph('detection-lost');
 
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: seeded.cameraId,
-        type: 'detection-lost',
-        detected_at: '2026-06-26T02:01:00.000Z',
-      })
-      .expect(201);
+    const created = await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'detection-lost',
+      detected_at: '2026-06-26T02:01:00.000Z',
+    }).expect(201);
 
     expect(created.body).toMatchObject({ status: 'created' });
     await expect(
@@ -266,14 +283,8 @@ describe('Events API (e2e)', () => {
     };
 
     const responses = await Promise.all([
-      request(app.getHttpServer())
-        .post('/api/v1/events')
-        .send(body)
-        .expect(201),
-      request(app.getHttpServer())
-        .post('/api/v1/events')
-        .send(body)
-        .expect(201),
+      postEvent(body).expect(201),
+      postEvent(body).expect(201),
     ]);
     const statuses = responses.map((response) => response.body.status).sort();
     expect(statuses).toEqual(['created', 'duplicate']);
@@ -295,24 +306,18 @@ describe('Events API (e2e)', () => {
     const first = await seedFacilityGraph('single-path-1');
     const second = await seedFacilityGraph('single-path-2');
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: first.cameraId,
-        type: 'fall',
-        detected_at: '2026-06-26T03:10:00.000Z',
-        confidence: 0.9,
-      })
-      .expect(201);
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send({
-        camera_id: second.cameraId,
-        type: 'fall',
-        detected_at: '2026-06-26T03:10:01.000Z',
-        confidence: 0.9,
-      })
-      .expect(201);
+    await postEvent({
+      camera_id: first.cameraId,
+      type: 'fall',
+      detected_at: '2026-06-26T03:10:00.000Z',
+      confidence: 0.9,
+    }).expect(201);
+    await postEvent({
+      camera_id: second.cameraId,
+      type: 'fall',
+      detected_at: '2026-06-26T03:10:01.000Z',
+      confidence: 0.9,
+    }).expect(201);
 
     expect(
       await direct.event.count({ where: { facilityId: first.facilityId } }),
@@ -340,14 +345,8 @@ describe('Events API (e2e)', () => {
       confidence: 0.9,
     };
 
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send(body)
-      .expect(201);
-    await request(app.getHttpServer())
-      .post('/api/v1/events')
-      .send(body)
-      .expect(201);
+    await postEvent(body).expect(201);
+    await postEvent(body).expect(201);
 
     expect(
       await direct.event.count({ where: { facilityId: seeded.facilityId } }),
@@ -357,6 +356,20 @@ describe('Events API (e2e)', () => {
     ).toBe(1);
     expect(received).toHaveLength(1);
   });
+
+  function postEvent(body: Record<string, unknown>) {
+    return request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${EDGE_TOKEN}`)
+      .send(body);
+  }
+
+  function postHeartbeat(body: Record<string, unknown>) {
+    return request(app.getHttpServer())
+      .post('/api/v1/events/heartbeat')
+      .set('Authorization', `Bearer ${EDGE_TOKEN}`)
+      .send(body);
+  }
 
   async function seedFacilityGraph(suffix: string) {
     const facility = await direct.facility.create({
