@@ -24,6 +24,7 @@ KAKAO_REDIRECT_URI=https://senai.example.com/api/v1/auth/kakao/callback
 KAKAO_SCOPES=talk_message
 KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
+EDGE_FACILITY_TOKEN=prod-edge-facility-token-32-chars
 BACKEND_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/backend:test
 FRONT_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/front:test
 ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test
@@ -181,6 +182,7 @@ function verify() {
         'prod-kakao-client-secret',
         'talk_message',
         'NOKYANG_ADMIN_PASSWORD: prod-nokyang-password',
+        'EDGE_FACILITY_TOKEN: prod-edge-facility-token-32-chars',
         'ghcr.io/seniorailab/eldercare-fall-ai/backend:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/front:test',
         'pull_policy: always',

@@ -29,6 +29,10 @@ services:
       KAKAO_SCOPES: ${KAKAO_SCOPES:-}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
       KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:?KAKAO_TOKEN_ENC_KEY is required in prod}
+      # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
+      # Deploy order: set this to match the edge's EDGE_FACILITY_TOKEN and deploy the
+      # edge stack first, so ml-api is already sending the bearer before this enforces it.
+      EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:?EDGE_FACILITY_TOKEN is required in prod}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-}
       NOKYANG_ADMIN_PASSWORD: ${NOKYANG_ADMIN_PASSWORD:-}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
