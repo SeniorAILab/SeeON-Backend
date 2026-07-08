@@ -1,5 +1,5 @@
+import type { ExecutionContext } from '@nestjs/common';
 import {
-  ExecutionContext,
   ForbiddenException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -23,7 +23,9 @@ describe('EdgeIngestTokenGuard', () => {
     );
 
     expect(
-      guard.canActivate(contextFor({ authorization: 'Bearer edge-token' }).context),
+      guard.canActivate(
+        contextFor({ authorization: 'Bearer edge-token' }).context,
+      ),
     ).toBe(true);
   });
 
@@ -45,7 +47,9 @@ describe('EdgeIngestTokenGuard', () => {
     );
 
     expect(
-      guard.canActivate(contextFor({ authorization: 'Bearer edge-token' }).context),
+      guard.canActivate(
+        contextFor({ authorization: 'Bearer edge-token' }).context,
+      ),
     ).toBe(true);
   });
 
@@ -70,7 +74,9 @@ describe('EdgeIngestTokenGuard', () => {
     );
 
     expect(
-      guard.canActivate(contextFor({ authorization: 'Bearer edge-token' }).context),
+      guard.canActivate(
+        contextFor({ authorization: 'Bearer edge-token' }).context,
+      ),
     ).toBe(true);
   });
 
