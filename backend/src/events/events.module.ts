@@ -6,11 +6,12 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { EventRecorderService } from './event-recorder.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
 import { EventsController } from './events.controller.js';
+import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
 
 @Module({
   imports: [PrismaModule, CamerasModule, AuthModule, AlertsModule],
   controllers: [EventsController],
-  providers: [EventRecorderService, EventAlarmService],
+  providers: [EventRecorderService, EventAlarmService, EdgeIngestTokenGuard],
   exports: [EventRecorderService],
 })
 export class EventsModule {}

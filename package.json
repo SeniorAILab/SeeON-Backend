@@ -23,6 +23,7 @@
     "dupcheck": "jscpd ml backend/src front/src",
     "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
     "env:verify": "node scripts/env/verify-compose-env-contract.mjs",
+    "edge:preflight": "sh scripts/edge-preflight/check-nvidia-runtime.sh",
     "env:local:verify": "node scripts/dev/ensure-local-env.mjs",
     "backend:db:up": "docker compose --env-file .env.local up -d db",
     "backend:db:down": "docker compose down",

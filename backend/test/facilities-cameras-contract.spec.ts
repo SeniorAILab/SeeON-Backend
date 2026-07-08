@@ -13,6 +13,7 @@ import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 const PREFIX = 'fac-cam-contract-b2';
+const EDGE_TOKEN = 'fac-cam-contract-b2-edge-token';
 
 describe('Facilities and cameras response contracts (e2e)', () => {
   let app: INestApplication<App>;
@@ -26,6 +27,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     process.env.KAKAO_TOKEN_ENC_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
+    process.env.EDGE_FACILITY_TOKEN = EDGE_TOKEN;
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },
@@ -174,6 +176,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/api/v1/events/heartbeat')
+      .set('Authorization', `Bearer ${EDGE_TOKEN}`)
       .send({ camera_id: seeded.cameraId })
       .expect(200, { ok: true });
 
