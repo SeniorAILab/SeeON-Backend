@@ -206,6 +206,7 @@ function verify() {
         'API_EDGE_RELAY_TOKEN: edge-relay-token-minimum-32-chars',
         'API_BACKEND_CONFIG_URL: https://senai.example.com/api/v1/ml-config',
         'API_FACILITY_ID: facility-prod',
+        'ML_API_WORKER_PROBE_ORIGIN: http://ml-worker:8090',
         'ML_WORKER_STATE_DIR: /var/lib/ml-worker',
         'RELAY_TOKEN: edge-relay-token-minimum-32-chars',
       ]);
