@@ -28,6 +28,17 @@ export interface AuthSession {
   readonly maxAgeSeconds: number;
 }
 
+export interface AlertSettings {
+  readonly notificationEmail: string | null;
+  readonly emailAlertsEnabled: boolean;
+  readonly effectiveEmail: string | null;
+}
+
+export interface UpdateAlertSettingsInput {
+  readonly notificationEmail?: string | null;
+  readonly emailAlertsEnabled?: boolean;
+}
+
 export interface RegisterWithPasswordInput {
   readonly name: unknown;
   readonly email: unknown;
@@ -172,6 +183,56 @@ export class AuthService {
       sessionVersion: user.sessionVersion,
     });
     return { user, token, maxAgeSeconds: jwtTtlSeconds(expiresIn) };
+  }
+
+  async getAlertSettings(userId: string): Promise<AlertSettings> {
+    const user = await this.prisma.db.user.findUnique({
+      where: { id: userId },
+      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+    });
+    if (!user) throw new UnauthorizedException('Unknown user');
+    return {
+      notificationEmail: user.notificationEmail,
+      emailAlertsEnabled: user.emailAlertsEnabled,
+      effectiveEmail: user.notificationEmail ?? user.email,
+    };
+  }
+
+  async updateAlertSettings(
+    userId: string,
+    input: UpdateAlertSettingsInput,
+  ): Promise<AlertSettings> {
+    const data: {
+      notificationEmail?: string | null;
+      emailAlertsEnabled?: boolean;
+    } = {};
+    if (input.notificationEmail !== undefined) {
+      if (
+        input.notificationEmail !== null &&
+        typeof input.notificationEmail !== 'string'
+      ) {
+        throw new BadRequestException('notificationEmail must be a string or null');
+      }
+      const raw =
+        input.notificationEmail === null ? '' : input.notificationEmail.trim();
+      data.notificationEmail = raw === '' ? null : normalizeEmail(raw);
+    }
+    if (input.emailAlertsEnabled !== undefined) {
+      if (typeof input.emailAlertsEnabled !== 'boolean') {
+        throw new BadRequestException('emailAlertsEnabled must be a boolean');
+      }
+      data.emailAlertsEnabled = input.emailAlertsEnabled;
+    }
+    const user = await this.prisma.db.user.update({
+      where: { id: userId },
+      data,
+      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+    });
+    return {
+      notificationEmail: user.notificationEmail,
+      emailAlertsEnabled: user.emailAlertsEnabled,
+      effectiveEmail: user.notificationEmail ?? user.email,
+    };
   }
 
   private jwtTtl(): string {

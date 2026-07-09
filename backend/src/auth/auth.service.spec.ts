@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { hashPassword } from './password';
 
@@ -88,5 +88,96 @@ describe('AuthService JWT password login', () => {
       where: { id: 'user-1' },
       data: { sessionVersion: { increment: 1 } },
     });
+  });
+});
+
+describe('AuthService email-alert settings', () => {
+  it('returns settings with effective email falling back to the login email', async () => {
+    const prisma = {
+      db: {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            notificationEmail: null,
+            emailAlertsEnabled: true,
+            email: 'admin@example.test',
+          }),
+        },
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await expect(service.getAlertSettings('user-1')).resolves.toEqual({
+      notificationEmail: null,
+      emailAlertsEnabled: true,
+      effectiveEmail: 'admin@example.test',
+    });
+    expect(prisma.db.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+    });
+  });
+
+  it('normalizes a new notification email and updates the flag', async () => {
+    const prisma = {
+      db: {
+        user: {
+          update: jest.fn().mockResolvedValue({
+            notificationEmail: 'alerts@example.test',
+            emailAlertsEnabled: false,
+            email: 'admin@example.test',
+          }),
+        },
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    const result = await service.updateAlertSettings('user-1', {
+      notificationEmail: ' Alerts@Example.TEST ',
+      emailAlertsEnabled: false,
+    });
+
+    expect(prisma.db.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: {
+        notificationEmail: 'alerts@example.test',
+        emailAlertsEnabled: false,
+      },
+      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+    });
+    expect(result.notificationEmail).toBe('alerts@example.test');
+    expect(result.emailAlertsEnabled).toBe(false);
+  });
+
+  it('clears the notification email when given a blank value', async () => {
+    const prisma = {
+      db: {
+        user: {
+          update: jest.fn().mockResolvedValue({
+            notificationEmail: null,
+            emailAlertsEnabled: true,
+            email: 'admin@example.test',
+          }),
+        },
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await service.updateAlertSettings('user-1', { notificationEmail: '   ' });
+
+    expect(prisma.db.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { notificationEmail: null },
+      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+    });
+  });
+
+  it('rejects an invalid notification email without updating', async () => {
+    const prisma = { db: { user: { update: jest.fn() } } };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await expect(
+      service.updateAlertSettings('user-1', { notificationEmail: 'not-an-email' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.db.user.update).not.toHaveBeenCalled();
   });
 });

@@ -26,3 +26,8 @@ export class CreateFacilityRequestDto {
   @IsString()
   facilityName!: string;
 }
+
+export class UpdateAlertSettingsRequestDto {
+  notificationEmail?: string | null;
+  emailAlertsEnabled?: boolean;
+}

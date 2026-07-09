@@ -5,13 +5,14 @@ import {
   Get,
   Header,
   HttpCode,
+  Patch,
   Post,
   Req,
   Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBody, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { clearSessionCookie, setSessionCookie } from './cookie.util';
@@ -19,6 +20,7 @@ import {
   CreateFacilityRequestDto,
   LoginRequestDto,
   RegisterRequestDto,
+  UpdateAlertSettingsRequestDto,
 } from './dto/auth.dto';
 import type { RequestWithAuth } from './jwt-auth.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -41,6 +43,40 @@ export class AuthController {
   me(@Req() request: RequestWithAuth) {
     if (!request.user) throw new UnauthorizedException('Missing session');
     return presentAuthUser(request.user);
+  }
+
+  @ApiOperation({
+    summary: 'Read the current user email-alert settings',
+    description:
+      'Returns the authenticated user notification_email, email_alerts_enabled flag, and the effective recipient email (notification_email ?? email).',
+  })
+  @ApiCookieAuth()
+  @Get('auth/me/alert-settings')
+  @UseGuards(JwtAuthGuard)
+  @Header('cache-control', 'no-store')
+  async getAlertSettings(@Req() request: RequestWithAuth) {
+    if (!request.user) throw new UnauthorizedException('Missing session');
+    return this.auth.getAlertSettings(request.user.id);
+  }
+
+  @ApiOperation({
+    summary: 'Update the current user email-alert settings',
+    description:
+      'Self-service update of notification_email (null/empty clears it, falling back to the login email) and email_alerts_enabled.',
+  })
+  @ApiCookieAuth()
+  @ApiBody({ type: UpdateAlertSettingsRequestDto })
+  @Patch('auth/me/alert-settings')
+  @UseGuards(JwtAuthGuard)
+  async updateAlertSettings(
+    @Req() request: RequestWithAuth,
+    @Body() body: UpdateAlertSettingsRequestDto,
+  ) {
+    if (!request.user) throw new UnauthorizedException('Missing session');
+    return this.auth.updateAlertSettings(request.user.id, {
+      notificationEmail: body.notificationEmail,
+      emailAlertsEnabled: body.emailAlertsEnabled,
+    });
   }
 
   @ApiOperation({
