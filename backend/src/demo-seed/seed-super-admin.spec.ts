@@ -22,7 +22,7 @@ describe('super-admin bootstrap config', () => {
   it('defaults email/nickname to the canonical super admin when only the password is set', () => {
     expect(readSuperAdminConfig({ SUPER_ADMIN_PASSWORD: 'pw' })).toEqual({
       skip: false,
-      email: '<REDACTED_NOTIFICATION_EMAIL>',
+      email: 'admin@example.com',
       password: 'pw',
       nickname: 'Senior AI Lab',
       facilityId: null,
@@ -125,7 +125,7 @@ describe('super-admin action decision', () => {
 describe('bootstrapSuperAdmin wiring', () => {
   const config = {
     skip: false as const,
-    email: '<REDACTED_NOTIFICATION_EMAIL>',
+    email: 'admin@example.com',
     password: 's3cret-pass',
     nickname: 'Senior AI Lab',
     facilityId: null,

@@ -43,15 +43,14 @@ function readNokyangDemoPassword(env: NodeJS.ProcessEnv): string {
   if (password.length > 0) {
     return password;
   }
-  if (
-    env.NODE_ENV !== 'production' &&
-    env.SEED_DEMO_ALLOW_DEFAULT_PASSWORD === 'true'
-  ) {
-    return '1234';
+  if (env.NODE_ENV === 'production') {
+    throw new Error(
+      'NOKYANG_ADMIN_PASSWORD must be set for the Nokyang demo admin in production.',
+    );
   }
-  throw new Error(
-    'NOKYANG_ADMIN_PASSWORD must be set for Nokyang demo users. Set SEED_DEMO_ALLOW_DEFAULT_PASSWORD=true only for explicit non-production demo resets.',
-  );
+  // Development/local: fixed demo password so the Nokyang testbed logs in with 1234
+  // without any extra env flag. Production still requires an explicit secret above.
+  return '1234';
 }
 
 async function upsertAdmin(

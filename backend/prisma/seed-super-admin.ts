@@ -12,7 +12,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { hashPassword, verifyPassword } from '../src/auth/password';
 
-const DEFAULT_EMAIL = '<REDACTED_NOTIFICATION_EMAIL>';
+const DEFAULT_EMAIL = 'admin@example.com';
 const DEFAULT_NICKNAME = 'Senior AI Lab';
 
 type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
