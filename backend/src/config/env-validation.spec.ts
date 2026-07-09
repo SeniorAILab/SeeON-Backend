@@ -9,18 +9,16 @@ const VALID_PROD_ENV = {
   DIRECT_URL: 'postgresql://fall_prod_admin:admin-pass@db:5432/fall_prod',
   FRONT_ORIGIN: 'https://senai.example.com',
   ALERT_DASHBOARD_URL: 'https://senai.example.com',
-  KAKAO_REST_API_KEY: 'prod-kakao-rest-api-key',
-  KAKAO_REDIRECT_URI: 'https://senai.example.com/api/v1/auth/kakao/callback',
   SESSION_JWT_SECRET: 'prod-dummy-session-secret-minimum-32-chars',
-  KAKAO_TOKEN_ENC_KEY:
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  SMTP_HOST: 'smtp.example.com',
+  SMTP_USER: 'alerts@example.com',
+  SMTP_PASSWORD: 'prod-smtp-password',
 } as const;
 
 describe('validateBackendEnv', () => {
   it('allows local development placeholders when NODE_ENV is not production', () => {
     const env = {
       NODE_ENV: 'development',
-      KAKAO_REST_API_KEY: 'dev-placeholder-kakao-rest-api-key',
       SESSION_JWT_SECRET: 'short',
     };
 
@@ -42,19 +40,16 @@ describe('validateBackendEnv', () => {
 
   it('rejects missing production values', () => {
     const env: Record<string, string> = { ...VALID_PROD_ENV };
-    delete env.KAKAO_REST_API_KEY;
+    delete env.SMTP_HOST;
 
     expect(() => validateBackendEnv(env)).toThrow(
-      new BackendEnvValidationError([
-        'KAKAO_REST_API_KEY is required in production',
-      ]),
+      new BackendEnvValidationError(['SMTP_HOST is required in production']),
     );
   });
 
   it('rejects local placeholders in production', () => {
     const env = {
       ...VALID_PROD_ENV,
-      KAKAO_REST_API_KEY: 'dev-placeholder-kakao-rest-api-key',
       SESSION_JWT_SECRET: 'dev-only-session-secret-change-me-32chars-min',
     };
 
@@ -74,7 +69,6 @@ describe('validateBackendEnv', () => {
     const env = {
       ...VALID_PROD_ENV,
       SESSION_JWT_SECRET: 'short',
-      KAKAO_TOKEN_ENC_KEY: 'abc123',
     };
 
     expect(() => validateBackendEnv(env)).toThrow(BackendEnvValidationError);
@@ -91,5 +85,27 @@ describe('validateBackendEnv', () => {
         'AUTH_COOKIE_SECURE must be either true or false',
       ]),
     );
+  });
+
+  it('rejects a malformed SMTP_SECURE boolean flag', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      SMTP_SECURE: 'yes',
+    };
+
+    expect(() => validateBackendEnv(env)).toThrow(
+      new BackendEnvValidationError([
+        'SMTP_SECURE must be either true or false',
+      ]),
+    );
+  });
+
+  it('accepts a valid SMTP_SECURE boolean flag', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      SMTP_SECURE: 'true',
+    };
+
+    expect(validateBackendEnv(env)).toBe(env);
   });
 });

@@ -136,7 +136,7 @@ describe('AlertEventsRepository', () => {
     expect(tx.deliveryAttempt.create).toHaveBeenCalledWith({
       data: {
         alertEventId: 'alert-event-1',
-        channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+        channel: DeliveryChannel.EMAIL,
         status: DeliveryAttemptStatus.PENDING,
       },
     });
@@ -170,7 +170,7 @@ describe('AlertEventsRepository', () => {
       {
         kind: 'failed',
         failure_class: 'transient',
-        reason: 'kakao_http_503',
+        reason: 'smtp_ECONNECTION',
         retry_after_ms: 30_000,
       },
       now,
@@ -184,7 +184,7 @@ describe('AlertEventsRepository', () => {
         failureClass: DeliveryFailureClass.TRANSIENT,
         terminalReason: null,
         operatorAction: null,
-        lastError: 'kakao_http_503',
+        lastError: 'smtp_ECONNECTION',
         nextAttemptAt: new Date('2026-06-13T10:00:30.000Z'),
       },
     });
@@ -202,7 +202,7 @@ describe('AlertEventsRepository', () => {
     await repository.recordDeliveryResult('delivery-attempt-1', {
       kind: 'failed',
       failure_class: 'terminal_operator_action',
-      reason: 'Kakao config is missing: KAKAO_TOKEN_PATH',
+      reason: 'smtp_config_missing:SMTP_HOST',
       operator_action: 'Provide a token file.',
     });
 
@@ -212,9 +212,9 @@ describe('AlertEventsRepository', () => {
         status: DeliveryAttemptStatus.TERMINAL_FAILED,
         attemptCount: { increment: 1 },
         failureClass: DeliveryFailureClass.TERMINAL_OPERATOR_ACTION,
-        terminalReason: 'Kakao config is missing: KAKAO_TOKEN_PATH',
+        terminalReason: 'smtp_config_missing:SMTP_HOST',
         operatorAction: 'Provide a token file.',
-        lastError: 'Kakao config is missing: KAKAO_TOKEN_PATH',
+        lastError: 'smtp_config_missing:SMTP_HOST',
         nextAttemptAt: null,
       },
     });
@@ -276,7 +276,7 @@ function deliveryRecord(input: { readonly status: DeliveryAttemptStatus }) {
   return {
     id: 'delivery-attempt-1',
     alertEventId: 'alert-event-1',
-    channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+    channel: DeliveryChannel.EMAIL,
     status: input.status,
     attemptCount: 0,
     nextAttemptAt: null,

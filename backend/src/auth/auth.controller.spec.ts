@@ -1,12 +1,6 @@
-import {
-  ServiceUnavailableException,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { User } from '@prisma/client';
 import type { Response } from 'express';
 import { AuthController } from './auth.controller';
-import { OAUTH_STATE_COOKIE_NAME } from './auth.constants';
 import type { AuthService } from './auth.service';
 import type { RequestWithAuth } from './jwt-auth.guard';
 
@@ -29,199 +23,26 @@ describe('AuthController', () => {
     id: 'user-1',
     createdAt: new Date('2026-06-18T00:00:00.000Z'),
     facilityId,
-    kakaoId: 'kakao-1',
     email: null,
     passwordHash: null,
     phone: null,
+    notificationEmail: null,
+    emailAlertsEnabled: true,
     nickname: '테스트 사용자',
     role,
     sessionVersion: 1,
   });
 
-  const makeController = (frontOrigin?: string) => {
+  const makeController = () => {
     const auth = {
-      createOAuthState: jest.fn(() => 'oauth-state'),
-      getKakaoAuthorizeUrl: jest.fn(
-        () => 'https://kauth.kakao.com/oauth/authorize',
-      ),
-      completeKakaoCallback: jest.fn(),
       loginWithPassword: jest.fn(),
       registerWithPassword: jest.fn(),
       revokeAllSessions: jest.fn(),
+      createFacilityForUser: jest.fn(),
     } as unknown as jest.Mocked<AuthService>;
-    const controller = new AuthController(
-      auth,
-      new ConfigService(frontOrigin ? { FRONT_ORIGIN: frontOrigin } : {}),
-    );
+    const controller = new AuthController(auth);
     return { auth, controller };
   };
-
-  it('redirects back to login without setting state when Kakao OAuth is not configured', () => {
-    const { auth, controller } = makeController('http://front.test/');
-    auth.getKakaoAuthorizeUrl.mockImplementation(() => {
-      throw new ServiceUnavailableException('KAKAO_REST_API_KEY must be real');
-    });
-    const response = makeResponse();
-
-    controller.kakaoLogin(response);
-
-    expect(auth.getKakaoAuthorizeUrl.mock.calls[0]).toEqual(['oauth-state']);
-    expect(response.cookie).not.toHaveBeenCalled();
-    expect(response.redirect).toHaveBeenCalledWith(
-      'http://front.test/login?auth_error=kakao_unavailable',
-    );
-  });
-
-  it('sets OAuth state only after building a valid Kakao authorize URL', () => {
-    const { auth, controller } = makeController();
-    const response = makeResponse();
-
-    controller.kakaoLogin(response);
-
-    expect(auth.getKakaoAuthorizeUrl.mock.calls[0]).toEqual(['oauth-state']);
-    expect(response.cookie).toHaveBeenCalled();
-    expect(response.redirect).toHaveBeenCalledWith(
-      'https://kauth.kakao.com/oauth/authorize',
-    );
-  });
-
-  it('redirects users without facilityId to absolute frontend onboarding URL', async () => {
-    const { auth, controller } = makeController('http://front.test/');
-    auth.completeKakaoCallback.mockResolvedValue({
-      token: 'session-token',
-      maxAgeSeconds: 60,
-      user: makeUser(null),
-    });
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.redirect).toHaveBeenCalledWith(
-      'http://front.test/onboarding',
-    );
-  });
-
-  it('redirects staff users with facilityId to the staff default URL', async () => {
-    const { auth, controller } = makeController('https://app.example.com///');
-    auth.completeKakaoCallback.mockResolvedValue({
-      token: 'session-token',
-      maxAgeSeconds: 60,
-      user: makeUser('demo-facility-01'),
-    });
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.redirect).toHaveBeenCalledWith(
-      'https://app.example.com/dashboard/facilities/demo-facility-01/staff',
-    );
-  });
-
-  it('redirects admin users with facilityId to absolute frontend dashboard URL', async () => {
-    const { auth, controller } = makeController('https://app.example.com///');
-    auth.completeKakaoCallback.mockResolvedValue({
-      token: 'session-token',
-      maxAgeSeconds: 60,
-      user: makeUser('demo-facility-01', 'ADMIN'),
-    });
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.redirect).toHaveBeenCalledWith(
-      'https://app.example.com/dashboard/facilities/demo-facility-01/admin',
-    );
-  });
-
-  it('redirects super admins to the system dashboard without requiring facilityId', async () => {
-    const { auth, controller } = makeController('https://app.example.com///');
-    auth.completeKakaoCallback.mockResolvedValue({
-      token: 'session-token',
-      maxAgeSeconds: 60,
-      user: makeUser(null, 'SUPER_ADMIN'),
-    });
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.redirect).toHaveBeenCalledWith(
-      'https://app.example.com/dashboard',
-    );
-  });
-
-  it('redirects unlinked Kakao accounts back to login without a session cookie', async () => {
-    const { auth, controller } = makeController('http://front.test/');
-    auth.completeKakaoCallback.mockRejectedValue(
-      new UnauthorizedException('Kakao account is not registered'),
-    );
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.cookie).not.toHaveBeenCalled();
-    expect(response.clearCookie).toHaveBeenCalled();
-    expect(response.redirect).toHaveBeenCalledWith(
-      'http://front.test/login?auth_error=kakao_unregistered',
-    );
-  });
-
-  it('uses localhost frontend origin when FRONT_ORIGIN is unset', async () => {
-    const { auth, controller } = makeController();
-    auth.completeKakaoCallback.mockResolvedValue({
-      token: 'session-token',
-      maxAgeSeconds: 60,
-      user: makeUser(null),
-    });
-    const response = makeResponse();
-
-    await controller.kakaoCallback(
-      'code',
-      'state',
-      {
-        headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=state` },
-      } as RequestWithAuth,
-      response,
-    );
-
-    expect(response.redirect).toHaveBeenCalledWith(
-      'http://localhost:3000/onboarding',
-    );
-  });
 
   it('returns /auth/me identity without legacy session fields', () => {
     const { controller } = makeController();
@@ -231,7 +52,6 @@ describe('AuthController', () => {
         id: 'user-1',
         facilityId: 'facility-1',
         role: 'ADMIN',
-        kakaoId: 'kakao-1',
         email: 'admin@example.test',
         nickname: 'Admin',
         sessionVersion: 3,
@@ -332,6 +152,31 @@ describe('AuthController', () => {
         nickname: '홍원장',
         facilityId: 'facility-1',
       }),
+    );
+  });
+
+  it('creates a facility for the authenticated user and sets a session cookie', async () => {
+    const { auth, controller } = makeController();
+    auth.createFacilityForUser.mockResolvedValue({
+      token: 'session-token',
+      maxAgeSeconds: 60,
+      user: { ...makeUser('facility-2', 'ADMIN'), email: 'admin@sen.ai' },
+    });
+    const response = makeResponse();
+
+    const body = await controller.createFacility(
+      { facilityName: 'New Facility' },
+      { user: { id: 'user-1' } } as RequestWithAuth,
+      response,
+    );
+
+    expect(auth.createFacilityForUser).toHaveBeenCalledWith(
+      'user-1',
+      'New Facility',
+    );
+    expect(response.cookie).toHaveBeenCalled();
+    expect(body.user).toEqual(
+      expect.objectContaining({ facilityId: 'facility-2', role: 'ADMIN' }),
     );
   });
 });

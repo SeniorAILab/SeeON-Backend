@@ -8,9 +8,9 @@ import { TenantContext } from '../common/tenant-context.js';
 // withFacilityContext(). Direct calls on db.* without a TenantContext store throw
 // MissingTenantContextError before the query reaches the DB (NR1/NR2).
 //
-// KakaoIdentity is intentionally EXCLUDED: Kakao login/onboarding happens before
-// a facility context exists (facilityId may be NULL). RLS default-deny would block those
-// rows. KakaoIdentity is gated at the app layer, like User.
+// User is intentionally EXCLUDED: login/onboarding happens before a facility
+// context exists (facilityId may be NULL). RLS default-deny would block those
+// rows. User is gated at the app layer.
 const TENANT_MODELS = new Set([
   'Camera',
   'Alert',

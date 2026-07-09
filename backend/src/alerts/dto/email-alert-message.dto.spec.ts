@@ -1,10 +1,10 @@
 import type { AlertDeliveryMessage } from '../ports/channel.port.js';
 import {
-  buildKakaoAlertText,
-  buildKakaoTemplateObject,
+  buildEmailAlertHtml,
+  buildEmailAlertText,
   formatDetectedAtKST,
-  toKakaoAlertMessageDto,
-} from './kakao-alert-message.dto.js';
+  toEmailAlertMessageDto,
+} from './email-alert-message.dto.js';
 
 function message(
   overrides: Partial<AlertDeliveryMessage> = {},
@@ -18,7 +18,7 @@ function message(
     event_id: 'event-uuid',
     delivery_attempt_id: 'attempt-uuid',
     created_at: new Date('2026-06-18T06:04:01Z'),
-    recipient_access_token: 'token',
+    recipient_email: 'admin@example.test',
     resident_name: '홍길동',
     resident_room: '302호',
     ...overrides,
@@ -39,9 +39,9 @@ describe('formatDetectedAtKST', () => {
   });
 });
 
-describe('toKakaoAlertMessageDto', () => {
+describe('toEmailAlertMessageDto', () => {
   it('maps resident/room/confidence and the provided dashboard link', () => {
-    const dto = toKakaoAlertMessageDto(message(), DASHBOARD);
+    const dto = toEmailAlertMessageDto(message(), DASHBOARD);
     expect(dto).toMatchObject({
       title: '🚨 낙상 감지',
       residentName: '홍길동',
@@ -50,21 +50,22 @@ describe('toKakaoAlertMessageDto', () => {
       confidencePercent: 92,
       dashboardLink: DASHBOARD,
     });
+    expect(dto.subject).toContain('낙상 감지');
   });
 
   it('rounds confidence (0-1) to a whole percent', () => {
     expect(
-      toKakaoAlertMessageDto(message({ confidence: 0.5 }), DASHBOARD)
+      toEmailAlertMessageDto(message({ confidence: 0.5 }), DASHBOARD)
         .confidencePercent,
     ).toBe(50);
     expect(
-      toKakaoAlertMessageDto(message({ confidence: 0.876 }), DASHBOARD)
+      toEmailAlertMessageDto(message({ confidence: 0.876 }), DASHBOARD)
         .confidencePercent,
     ).toBe(88);
   });
 
   it('uses null resident name and room label when resident is absent', () => {
-    const dto = toKakaoAlertMessageDto(
+    const dto = toEmailAlertMessageDto(
       message({ resident_name: undefined, resident_room: 'Room 101' }),
       DASHBOARD,
     );
@@ -74,26 +75,26 @@ describe('toKakaoAlertMessageDto', () => {
 
   it('uses null confidencePercent when confidence is absent', () => {
     expect(
-      toKakaoAlertMessageDto(message({ confidence: undefined }), DASHBOARD)
+      toEmailAlertMessageDto(message({ confidence: undefined }), DASHBOARD)
         .confidencePercent,
     ).toBeNull();
   });
 
   it('titles by alert type', () => {
     expect(
-      toKakaoAlertMessageDto(message({ type: 'bed-exit' }), DASHBOARD).title,
+      toEmailAlertMessageDto(message({ type: 'bed-exit' }), DASHBOARD).title,
     ).toBe('🚨 침대 이탈 감지');
     expect(
-      toKakaoAlertMessageDto(message({ type: 'detection-lost' }), DASHBOARD)
+      toEmailAlertMessageDto(message({ type: 'detection-lost' }), DASHBOARD)
         .title,
     ).toBe('⚠️ 감지 신호 끊김');
   });
 });
 
-describe('buildKakaoAlertText', () => {
+describe('buildEmailAlertText', () => {
   it('renders Korean rich text with resident, room, KST time, confidence, and a dashboard prompt', () => {
-    const text = buildKakaoAlertText(
-      toKakaoAlertMessageDto(message(), DASHBOARD),
+    const text = buildEmailAlertText(
+      toEmailAlertMessageDto(message(), DASHBOARD),
     );
     expect(text).toContain('🚨 낙상 감지');
     expect(text).toContain('홍길동님');
@@ -101,11 +102,13 @@ describe('buildKakaoAlertText', () => {
     expect(text).toContain('2026-06-18 15:04 KST');
     expect(text).toContain('확신도 92%');
     expect(text).toContain('대시보드에서 상태 확인');
+    expect(text).toContain(DASHBOARD);
     expect(text).toContain('\n');
   });
+
   it('renders room label instead of fake resident text when resident is absent', () => {
-    const text = buildKakaoAlertText(
-      toKakaoAlertMessageDto(
+    const text = buildEmailAlertText(
+      toEmailAlertMessageDto(
         message({ resident_name: undefined, resident_room: 'Room 101' }),
         DASHBOARD,
       ),
@@ -116,8 +119,8 @@ describe('buildKakaoAlertText', () => {
   });
 
   it('never leaks debug/database identifiers', () => {
-    const text = buildKakaoAlertText(
-      toKakaoAlertMessageDto(message(), DASHBOARD),
+    const text = buildEmailAlertText(
+      toEmailAlertMessageDto(message(), DASHBOARD),
     );
     for (const leak of [
       'demo-cam-01',
@@ -132,36 +135,44 @@ describe('buildKakaoAlertText', () => {
   });
 
   it('omits the confidence line when confidence is absent', () => {
-    const text = buildKakaoAlertText(
-      toKakaoAlertMessageDto(message({ confidence: undefined }), DASHBOARD),
+    const text = buildEmailAlertText(
+      toEmailAlertMessageDto(message({ confidence: undefined }), DASHBOARD),
     );
     expect(text).not.toContain('확신도');
   });
+});
 
-  it('stays within 180 characters even for long resident/room values', () => {
-    const text = buildKakaoAlertText(
-      toKakaoAlertMessageDto(
+describe('buildEmailAlertHtml', () => {
+  it('renders an HTML body with the dashboard link and title', () => {
+    const html = buildEmailAlertHtml(
+      toEmailAlertMessageDto(message(), DASHBOARD),
+    );
+    expect(html).toContain('<h2');
+    expect(html).toContain('낙상 감지');
+    expect(html).toContain(`href="${DASHBOARD}"`);
+    expect(html).toContain('확신도 92%');
+  });
+
+  it('HTML-escapes resident/room values to prevent markup injection', () => {
+    const html = buildEmailAlertHtml(
+      toEmailAlertMessageDto(
         message({
-          resident_name: '가'.repeat(120),
-          resident_room: '나'.repeat(120),
+          resident_name: '<script>alert("xss")</script>',
+          resident_room: '3<0>2"호',
         }),
         DASHBOARD,
       ),
     );
-    expect(text.length).toBeLessThanOrEqual(180);
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('&quot;xss&quot;');
+    expect(html).toContain('3&lt;0&gt;2&quot;호');
   });
-});
 
-describe('buildKakaoTemplateObject', () => {
-  it('produces a Kakao text template with the dashboard link on both url fields', () => {
-    const template = buildKakaoTemplateObject(
-      toKakaoAlertMessageDto(message(), DASHBOARD),
+  it('omits the confidence line when confidence is absent', () => {
+    const html = buildEmailAlertHtml(
+      toEmailAlertMessageDto(message({ confidence: undefined }), DASHBOARD),
     );
-    expect(template.object_type).toBe('text');
-    expect(template.link).toEqual({
-      web_url: DASHBOARD,
-      mobile_web_url: DASHBOARD,
-    });
-    expect(typeof template.text).toBe('string');
+    expect(html).not.toContain('확신도');
   });
 });

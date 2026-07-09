@@ -1,11 +1,11 @@
-# Backend agent rules — NestJS alert policy / KakaoTalk webhooks (run/boot/flow in root AGENTS.md)
+# Backend agent rules — NestJS alert policy / email alert webhooks (run/boot/flow in root AGENTS.md)
 
 ## Layout
 
 ```
 backend/src/
 ├── events/                       # ML event intake: POST /api/v1/events
-├── alerts/                       # alert policy + Kakao fan-out (event/alarm split: issue #388)
+├── alerts/                       # alert policy + email fan-out (event/alarm split: issue #388)
 ├── facilities/ floors/ spaces/ cameras/ # facility topology
 ├── auth/                         # authentication
 ├── dashboard/ status/            # read-side APIs
@@ -32,9 +32,9 @@ See `src/AGENTS.md` before changing Nest application code. See
 ## Data model (v1 is room-centric)
 - v1 monitors at **room (space) granularity only**. There is no resident/guardian domain: `residents`, `resident_assignments`, `resident_statuses`, and `guardians` (tables + CRUD API) were dropped and return in v2. Alerts key off `spaceId`/`cameraId`, never a resident.
 - Table roles (keep these boundaries when adding columns/tables):
-  - **Append-only history / event log** — insert-and-keep, never repurposed as mutable state: `events` (immutable ML event SSOT), `alerts` (alert log; `alertSeq` is the SSE Last-Event-ID), `alert_events` + `delivery_attempts` (Kakao delivery outbox). New audit/history goes here as append rows.
+  - **Append-only history / event log** — insert-and-keep, never repurposed as mutable state: `events` (immutable ML event SSOT), `alerts` (alert log; `alertSeq` is the SSE Last-Event-ID), `alert_events` + `delivery_attempts` (email delivery outbox). New audit/history goes here as append rows.
   - **Facility topology / config** — mutable domain rows: `facilities`, `floors`, `spaces`, `cameras`.
-  - **Identity / auth** — `users`, `kakao_identities`; app-layer gated, NOT RLS tenant models (see `TENANT_MODELS` in `src/prisma/prisma.service.ts`).
+  - **Identity / auth** — `users`; app-layer gated, NOT RLS tenant models (see `TENANT_MODELS` in `src/prisma/prisma.service.ts`).
 - Re-adding resident/guardian in v2 is a schema+API addition, not a revival of the removed columns on `alerts`.
 
 ## Run

@@ -34,7 +34,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.alert.deleteMany();
     await direct.event.deleteMany();
     await direct.camera.deleteMany();
-    await direct.kakaoIdentity.deleteMany();
     await direct.user.deleteMany();
     await direct.space.deleteMany();
     await direct.floor.deleteMany();
@@ -52,31 +51,12 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         {
           id: 'user-a',
           facilityId: 'facility-a',
-          kakaoId: 'kakao-a',
           nickname: 'Owner A',
         },
         {
           id: 'user-b',
           facilityId: 'facility-b',
-          kakaoId: 'kakao-b',
           nickname: 'Owner B',
-        },
-      ],
-    });
-
-    await direct.kakaoIdentity.createMany({
-      data: [
-        {
-          id: 'kid-a',
-          userId: 'user-a',
-          facilityId: 'facility-a',
-          kakaoId: 'kakao-a',
-        },
-        {
-          id: 'kid-b',
-          userId: 'user-b',
-          facilityId: 'facility-b',
-          kakaoId: 'kakao-b',
         },
       ],
     });
@@ -205,8 +185,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await expect(prisma.db.space.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
-    // KakaoIdentity is NOT in TENANT_MODELS — app-layer gated, not RLS-gated.
-    // kakaoIdentity.findMany() does NOT throw MissingTenantContextError.
   });
 
   it('does not treat an unbound request TenantContext as a set_config-bound database context', async () => {
@@ -229,7 +207,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       ORDER BY table_name
     `;
 
-    // KakaoIdentity is excluded from RLS — it is visible without a GUC (app-layer gated).
     expect(rows).toEqual([
       { table_name: 'Alert', count: 0 },
       { table_name: 'AlertNote', count: 0 },
@@ -287,8 +264,6 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           crossCamera: await tx.camera.findUnique({ where: { id: 'cam-b' } }),
           crossAlert: await tx.alert.findUnique({ where: { id: 'alert-b' } }),
           crossSpace: await tx.space.findUnique({ where: { id: 'space-b' } }),
-          // KakaoIdentity is NOT RLS-protected — excluded from TENANT_MODELS and RLS.
-          // crossKakaoIdentity is intentionally omitted here.
         };
       },
     );

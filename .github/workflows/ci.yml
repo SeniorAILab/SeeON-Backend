@@ -68,8 +68,6 @@ jobs:
       DATABASE_URL: postgresql://fall_app:fall_app@localhost:5432/fall_dev?schema=public
       DIRECT_URL: postgresql://fall:fall@localhost:5432/fall_dev?schema=public
       SESSION_JWT_SECRET: ci-session-secret-minimum-32-characters
-      KAKAO_REST_API_KEY: ci-dummy-key
-      KAKAO_REDIRECT_URI: http://localhost:3000/auth/kakao/callback
     services:
       postgres:
         image: postgres:17-alpine

@@ -5,7 +5,6 @@ import {
   DeliveryChannel,
 } from '@prisma/client';
 import type { ConfigService } from '@nestjs/config';
-import { encryptToken } from '../../auth/token-crypto.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 
 import { AlertEventTypes } from '../dto/alert-events.dto.js';
@@ -28,8 +27,6 @@ type ChannelPortMock = {
 
 describe('AlertEventsService', () => {
   it('ensures ingest outbox once and fans out independently per recipient', async () => {
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({
       event: eventRecord(),
@@ -55,8 +52,8 @@ describe('AlertEventsService', () => {
       .mockResolvedValueOnce({ kind: 'sent' })
       .mockRejectedValueOnce(new Error('network'));
     const prisma = prismaDouble([
-      recipientRecord('user-1', encryptToken('token-1')),
-      recipientRecord('user-2', encryptToken('token-2')),
+      recipientRecord('user-1', 'admin1@example.test'),
+      recipientRecord('user-2', 'admin2@example.test'),
     ]);
     const service = createService(repository, channel, prisma);
 
@@ -78,14 +75,14 @@ describe('AlertEventsService', () => {
       1,
       expect.objectContaining({
         delivery_attempt_id: 'delivery-attempt-1',
-        recipient_access_token: 'token-1',
+        recipient_email: 'admin1@example.test',
       }),
     );
     expect(channel.send).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         delivery_attempt_id: 'delivery-attempt-2',
-        recipient_access_token: 'token-2',
+        recipient_email: 'admin2@example.test',
       }),
     );
     expect(repository.recordDeliveryResult).toHaveBeenCalledWith(
@@ -102,7 +99,7 @@ describe('AlertEventsService', () => {
     );
   });
 
-  it('records bed-exit ingest events without delivery attempts or Kakao sends', async () => {
+  it('records bed-exit ingest events without delivery attempts or email sends', async () => {
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({
       event: {
@@ -113,9 +110,7 @@ describe('AlertEventsService', () => {
       deliveryAttempts: [],
     });
     const channel = channelDouble();
-    const prisma = prismaDouble([
-      recipientRecord('user-1', encryptToken('token-1')),
-    ]);
+    const prisma = prismaDouble([recipientRecord('user-1', 'admin1@example.test')]);
     const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({
@@ -136,9 +131,7 @@ describe('AlertEventsService', () => {
     expect(repository.recordDeliveryResult).not.toHaveBeenCalled();
   });
 
-  it('skips already-SENT attempts on duplicate repair (no double Kakao send)', async () => {
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  it('skips already-SENT attempts on duplicate repair (no double send)', async () => {
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({
       event: eventRecord(),
@@ -162,8 +155,8 @@ describe('AlertEventsService', () => {
     const channel = channelDouble();
     channel.send.mockResolvedValue({ kind: 'sent' });
     const prisma = prismaDouble([
-      recipientRecord('user-1', encryptToken('token-1')),
-      recipientRecord('user-2', encryptToken('token-2')),
+      recipientRecord('user-1', 'admin1@example.test'),
+      recipientRecord('user-2', 'admin2@example.test'),
     ]);
     const service = createService(repository, channel, prisma);
 
@@ -180,7 +173,7 @@ describe('AlertEventsService', () => {
     expect(channel.send).toHaveBeenCalledWith(
       expect.objectContaining({
         delivery_attempt_id: 'delivery-attempt-pending',
-        recipient_access_token: 'token-2',
+        recipient_email: 'admin2@example.test',
       }),
     );
     expect(repository.recordDeliveryResult).not.toHaveBeenCalledWith(
@@ -189,7 +182,7 @@ describe('AlertEventsService', () => {
     );
   });
 
-  it('records expired recipient tokens as terminal without sending', async () => {
+  it('falls back to the base email when no notificationEmail is set', async () => {
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({
       event: eventRecord(),
@@ -203,11 +196,19 @@ describe('AlertEventsService', () => {
       ],
     });
     repository.recordDeliveryResult.mockResolvedValue(
-      deliveryRecord({ status: DeliveryAttemptStatus.TERMINAL_FAILED }),
+      deliveryRecord({ status: DeliveryAttemptStatus.SENT }),
     );
     const channel = channelDouble();
+    channel.send.mockResolvedValue({ kind: 'sent' });
     const prisma = prismaDouble([
-      recipientRecord('user-1', 'cipher', new Date('2026-06-12T00:00:00.000Z')),
+      {
+        id: 'user-1',
+        facilityId: 'facility-1',
+        notificationEmail: null,
+        email: 'base@example.test',
+        role: 'ADMIN',
+        emailAlertsEnabled: true,
+      },
     ]);
     const service = createService(repository, channel, prisma);
 
@@ -220,64 +221,12 @@ describe('AlertEventsService', () => {
       confidence: 0.9,
     });
 
-    expect(channel.send).not.toHaveBeenCalled();
-    expect(repository.recordDeliveryResult).toHaveBeenCalledWith(
-      'delivery-attempt-1',
-      expect.objectContaining({
-        kind: 'failed',
-        failure_class: 'terminal_operator_action',
-        reason: 'kakao_access_token_expired',
-      }),
-    );
-  });
-
-  it('records a token-decrypt failure as terminal without calling the channel', async () => {
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const repository = repositoryDouble();
-    repository.ensureIngestOutbox.mockResolvedValue({
-      event: eventRecord(),
-      duplicate: false,
-      deliveryAttempts: [
-        deliveryRecord({
-          id: 'delivery-attempt-1',
-          recipientUserId: 'user-1',
-          status: DeliveryAttemptStatus.PENDING,
-        }),
-      ],
-    });
-    repository.recordDeliveryResult.mockResolvedValue(
-      deliveryRecord({ status: DeliveryAttemptStatus.TERMINAL_FAILED }),
-    );
-    const channel = channelDouble();
-    // Non-decryptable cipher (not the v1:iv:tag:ct format) -> decryptToken throws.
-    const prisma = prismaDouble([
-      recipientRecord('user-1', 'not-a-valid-cipher'),
-    ]);
-    const service = createService(repository, channel, prisma);
-
-    await service.ensureOutboxForIngest({
-      facilityId: 'facility-1',
-      sourceId: 'cam-1',
-      externalEventId: 'idem-1',
-      type: AlertEventTypes.fall,
-      detectedAt: new Date('2026-06-13T10:00:00.000Z'),
-      confidence: 0.9,
-    });
-
-    expect(channel.send).not.toHaveBeenCalled();
-    expect(repository.recordDeliveryResult).toHaveBeenCalledWith(
-      'delivery-attempt-1',
-      expect.objectContaining({
-        kind: 'failed',
-        failure_class: 'terminal_operator_action',
-      }),
+    expect(channel.send).toHaveBeenCalledWith(
+      expect.objectContaining({ recipient_email: 'base@example.test' }),
     );
   });
 
   it('skips RETRY_SCHEDULED and TERMINAL_FAILED attempts on duplicate repair (no double send)', async () => {
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({
       event: eventRecord(),
@@ -306,9 +255,9 @@ describe('AlertEventsService', () => {
     const channel = channelDouble();
     channel.send.mockResolvedValue({ kind: 'sent' });
     const prisma = prismaDouble([
-      recipientRecord('user-1', encryptToken('token-1')),
-      recipientRecord('user-2', encryptToken('token-2')),
-      recipientRecord('user-3', encryptToken('token-3')),
+      recipientRecord('user-1', 'admin1@example.test'),
+      recipientRecord('user-2', 'admin2@example.test'),
+      recipientRecord('user-3', 'admin3@example.test'),
     ]);
     const service = createService(repository, channel, prisma);
 
@@ -325,7 +274,7 @@ describe('AlertEventsService', () => {
     expect(channel.send).toHaveBeenCalledWith(
       expect.objectContaining({
         delivery_attempt_id: 'attempt-pending',
-        recipient_access_token: 'token-3',
+        recipient_email: 'admin3@example.test',
       }),
     );
   });
@@ -391,7 +340,7 @@ function deliveryRecord(input: {
     id: input.id ?? 'delivery-attempt-1',
     alertEventId: 'alert-event-1',
     recipientUserId: input.recipientUserId ?? null,
-    channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+    channel: DeliveryChannel.EMAIL,
     status: input.status,
     attemptCount: 0,
     nextAttemptAt: null,
@@ -416,17 +365,13 @@ function prismaDouble(recipients: readonly unknown[]): PrismaService {
   } as unknown as PrismaService;
 }
 
-function recipientRecord(
-  id: string,
-  accessTokenCipher: string,
-  tokenExpiresAt: Date | null = null,
-) {
+function recipientRecord(id: string, notificationEmail: string) {
   return {
     id,
     facilityId: 'facility-1',
-    kakaoIdentity: {
-      accessTokenCipher,
-      tokenExpiresAt,
-    },
+    notificationEmail,
+    email: null,
+    role: 'ADMIN',
+    emailAlertsEnabled: true,
   };
 }

@@ -2,7 +2,6 @@ import type { Prisma } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
 import {
   NOKYANG_ADMIN_EMAIL,
-  NOKYANG_FACILITY_CODE,
   nokyangCameras,
   nokyangFacility,
   nokyangFloors,
@@ -11,7 +10,6 @@ import {
 } from './demo-nokyang.fixture';
 import { hashPassword } from '../src/auth/password';
 import { bootstrapSuperAdmin, readSuperAdminConfig } from './seed-super-admin';
-import { bindDemoUsers, parseBindArgs } from '../scripts/bind-demo-users';
 
 const directUrl = process.env.DIRECT_URL;
 if (!directUrl) {
@@ -178,16 +176,6 @@ async function main(): Promise<void> {
   console.log(
     `Facility: ${nokyangFacility.name} (${facilityId}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Cameras=${nokyangCameras.length}`,
   );
-  if (process.env.SEED_BIND_DEMO_USERS === 'true') {
-    const bindResult = await bindDemoUsers(prisma, parseBindArgs([]));
-    console.log(
-      `Bound ${bindResult.boundCount} Kakao demo user(s) to code ${NOKYANG_FACILITY_CODE} (${facilityId}).`,
-    );
-  } else {
-    console.log(
-      'Skipping Kakao demo user binding: set SEED_BIND_DEMO_USERS=true to run this seed module.',
-    );
-  }
   const superAdminConfig = readSuperAdminConfig();
   if (superAdminConfig.skip) {
     console.log(`Skipping super-admin bootstrap: ${superAdminConfig.reason}.`);

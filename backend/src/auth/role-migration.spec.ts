@@ -48,6 +48,6 @@ describe('staff role rename migration', () => {
     expect(sql).toContain(
       "ALTER TABLE users ALTER COLUMN role SET DEFAULT 'STAFF'",
     );
-    expect(schema).toContain('role           Role     @default(STAFF)');
+    expect(schema).toContain('role               Role     @default(STAFF)');
   });
 });

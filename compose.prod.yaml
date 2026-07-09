@@ -23,12 +23,15 @@ services:
       DIRECT_URL: ${DIRECT_URL:?DIRECT_URL is required in prod}
       FRONT_ORIGIN: ${FRONT_ORIGIN:?FRONT_ORIGIN is required in prod}
       ALERT_DASHBOARD_URL: ${ALERT_DASHBOARD_URL:?ALERT_DASHBOARD_URL is required in prod}
-      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required in prod}
-      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
-      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required in prod}
-      KAKAO_SCOPES: ${KAKAO_SCOPES:-}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
-      KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:?KAKAO_TOKEN_ENC_KEY is required in prod}
+      # SMTP_* configures outbound alert email delivery (nodemailer). Host/user/password
+      # are required in prod; port/from/secure have sane defaults in the adapter.
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required in prod}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER is required in prod}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required in prod}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
       # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
       # Deploy order: set this to match the edge's EDGE_FACILITY_TOKEN and deploy the
       # edge stack first, so ml-api is already sending the bearer before this enforces it.

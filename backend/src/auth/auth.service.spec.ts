@@ -1,7 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import type { KakaoClient } from './kakao.client';
 import { hashPassword } from './password';
 
 function jwtMock() {
@@ -18,7 +17,6 @@ describe('AuthService JWT password login', () => {
     const user = {
       id: 'user-1',
       facilityId: 'facility-1',
-      kakaoId: null,
       email: 'admin@example.test',
       passwordHash,
       nickname: '관리자',
@@ -29,12 +27,7 @@ describe('AuthService JWT password login', () => {
       db: { user: { findFirst: jest.fn().mockResolvedValue(user) } },
     };
     const jwt = jwtMock();
-    const service = new AuthService(
-      prisma as never,
-      {} as KakaoClient,
-      jwt as never,
-      config(),
-    );
+    const service = new AuthService(prisma as never, jwt as never, config());
 
     const session = await service.loginWithPassword(
       ' ADMIN@example.TEST ',
@@ -71,12 +64,7 @@ describe('AuthService JWT password login', () => {
       },
     };
     const jwt = jwtMock();
-    const service = new AuthService(
-      prisma as never,
-      {} as KakaoClient,
-      jwt as never,
-      config(),
-    );
+    const service = new AuthService(prisma as never, jwt as never, config());
 
     await expect(
       service.loginWithPassword('admin@example.test', 'wrong-password'),
@@ -90,7 +78,6 @@ describe('AuthService JWT password login', () => {
     };
     const service = new AuthService(
       prisma as never,
-      {} as KakaoClient,
       jwtMock() as never,
       config(),
     );

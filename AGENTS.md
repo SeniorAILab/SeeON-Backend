@@ -43,7 +43,7 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 | --- | --- | --- |
 | Backend boot | `backend/src/main.ts`, `backend/src/app.module.ts` | Nest app bootstrap and module composition. |
 | Event ingest | `backend/src/events/events.controller.ts`, `event-recorder.service.ts`, `event-alarm.service.ts` | ML facts enter backend and become persisted events/alerts. |
-| Alert policy | `backend/src/alerts/` | Dashboard alert read model and Kakao delivery policy. |
+| Alert policy | `backend/src/alerts/` | Dashboard alert read model and email (SMTP) delivery policy. |
 | Tenancy/auth | `backend/src/auth/`, `backend/src/facilities/`, `backend/src/spaces/` | Facility-scoped auth and topology. |
 | Prisma | `backend/prisma/schema.prisma`, `backend/src/prisma/` | Data model and DB access boundary. |
 | ML API | `ml/api/main.py`, `ml/api/routes/` | Gateway/status/relay API; no model loading. |

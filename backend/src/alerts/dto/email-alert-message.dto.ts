@@ -2,11 +2,12 @@ import type { AlertEventType } from './alert-events.dto.js';
 import type { AlertDeliveryMessage } from '../ports/channel.port.js';
 
 /**
- * Structured, transport-agnostic payload for a staff-facing Kakao alert.
+ * Structured, transport-agnostic payload for a staff-facing email alert.
  * Built at the application/adapter seam from an AlertDeliveryMessage; the
- * adapter renders it into a Kakao "text" template. No debug/database IDs.
+ * adapter renders it into an SMTP subject + text/html body. No debug/database IDs.
  */
-export interface KakaoAlertMessageDto {
+export interface EmailAlertMessageDto {
+  readonly subject: string;
   readonly title: string;
   readonly residentName: string | null;
   readonly room: string | null;
@@ -15,7 +16,6 @@ export interface KakaoAlertMessageDto {
   readonly dashboardLink: string;
 }
 
-const MAX_TEXT_LENGTH = 180;
 const FALLBACK_ROOM = '공간 미상';
 
 const TITLE_BY_TYPE: Record<AlertEventType, string> = {
@@ -48,11 +48,11 @@ export function formatDetectedAtKST(detectedAt: string): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')} KST`;
 }
 
-/** Map a backend delivery message to the Kakao alert DTO (applies fallbacks/clipping). */
-export function toKakaoAlertMessageDto(
+/** Map a backend delivery message to the email alert DTO (applies fallbacks/clipping). */
+export function toEmailAlertMessageDto(
   message: AlertDeliveryMessage,
   dashboardLink: string,
-): KakaoAlertMessageDto {
+): EmailAlertMessageDto {
   const residentName = message.resident_name?.trim()
     ? clip(message.resident_name, 24)
     : null;
@@ -63,8 +63,11 @@ export function toKakaoAlertMessageDto(
     message.confidence === undefined
       ? null
       : Math.round(message.confidence * 100);
+  const title = TITLE_BY_TYPE[message.type];
+  const scope = residentName ?? room ?? FALLBACK_ROOM;
   return {
-    title: TITLE_BY_TYPE[message.type],
+    subject: `[안전알림] ${title} · ${scope}`,
+    title,
     residentName,
     room,
     detectedAtKST: formatDetectedAtKST(message.detected_at),
@@ -73,8 +76,8 @@ export function toKakaoAlertMessageDto(
   };
 }
 
-/** Render the Korean rich-text body (emoji/newlines, <=180 chars, no debug IDs). */
-export function buildKakaoAlertText(dto: KakaoAlertMessageDto): string {
+/** Render the plain-text email body (no debug/database IDs). */
+export function buildEmailAlertText(dto: EmailAlertMessageDto): string {
   const who = dto.residentName
     ? `👤 ${dto.residentName}님`
     : `🏠 ${dto.room ?? FALLBACK_ROOM}`;
@@ -86,23 +89,36 @@ export function buildKakaoAlertText(dto: KakaoAlertMessageDto): string {
   if (dto.confidencePercent !== null) {
     lines.push(`📊 확신도 ${dto.confidencePercent}%`);
   }
-  lines.push('👉 대시보드에서 상태 확인');
-  const text = lines.join('\n');
-  return text.length <= MAX_TEXT_LENGTH
-    ? text
-    : `${text.slice(0, MAX_TEXT_LENGTH - 1)}…`;
+  lines.push('');
+  lines.push(`👉 대시보드에서 상태 확인: ${dto.dashboardLink}`);
+  return lines.join('\n');
 }
 
-/** Build the Kakao `memo/default/send` text template_object from the DTO. */
-export function buildKakaoTemplateObject(
-  dto: KakaoAlertMessageDto,
-): Record<string, unknown> {
-  return {
-    object_type: 'text',
-    text: buildKakaoAlertText(dto),
-    link: {
-      web_url: dto.dashboardLink,
-      mobile_web_url: dto.dashboardLink,
-    },
-  };
+/** Render a minimal HTML email body from the DTO. */
+export function buildEmailAlertHtml(dto: EmailAlertMessageDto): string {
+  const esc = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const who = dto.residentName
+    ? `👤 ${esc(dto.residentName)}님`
+    : `🏠 ${esc(dto.room ?? FALLBACK_ROOM)}`;
+  const rows: string[] = [
+    `<h2 style="margin:0 0 12px">${esc(dto.title)}</h2>`,
+    `<p style="margin:4px 0">${
+      dto.residentName && dto.room
+        ? `${who} · 🏠 ${esc(dto.room)}`
+        : who
+    }</p>`,
+    `<p style="margin:4px 0">🕐 ${esc(dto.detectedAtKST)}</p>`,
+  ];
+  if (dto.confidencePercent !== null) {
+    rows.push(`<p style="margin:4px 0">📊 확신도 ${dto.confidencePercent}%</p>`);
+  }
+  rows.push(
+    `<p style="margin:16px 0 0"><a href="${esc(dto.dashboardLink)}">대시보드에서 상태 확인</a></p>`,
+  );
+  return `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">${rows.join('')}</div>`;
 }

@@ -6,7 +6,7 @@ export type AlertDeliveryMessage = AlertEventRequestDto & {
   readonly event_id: string;
   readonly delivery_attempt_id: string;
   readonly created_at: Date;
-  readonly recipient_access_token?: string;
+  readonly recipient_email?: string;
   /** Staff-facing display context, threaded from the resident join (backend-only; never from the ML ingest DTO). */
   readonly resident_name?: string;
   readonly resident_room?: string | null;

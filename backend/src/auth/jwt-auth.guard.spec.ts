@@ -29,7 +29,6 @@ describe('JwtStrategy', () => {
             id: 'user-1',
             facilityId: 'facility-1',
             role: 'ADMIN',
-            kakaoId: null,
             email: 'admin@example.test',
             nickname: 'Admin',
             sessionVersion: 8,
@@ -64,7 +63,6 @@ describe('RequireFacilityGuard', () => {
         facilityId: 'session-facility',
         role: 'ADMIN',
         nickname: 'Admin',
-        kakaoId: null,
         sessionVersion: 0,
       },
     } as Partial<RequestWithAuth>;
@@ -84,7 +82,6 @@ describe('RequireFacilityGuard', () => {
         facilityId: null,
         role: 'SUPER_ADMIN',
         nickname: 'Senior AI Lab',
-        kakaoId: null,
         sessionVersion: 0,
       },
     } as Partial<RequestWithAuth>;
@@ -105,7 +102,6 @@ describe('RequireFacilityGuard', () => {
         facilityId: null,
         role: 'SUPER_ADMIN',
         nickname: 'Senior AI Lab',
-        kakaoId: null,
         sessionVersion: 0,
       },
     } as Partial<RequestWithAuth>;
@@ -125,7 +121,6 @@ describe('RequireFacilityGuard', () => {
         facilityId: null,
         role: 'STAFF',
         nickname: 'Staff',
-        kakaoId: null,
         sessionVersion: 0,
       },
     } as Partial<RequestWithAuth>;

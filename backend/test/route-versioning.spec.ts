@@ -21,18 +21,10 @@ const prismaDouble = {
 describe('global api/v1 route matrix (e2e)', () => {
   let app: INestApplication<App>;
   const originalEnv = {
-    KAKAO_REDIRECT_URI: process.env.KAKAO_REDIRECT_URI,
-    KAKAO_REST_API_KEY: process.env.KAKAO_REST_API_KEY,
-    KAKAO_TOKEN_ENC_KEY: process.env.KAKAO_TOKEN_ENC_KEY,
     SESSION_JWT_SECRET: process.env.SESSION_JWT_SECRET,
   };
 
   beforeAll(async () => {
-    process.env.KAKAO_REDIRECT_URI =
-      'http://localhost:3001/api/v1/auth/kakao/callback';
-    process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.SESSION_JWT_SECRET =
       'test-session-secret-minimum-32-characters';
     const moduleRef = await Test.createTestingModule({

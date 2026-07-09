@@ -14,7 +14,7 @@ import { AlertEventsService } from '../src/alerts/services/alert-events.service'
  *
  * The legacy /api.alerts/events AlertEventsController and /ingest/alerts surface
  * were removed; /api/v1/events is the only live ML ingress. AlertEventsService
- * is retained for the persisted outbox + Kakao fan-out seam.
+ * is retained for the persisted outbox + email fan-out seam.
  */
 describe('provider graph — alerts module (read-model + outbox seam)', () => {
   it('resolves the read AlertsController/Service and the retained AlertEventsService seam', async () => {

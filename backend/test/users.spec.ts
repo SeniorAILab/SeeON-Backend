@@ -5,7 +5,6 @@ import { PrismaClient, Role } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
-import { KakaoClient } from '../src/auth/kakao.client';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -29,11 +28,6 @@ describe('facility-scoped users API (e2e)', () => {
 
   beforeAll(async () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
-    process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
-    process.env.KAKAO_REDIRECT_URI =
-      'http://localhost:3001/api/v1/auth/kakao/callback';
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
 
     direct = new PrismaClient({
@@ -43,7 +37,6 @@ describe('facility-scoped users API (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await direct.kakaoIdentity.deleteMany();
     await direct.user.deleteMany({
       where: { email: { endsWith: '@users-api.example.test' } },
     });
@@ -53,16 +46,7 @@ describe('facility-scoped users API (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    })
-      .overrideProvider(KakaoClient)
-      .useValue({
-        buildAuthorizeUrl: (state: string) =>
-          `https://kauth.kakao.test/oauth?state=${state}`,
-        exchangeCode: jest.fn(),
-        getProfile: jest.fn(),
-        resolveScopes: () => 'talk_message',
-      })
-      .compile();
+    }).compile();
 
     app = moduleFixture.createNestApplication();
     configureVersionedTestApp(app);

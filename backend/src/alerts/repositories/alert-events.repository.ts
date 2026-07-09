@@ -22,7 +22,7 @@ import type { DeliveryResult } from '../ports/channel.port.js';
 
 const DEFAULT_RETRY_AFTER_MS = 60_000;
 const DEFAULT_OPERATOR_ACTION =
-  'Inspect Kakao channel configuration/token state and retry manually after correction.';
+  'Inspect the SMTP channel configuration and recipient email, then retry manually after correction.';
 
 export type ExistingAlertEventAggregate = {
   readonly event: AlertEvent;
@@ -109,7 +109,7 @@ export class AlertEventsRepository {
         const deliveryAttempt = await tx.deliveryAttempt.create({
           data: {
             alertEventId: event.id,
-            channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+            channel: DeliveryChannel.EMAIL,
             status: PrismaDeliveryAttemptStatus.PENDING,
           },
         });
@@ -167,7 +167,7 @@ export class AlertEventsRepository {
           create: {
             alertEventId: event.id,
             recipientUserId,
-            channel: DeliveryChannel.KAKAO_SEND_TO_ME,
+            channel: DeliveryChannel.EMAIL,
             status: PrismaDeliveryAttemptStatus.PENDING,
           },
           update: {},

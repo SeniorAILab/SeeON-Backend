@@ -1,18 +1,12 @@
-import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
-import { AuthService } from './auth.service';
 import {
   RBAC_PERMISSIONS,
   hasRbacCapability,
   isAuthRole,
   postLoginPathForUser,
 } from './auth.constants';
-import type { KakaoClient } from './kakao.client';
 
 describe('RBAC SSOT', () => {
-  beforeEach(() => {
-    process.env.KAKAO_TOKEN_ENC_KEY = '0'.repeat(64);
-  });
   it('defines the exact three backend roles and capability matrix', () => {
     expect(isAuthRole(Role.SUPER_ADMIN)).toBe(true);
     expect(isAuthRole(Role.ADMIN)).toBe(true);
@@ -33,64 +27,5 @@ describe('RBAC SSOT', () => {
     expect(
       postLoginPathForUser({ role: Role.STAFF, facilityId: 'fac-1' }),
     ).toBe('/dashboard/facilities/fac-1/staff');
-  });
-
-  it('updates only existing Kakao-linked users during Kakao login', async () => {
-    const existingUser = {
-      id: 'user-1',
-      kakaoId: 'kakao-1',
-      email: 'old@example.test',
-      nickname: 'Old',
-      role: 'STAFF',
-      facilityId: 'facility-1',
-      sessionVersion: 0,
-    };
-    const tx = {
-      user: {
-        findUnique: jest.fn().mockResolvedValue(existingUser),
-        update: jest.fn().mockResolvedValue({
-          ...existingUser,
-          email: 'a@example.test',
-          nickname: 'Staff',
-        }),
-      },
-      kakaoIdentity: { upsert: jest.fn().mockResolvedValue({}) },
-    };
-    const prisma = {
-      db: {
-        $transaction: jest.fn((fn: (arg: typeof tx) => unknown) => fn(tx)),
-      },
-    };
-    const service = new AuthService(
-      prisma as never,
-      {
-        resolveScopes: jest.fn().mockReturnValue('talk_message'),
-      } as unknown as KakaoClient,
-      { sign: jest.fn(() => 'jwt') } as never,
-      new ConfigService({ JWT_TTL: '12h' }),
-    );
-
-    await (
-      service as unknown as {
-        updateLinkedKakaoUser: (
-          profile: { kakaoId: string; email: string; nickname: string },
-          token: { access_token: string; expires_in: number; scope?: string },
-        ) => Promise<unknown>;
-      }
-    ).updateLinkedKakaoUser(
-      { kakaoId: 'kakao-1', email: 'a@example.test', nickname: 'Staff' },
-      { access_token: 'token', expires_in: 3600 },
-    );
-
-    expect(tx.user.findUnique).toHaveBeenCalledWith({
-      where: { kakaoId: 'kakao-1' },
-    });
-    expect(tx.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: {
-        email: 'a@example.test',
-        nickname: 'Staff',
-      },
-    });
   });
 });

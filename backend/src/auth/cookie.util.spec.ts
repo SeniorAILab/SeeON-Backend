@@ -1,6 +1,6 @@
 import type { CookieOptions, Response } from 'express';
-import { OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME } from './auth.constants';
-import { setOAuthStateCookie, setSessionCookie } from './cookie.util';
+import { SESSION_COOKIE_NAME } from './auth.constants';
+import { setSessionCookie } from './cookie.util';
 
 type CookieCall = readonly [
   name: string,
@@ -12,7 +12,6 @@ describe('auth cookie utilities', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
   const originalFrontOrigin = process.env.FRONT_ORIGIN;
-  const originalKakaoRedirectUri = process.env.KAKAO_REDIRECT_URI;
 
   const makeResponse = () =>
     ({
@@ -33,11 +32,6 @@ describe('auth cookie utilities', () => {
       delete process.env.FRONT_ORIGIN;
     } else {
       process.env.FRONT_ORIGIN = originalFrontOrigin;
-    }
-    if (originalKakaoRedirectUri === undefined) {
-      delete process.env.KAKAO_REDIRECT_URI;
-    } else {
-      process.env.KAKAO_REDIRECT_URI = originalKakaoRedirectUri;
     }
   });
 
@@ -61,7 +55,7 @@ describe('auth cookie utilities', () => {
     delete process.env.AUTH_COOKIE_SECURE;
     const response = makeResponse();
 
-    setOAuthStateCookie(response, 'oauth-state', 60);
+    setSessionCookie(response, 'session-token', 60);
 
     const [, , options] = cookieCall(response);
     expect(options.secure).toBe(true);
@@ -76,19 +70,5 @@ describe('auth cookie utilities', () => {
 
     const [, , options] = cookieCall(response);
     expect(options.secure).toBe(false);
-  });
-
-  it('uses the same secure-cookie policy for OAuth state cookies', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.AUTH_COOKIE_SECURE = 'false';
-    const response = makeResponse();
-
-    setOAuthStateCookie(response, 'oauth-state', 60);
-
-    const [name, value, options] = cookieCall(response);
-    expect(name).toBe(OAUTH_STATE_COOKIE_NAME);
-    expect(value).toBe('oauth-state');
-    expect(options.secure).toBe(false);
-    expect(options.path).toBe('/api/v1/auth');
   });
 });

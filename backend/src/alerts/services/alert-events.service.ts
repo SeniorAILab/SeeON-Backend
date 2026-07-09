@@ -1,13 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DeliveryAttemptStatus,
+  Role,
   type DeliveryAttempt,
-  type KakaoIdentity,
   type User,
 } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
-import { decryptToken } from '../../auth/token-crypto.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   AlertEventTypes,
@@ -56,7 +55,7 @@ export class AlertEventsService {
     const recipients =
       input.type === AlertEventTypes.bedExit
         ? []
-        : await this.findKakaoRecipients(input.facilityId);
+        : await this.findEmailRecipients(input.facilityId);
     const aggregate = await this.alertEventsRepository.ensureIngestOutbox({
       event,
       decision: { kind: 'dispatch' },
@@ -78,7 +77,7 @@ export class AlertEventsService {
         }
         // Duplicate-repair safety: only dispatch attempts still PENDING. Existing
         // SENT/RETRY_SCHEDULED/TERMINAL_FAILED attempts must not be re-sent (the
-        // recipient unique key prevents duplicate rows, not duplicate Kakao sends).
+        // recipient unique key prevents duplicate rows, not duplicate email sends).
         if (deliveryAttempt.status !== DeliveryAttemptStatus.PENDING) {
           return;
         }
@@ -98,55 +97,16 @@ export class AlertEventsService {
     event: AlertEventRequestDto,
     eventId: string,
     deliveryAttempt: DeliveryAttempt,
-    recipient: KakaoRecipient,
+    recipient: EmailRecipient,
     residentName: string | undefined,
     residentRoom: string | null | undefined,
   ): Promise<void> {
-    const expired =
-      recipient.kakaoIdentity.tokenExpiresAt !== null &&
-      recipient.kakaoIdentity.tokenExpiresAt.getTime() <= Date.now();
-    if (expired) {
-      await this.alertEventsRepository.recordDeliveryResult(
-        deliveryAttempt.id,
-        {
-          kind: 'failed',
-          failure_class: 'terminal_operator_action',
-          reason: 'kakao_access_token_expired',
-          operator_action:
-            'Refresh Kakao OAuth access for the recipient before retrying delivery.',
-        },
-      );
-      return;
-    }
-
-    let recipientAccessToken: string;
-    try {
-      recipientAccessToken = decryptToken(
-        recipient.kakaoIdentity.accessTokenCipher,
-      );
-    } catch (error) {
-      await this.alertEventsRepository.recordDeliveryResult(
-        deliveryAttempt.id,
-        {
-          kind: 'failed',
-          failure_class: 'terminal_operator_action',
-          reason:
-            error instanceof Error
-              ? error.message
-              : 'kakao_token_decrypt_failed',
-          operator_action:
-            'Refresh Kakao OAuth access for the recipient before retrying delivery.',
-        },
-      );
-      return;
-    }
-
     const result = await this.sendWithTimeout({
       ...event,
       event_id: eventId,
       delivery_attempt_id: deliveryAttempt.id,
       created_at: deliveryAttempt.createdAt,
-      recipient_access_token: recipientAccessToken,
+      recipient_email: recipient.recipientEmail,
       resident_name: residentName,
       resident_room: residentRoom,
     });
@@ -193,32 +153,29 @@ export class AlertEventsService {
     }
   }
 
-  private async findKakaoRecipients(
+  private async findEmailRecipients(
     facilityId: string,
-  ): Promise<readonly KakaoRecipient[]> {
-    const recipients = await this.prisma.db.user.findMany({
+  ): Promise<readonly EmailRecipient[]> {
+    const users = await this.prisma.db.user.findMany({
       where: {
         facilityId,
-        kakaoIdentity: {
-          accessTokenCipher: { not: null },
-        },
+        emailAlertsEnabled: true,
+        role: { in: [Role.ADMIN, Role.SUPER_ADMIN] },
       },
-      include: { kakaoIdentity: true },
       orderBy: { id: 'asc' },
     });
 
-    return recipients.filter(
-      (recipient): recipient is KakaoRecipient =>
-        recipient.kakaoIdentity !== null &&
-        recipient.kakaoIdentity.accessTokenCipher !== null,
-    );
+    return users.flatMap((user) => {
+      const email = (user.notificationEmail ?? user.email)?.trim();
+      return email !== undefined && email.length > 0
+        ? [{ ...user, recipientEmail: email }]
+        : [];
+    });
   }
 }
 
-type KakaoRecipient = User & {
-  readonly kakaoIdentity: KakaoIdentity & {
-    readonly accessTokenCipher: string;
-  };
+type EmailRecipient = User & {
+  readonly recipientEmail: string;
 };
 
 function readPositiveIntegerEnv(

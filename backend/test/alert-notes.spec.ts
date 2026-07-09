@@ -15,11 +15,6 @@ describe('alert action notes (e2e)', () => {
 
   beforeAll(async () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
-    process.env.KAKAO_REST_API_KEY = 'test-rest-api-key';
-    process.env.KAKAO_REDIRECT_URI =
-      'http://localhost:3001/api/v1/auth/kakao/callback';
-    process.env.KAKAO_TOKEN_ENC_KEY =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
 
     direct = new PrismaClient({

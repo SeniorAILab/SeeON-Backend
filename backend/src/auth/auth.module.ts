@@ -7,7 +7,6 @@ import { AuthService } from './auth.service';
 import { FacilityContextInterceptor } from './facility-context.interceptor';
 import { RequireFacilityGuard, JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
-import { KakaoClient } from './kakao.client';
 import { JwtStrategy, jwtSecret } from './jwt.strategy';
 import { DEFAULT_JWT_TTL } from './auth.constants';
 
@@ -28,7 +27,6 @@ import { DEFAULT_JWT_TTL } from './auth.constants';
   controllers: [AuthController],
   providers: [
     AuthService,
-    KakaoClient,
     JwtAuthGuard,
     JwtStrategy,
     RequireFacilityGuard,

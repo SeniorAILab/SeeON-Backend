@@ -5,16 +5,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
-import { randomBytes } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  KakaoClient,
-  type KakaoProfile,
-  type KakaoTokenResponse,
-} from './kakao.client';
-import { encryptToken } from './token-crypto';
 import { hashPassword, verifyPassword } from './password';
 import { assertValidPassword, requiredPassword } from './password-policy';
 import { createRegisteredFacilityOwner } from './password-registration';
@@ -27,7 +20,6 @@ export interface AuthSession {
     | 'id'
     | 'facilityId'
     | 'role'
-    | 'kakaoId'
     | 'nickname'
     | 'email'
     | 'sessionVersion'
@@ -48,27 +40,9 @@ export interface RegisterWithPasswordInput {
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly kakao: KakaoClient,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {}
-
-  createOAuthState(): string {
-    return randomBytes(24).toString('base64url');
-  }
-
-  getKakaoAuthorizeUrl(state: string): string {
-    return this.kakao.buildAuthorizeUrl(state);
-  }
-
-  async completeKakaoCallback(code: string): Promise<AuthSession> {
-    if (!code)
-      throw new BadRequestException('Missing Kakao authorization code');
-    const kakaoToken = await this.kakao.exchangeCode(code);
-    const profile = await this.kakao.getProfile(kakaoToken.access_token);
-    const user = await this.updateLinkedKakaoUser(profile, kakaoToken);
-    return this.createJwtSession(user);
-  }
 
   async loginWithPassword(
     email: string,
@@ -151,17 +125,6 @@ export class AuthService {
           where: { id: userId },
           data: { facilityId: facility.id, role: 'ADMIN' },
         });
-        if (updated.kakaoId) {
-          await tx.kakaoIdentity.upsert({
-            where: { userId },
-            update: { facilityId: facility.id, kakaoId: updated.kakaoId },
-            create: {
-              userId,
-              facilityId: facility.id,
-              kakaoId: updated.kakaoId,
-            },
-          });
-        }
         return updated;
       },
     );
@@ -193,7 +156,6 @@ export class AuthService {
       | 'id'
       | 'facilityId'
       | 'role'
-      | 'kakaoId'
       | 'nickname'
       | 'email'
       | 'sessionVersion'
@@ -214,55 +176,6 @@ export class AuthService {
 
   private jwtTtl(): string {
     return this.config.get<string>('JWT_TTL') ?? DEFAULT_JWT_TTL;
-  }
-
-  private async updateLinkedKakaoUser(
-    profile: KakaoProfile,
-    kakaoToken: KakaoTokenResponse,
-  ): Promise<User> {
-    const accessTokenCipher = encryptToken(kakaoToken.access_token);
-    const tokenScope = kakaoToken.scope ?? this.kakao.resolveScopes();
-    const tokenExpiresAt = kakaoToken.expires_in
-      ? new Date(Date.now() + kakaoToken.expires_in * 1000)
-      : null;
-
-    return this.prisma.db.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({
-        where: { kakaoId: profile.kakaoId },
-      });
-      if (!existing) {
-        throw new UnauthorizedException('Kakao account is not registered');
-      }
-
-      const user = await tx.user.update({
-        where: { id: existing.id },
-        data: {
-          email: profile.email,
-          nickname: profile.nickname,
-        },
-      });
-
-      await tx.kakaoIdentity.upsert({
-        where: { userId: user.id },
-        update: {
-          facilityId: user.facilityId,
-          kakaoId: profile.kakaoId,
-          accessTokenCipher,
-          tokenScope,
-          tokenExpiresAt,
-        },
-        create: {
-          userId: user.id,
-          facilityId: user.facilityId,
-          kakaoId: profile.kakaoId,
-          accessTokenCipher,
-          tokenScope,
-          tokenExpiresAt,
-        },
-      });
-
-      return user;
-    });
   }
 }
 

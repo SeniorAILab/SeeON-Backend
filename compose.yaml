@@ -51,14 +51,15 @@ services:
       # The backend MlServingPredictionAdapter pull seam stays dormant;
       # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
-      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dev-placeholder-kakao-rest-api-key}
-      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
-      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:8080/api/v1/auth/kakao/callback}
-      KAKAO_SCOPES: ${KAKAO_SCOPES:-}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
-      # KAKAO_TOKEN_ENC_KEY encrypts per-user Kakao access tokens at rest (AES-256-GCM).
-      # Dev placeholder is a fixed 32-byte hex key; override with a real random key in prod.
-      KAKAO_TOKEN_ENC_KEY: ${KAKAO_TOKEN_ENC_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # SMTP_* configures outbound alert email delivery (nodemailer). Dev placeholders
+      # point at a local/dummy SMTP host; override with real Gmail app-password creds in prod.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
       # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
       # Must match the edge's EDGE_FACILITY_TOKEN exactly; dev placeholder unblocks
       # `docker compose --profile full up` out of the box.

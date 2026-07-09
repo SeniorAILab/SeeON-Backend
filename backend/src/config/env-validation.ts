@@ -3,19 +3,15 @@ const REQUIRED_PROD_ENV = [
   'DIRECT_URL',
   'FRONT_ORIGIN',
   'ALERT_DASHBOARD_URL',
-  'KAKAO_REST_API_KEY',
-  'KAKAO_REDIRECT_URI',
   'SESSION_JWT_SECRET',
-  'KAKAO_TOKEN_ENC_KEY',
+  'SMTP_HOST',
+  'SMTP_USER',
+  'SMTP_PASSWORD',
 ] as const;
 
 const LOCAL_ONLY_VALUES = [
-  'dev-placeholder-kakao-rest-api-key',
   'dev-only-session-secret-change-me-32chars-min',
-  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 ] as const;
-
-const TOKEN_KEY_BYTES = 32;
 
 export class BackendEnvValidationError extends Error {
   constructor(readonly errors: readonly string[]) {
@@ -45,10 +41,9 @@ export function validateBackendEnv(
 
   validateUrl(config, 'FRONT_ORIGIN', errors);
   validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
-  validateUrl(config, 'KAKAO_REDIRECT_URI', errors);
   validateSessionSecret(config, errors);
-  validateKakaoTokenKey(config, errors);
   validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
+  validateBooleanFlag(config, 'SMTP_SECURE', errors);
 
   if (errors.length > 0) {
     throw new BackendEnvValidationError(errors);
@@ -95,27 +90,6 @@ function validateSessionSecret(
   if (value !== undefined && value.length < 32) {
     errors.push('SESSION_JWT_SECRET must be at least 32 characters');
   }
-}
-
-function validateKakaoTokenKey(
-  config: Record<string, unknown>,
-  errors: string[],
-): void {
-  const value = stringValue(config, 'KAKAO_TOKEN_ENC_KEY');
-  if (value === undefined) {
-    return;
-  }
-  if (decodeKey(value).length !== TOKEN_KEY_BYTES) {
-    errors.push('KAKAO_TOKEN_ENC_KEY must decode to exactly 32 bytes');
-  }
-}
-
-function decodeKey(encodedKey: string): Buffer {
-  const trimmed = encodedKey.trim();
-  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
-    return Buffer.from(trimmed, 'hex');
-  }
-  return Buffer.from(trimmed, 'base64');
 }
 
 function validateBooleanFlag(

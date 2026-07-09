@@ -4,9 +4,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const fixedLocalKakaoTokenKey =
-  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-
 const completeHostEnv = `NODE_ENV=production
 FRONT_ORIGIN=https://senai.example.com
 ALERT_DASHBOARD_URL=https://senai.example.com
@@ -18,11 +15,12 @@ APP_DB_PASSWORD=prod-app-password-32chars
 DATABASE_URL=postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public
 DIRECT_URL=postgresql://fall_prod_admin:prod-admin-password-32chars@db:5432/fall_prod?schema=public
 SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
-KAKAO_REST_API_KEY=prod-kakao-rest-api-key
-KAKAO_CLIENT_SECRET=prod-kakao-client-secret
-KAKAO_REDIRECT_URI=https://senai.example.com/api/v1/auth/kakao/callback
-KAKAO_SCOPES=talk_message
-KAKAO_TOKEN_ENC_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=prod-alerts@example.com
+SMTP_PASSWORD=prod-smtp-app-password-32chars
+SMTP_FROM=Eldercare Safety <prod-alerts@example.com>
+SMTP_SECURE=false
 NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
 EDGE_FACILITY_TOKEN=prod-edge-facility-token-32-chars
 BACKEND_IMAGE=ghcr.io/seniorailab/eldercare-fall-ai/backend:test
@@ -51,9 +49,6 @@ const forbiddenHostFragments = [
   'http://localhost',
   'dev-placeholder',
   'DEMO_LOGIN_PASSWORD',
-  'DEMO_SUPER_ADMIN_KAKAO_ID',
-  'DEMO_SUPER_ADMIN_KAKAO_EMAIL',
-  fixedLocalKakaoTokenKey,
   'VITE_USE_MOCK: "true"',
   'VITE_USE_MOCK: true',
   'published: "3000"',
@@ -182,8 +177,10 @@ function verify() {
         'fall_app',
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
         'https://senai.example.com',
-        'prod-kakao-client-secret',
-        'talk_message',
+        'smtp.gmail.com',
+        'prod-alerts@example.com',
+        'prod-smtp-app-password-32chars',
+        'Eldercare Safety <prod-alerts@example.com>',
         'NOKYANG_ADMIN_PASSWORD: prod-nokyang-password',
         'EDGE_FACILITY_TOKEN: prod-edge-facility-token-32-chars',
         'ghcr.io/seniorailab/eldercare-fall-ai/backend:test',
