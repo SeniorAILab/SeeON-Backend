@@ -194,6 +194,16 @@ export const nokyangSpaces: readonly SpaceSeed[] = [
 
 export const nokyangCameras: readonly CameraSeed[] = [
   {
+    id: 'cam_sp_205',
+    spaceId: 'sp_205',
+    label: 'CAM-2F-205',
+  },
+  {
+    id: 'cam_sp_2f_prog',
+    spaceId: 'sp_2f_prog',
+    label: 'CAM-2F-PROG',
+  },
+  {
     id: 'cam_sp_202',
     spaceId: 'sp_202',
     label: 'CAM-2F-202',

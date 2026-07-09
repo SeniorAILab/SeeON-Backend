@@ -29,7 +29,7 @@ describe('nokyang demo fixture', () => {
       'fl_4f',
     ]);
     expect(nokyangSpaces).toHaveLength(54);
-    expect(nokyangCameras).toHaveLength(5);
+    expect(nokyangCameras).toHaveLength(7);
   });
 
   it('keeps every fixture id unique within each table-shaped collection', () => {
