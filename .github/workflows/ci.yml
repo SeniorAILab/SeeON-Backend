@@ -160,6 +160,8 @@ jobs:
       - name: Install deps
         run: uv sync
         working-directory: ml
+      - name: Install ffmpeg (clip recorder H.264 encoder)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Pytest
         run: uv run pytest
         working-directory: ml
