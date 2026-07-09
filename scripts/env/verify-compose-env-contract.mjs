@@ -41,6 +41,7 @@ API_BACKEND_EVENTS_URL=https://senai.example.com/api/v1/events
 API_EDGE_RELAY_TOKEN=edge-relay-token-minimum-32-chars
 API_BACKEND_CONFIG_URL=https://senai.example.com/api/v1/ml-config
 API_FACILITY_ID=facility-prod
+CLIP_STORE_HOST_DIR=/srv/eldercare/clip-store
 `;
 
 const forbiddenHostFragments = [
@@ -201,9 +202,16 @@ function verify() {
         'worker.edge_worker',
         // Pull-first: worker boots from ml-api config pull; the ml-worker YAML
         // secret is an optional offline-dev escape hatch, not a required prod
-        // fragment (adr-edge-* / registry cutover). clip-store is the evidence
-        // volume shared worker rw / ml-api ro.
-        'clip-store',
+        // fragment (adr-edge-* / registry cutover). The clip store is a host
+        // bind (CLIP_STORE_HOST_DIR) mounted at the fixed container path
+        // /var/lib/clip-store, shared worker rw / ml-api ro, and CLIP_STORE_DIR
+        // must be injected as env into BOTH services (mount target alone never
+        // reaches the process environment).
+        'source: /srv/eldercare/clip-store',
+        'target: /var/lib/clip-store',
+        'CLIP_STORE_DIR: /var/lib/clip-store',
+        // NVENC clip encoding requires the `video` NVIDIA driver capability.
+        'NVIDIA_DRIVER_CAPABILITIES: compute,utility,video',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-api:test',
         'ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test',
         'API_BACKEND_EVENTS_URL: https://senai.example.com/api/v1/events',
