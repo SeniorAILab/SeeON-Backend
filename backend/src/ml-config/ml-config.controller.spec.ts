@@ -12,24 +12,27 @@ const payload = {
       label: 'Room 1',
       rtspUrl: 'rtsp://camera.local/live',
       online: true,
+      spaceName: 'Room 101',
+      floorName: '1F',
+      createdAt: '2026-07-10T12:34:56.789Z',
     },
   ],
 };
 
 describe('MlConfigController', () => {
-  it('GET returns service payload without requiring a request guard context', async () => {
-    const service = {
-      getConfig: jest.fn().mockResolvedValue(payload),
-    } as unknown as jest.Mocked<MlConfigService>;
+  it('GET returns additive camera metadata while preserving the legacy camera fields', async () => {
+    const getConfig = jest.fn().mockResolvedValue(payload);
+    const service = { getConfig } as unknown as jest.Mocked<MlConfigService>;
     const controller = new MlConfigController(service);
 
     await expect(controller.getConfig('facility-1')).resolves.toEqual(payload);
-    expect(service.getConfig).toHaveBeenCalledWith('facility-1');
+    expect(getConfig).toHaveBeenCalledWith('facility-1');
   });
 
   it('night-window PUT rejects authenticated facility mismatch', () => {
+    const updateNightWindow = jest.fn();
     const service = {
-      updateNightWindow: jest.fn(),
+      updateNightWindow,
     } as unknown as jest.Mocked<MlConfigService>;
     const controller = new MlConfigController(service);
 
@@ -40,6 +43,6 @@ describe('MlConfigController', () => {
         { start: '21:00', end: '07:00', tz: 'Asia/Seoul' },
       ),
     ).toThrow(ForbiddenException);
-    expect(service.updateNightWindow).not.toHaveBeenCalled();
+    expect(updateNightWindow).not.toHaveBeenCalled();
   });
 });

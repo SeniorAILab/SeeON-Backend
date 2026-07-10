@@ -12,6 +12,10 @@ const DEFAULT_NIGHT_WINDOW = {
   tz: 'Asia/Seoul',
 };
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+type CameraLocation = {
+  name: string;
+  floor: { name: string } | null;
+} | null;
 
 @Injectable()
 export class MlConfigService {
@@ -22,7 +26,23 @@ export class MlConfigService {
       facilityId,
       async (tx: Prisma.TransactionClient) => {
         const [cameras, config] = await Promise.all([
-          tx.camera.findMany({ orderBy: { createdAt: 'asc' } }),
+          tx.camera.findMany({
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              spaceId: true,
+              label: true,
+              rtspUrl: true,
+              online: true,
+              createdAt: true,
+              space: {
+                select: {
+                  name: true,
+                  floor: { select: { name: true } },
+                },
+              },
+            },
+          }),
           tx.mlFacilityConfig.findUnique({ where: { facilityId } }),
         ]);
 
@@ -31,13 +51,19 @@ export class MlConfigService {
           nightWindow: config
             ? { start: config.nightStart, end: config.nightEnd, tz: config.tz }
             : DEFAULT_NIGHT_WINDOW,
-          cameras: cameras.map((camera) => ({
-            id: camera.id,
-            spaceId: camera.spaceId,
-            label: camera.label,
-            rtspUrl: camera.rtspUrl ?? null,
-            online: camera.online,
-          })),
+          cameras: cameras.map((camera) => {
+            const space = camera.space as CameraLocation;
+            return {
+              id: camera.id,
+              spaceId: camera.spaceId,
+              label: camera.label,
+              rtspUrl: camera.rtspUrl ?? null,
+              online: camera.online,
+              spaceName: space?.name ?? null,
+              floorName: space?.floor?.name ?? null,
+              createdAt: camera.createdAt.toISOString(),
+            };
+          }),
         };
       },
     );
