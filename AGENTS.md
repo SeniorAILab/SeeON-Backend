@@ -6,7 +6,7 @@
 
 ## Overview
 
-Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML edge runtime, and Vite React monitoring dashboard. Root scripts orchestrate packages; domain ownership lives in scoped `AGENTS.md` files.
+Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML edge runtime, and Vite React monitoring dashboard. Root scripts orchestrate packages; implementation ownership lives in scoped `AGENTS.md` files.
 
 ## Structure
 
