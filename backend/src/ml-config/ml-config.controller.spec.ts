@@ -1,4 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { EdgeIngestTokenGuard } from '../events/edge-ingest-token.guard.js';
 import { MlConfigController } from './ml-config.controller.js';
 import type { MlConfigService } from './ml-config.service.js';
 
@@ -27,6 +29,15 @@ describe('MlConfigController', () => {
 
     await expect(controller.getConfig('facility-1')).resolves.toEqual(payload);
     expect(getConfig).toHaveBeenCalledWith('facility-1');
+  });
+
+  it('GET is guarded by the shared edge bearer token because the payload carries RTSP URLs', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      MlConfigController.prototype.getConfig,
+    );
+
+    expect(guards).toContain(EdgeIngestTokenGuard);
   });
 
   it('night-window PUT rejects authenticated facility mismatch', () => {

@@ -10,9 +10,10 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { JwtAuthGuard, RequireFacilityGuard } from '../auth/jwt-auth.guard.js';
+import { EdgeIngestTokenGuard } from '../events/edge-ingest-token.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import {
   type MlConfigResponseDto,
@@ -26,8 +27,10 @@ export class MlConfigController {
 
   @ApiOperation({
     summary:
-      'Read ML runtime config for an edge worker using edge-LAN network trust (Phase-2 hardening planned)',
+      'Read ML runtime config for an edge worker (shared edge bearer token; RTSP-bearing payload)',
   })
+  @ApiBearerAuth()
+  @UseGuards(EdgeIngestTokenGuard)
   @Get(':facilityId')
   getConfig(
     @Param('facilityId') facilityId: string,
