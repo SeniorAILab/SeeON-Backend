@@ -20,27 +20,26 @@ WORKDIR /app/backend
 EXPOSE 8080
 
 FROM deps AS build
+ARG NODE_OPTIONS=--max-old-space-size=1536
+ENV NODE_OPTIONS="${NODE_OPTIONS}"
 COPY backend ./backend
 RUN pnpm --filter backend exec prisma generate \
   && pnpm --filter backend build \
   && pnpm --filter backend deploy --prod --legacy /prod/backend \
-  && PRISMA_SRC="$(echo /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma)" \
-  && test -d "$PRISMA_SRC" \
-  && cp -r "$PRISMA_SRC" /prod/backend/node_modules/.prisma \
-  # pnpm deploy reruns @prisma/client postinstall, leaving a stub .prisma inside the
-  # .pnpm virtual store that shadows the top-level generated client at require time.
-  && PRISMA_DST="$(echo /prod/backend/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma)" \
-  && if [ -d "$PRISMA_DST" ]; then rm -rf "$PRISMA_DST" && cp -r "$PRISMA_SRC" "$PRISMA_DST"; fi
+  && cp -R /app/backend/prisma /prod/backend/prisma \
+  && pnpm --dir /prod/backend exec prisma generate --schema /prod/backend/prisma/schema.prisma
 
 FROM base AS runner
 WORKDIR /app/backend
 ENV NODE_ENV="production"
 ENV PORT="8080"
+ARG DEPLOY_SHA
+ENV DEPLOY_SHA="${DEPLOY_SHA}"
 
 COPY --from=build /prod/backend/package.json ./package.json
 COPY --from=build /prod/backend/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./dist
-COPY --from=build /app/backend/prisma ./prisma
+COPY --from=build /prod/backend/prisma ./prisma
 
 EXPOSE 8080
 # SWC builder compiles sourceRoot (src/) to a flat dist/, so the entry is dist/main

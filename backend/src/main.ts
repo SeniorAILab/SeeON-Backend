@@ -9,7 +9,10 @@ async function bootstrap() {
     app.enableCors({ origin: process.env.FRONT_ORIGIN, credentials: true });
   }
   app.setGlobalPrefix('api', {
-    exclude: [{ path: '/', method: RequestMethod.ALL }],
+    exclude: [
+      { path: '/', method: RequestMethod.ALL },
+      { path: '/health', method: RequestMethod.ALL },
+    ],
   });
   app.enableVersioning({
     type: VersioningType.URI,

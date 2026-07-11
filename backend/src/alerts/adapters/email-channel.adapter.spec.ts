@@ -72,6 +72,66 @@ describe('EmailChannelAdapter.send', () => {
     const sentArgs = sendMailMock.mock.calls[0][0] as { to: string };
     expect(sentArgs.to).toBe('admin@example.test');
   });
+  it.each([
+    ['absent', {}],
+    ['empty', { SMTP_SECURE: '' }],
+  ])(
+    'defaults SMTP_SECURE to true for port 465 when it is %s',
+    async (_state, smtpSecure) => {
+      sendMailMock.mockResolvedValue({ messageId: 'msg-465' });
+      const adapter = new EmailChannelAdapter(
+        configService({
+          SMTP_HOST: 'smtp.example.com',
+          SMTP_PORT: '465',
+          ...smtpSecure,
+        }),
+      );
+
+      await expect(
+        adapter.send({
+          ...alertMessage,
+          recipient_email: 'admin@example.test',
+        }),
+      ).resolves.toEqual({ kind: 'sent', provider_reference: 'msg-465' });
+
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'smtp.example.com',
+          port: 465,
+          secure: true,
+        }),
+      );
+    },
+  );
+
+  it('honors an explicit SMTP_SECURE=false override for port 465', async () => {
+    sendMailMock.mockResolvedValue({ messageId: 'msg-465-insecure' });
+    const adapter = new EmailChannelAdapter(
+      configService({
+        SMTP_HOST: 'smtp.example.com',
+        SMTP_PORT: '465',
+        SMTP_SECURE: 'false',
+      }),
+    );
+
+    await expect(
+      adapter.send({
+        ...alertMessage,
+        recipient_email: 'admin@example.test',
+      }),
+    ).resolves.toEqual({
+      kind: 'sent',
+      provider_reference: 'msg-465-insecure',
+    });
+
+    expect(createTransportMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: 'smtp.example.com',
+        port: 465,
+        secure: false,
+      }),
+    );
+  });
 
   it('falls back to a synthetic provider_reference when messageId is absent', async () => {
     sendMailMock.mockResolvedValue({});

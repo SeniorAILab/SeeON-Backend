@@ -4,7 +4,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 export function configureVersionedTestApp(app: INestApplication): void {
   app.setGlobalPrefix('api', {
-    exclude: [{ path: '/', method: RequestMethod.ALL }],
+    exclude: [
+      { path: '/', method: RequestMethod.ALL },
+      { path: '/health', method: RequestMethod.ALL },
+    ],
   });
   app.enableVersioning({
     type: VersioningType.URI,

@@ -1,0 +1,50 @@
+name: Deploy iwinv
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-iwinv-production
+  cancel-in-progress: true
+
+jobs:
+  trigger-jenkins:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.repository == 'SeniorAILab/eldercare-fall-ai' &&
+      vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    env:
+      WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+    steps:
+      - name: Validate deployment webhook token
+        run: |
+          set -eu
+          if [[ -z "$WEBHOOK_TOKEN" ]]; then
+            echo "::error::WEBHOOK_TOKEN is required when deployment is enabled"
+            exit 1
+          fi
+      - name: Trigger Jenkins deployment
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::workflow_run head_sha must be a lowercase 40-character SHA"
+            exit 1
+          fi
+          payload="$(jq -nc --arg SHA "$SHA" '{workflow_run: {head_sha: $SHA, head_branch: "main", conclusion: "success"}, ref: "refs/heads/main"}')"
+          # Temporary HTTP transport is accepted security debt tracked in #587.
+          curl --fail --show-error --silent --connect-timeout 10 --max-time 30 --retry 0 --request POST \
+            --header "Authorization: Bearer $WEBHOOK_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            http://<iwinv-host>/generic-webhook-trigger/invoke

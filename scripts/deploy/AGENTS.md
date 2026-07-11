@@ -1,81 +1,45 @@
-# Deploy script agent rules - Naver Cloud VM
+# Deploy script agent rules — iwinv Jenkins CD
 
 ## Overview
-`scripts/deploy/**` owns host bootstrap and VM-side deploy execution for the
-production Compose image-pull topology.
+`scripts/deploy/**` owns the iwinv host bootstrap and deploy execution. Jenkins is
+the only permitted server-side application-image builder and normal deploy initiator;
+direct host use is limited to explicit rollback or database restore.
 
 ## Where to look
-- `ncloud-bootstrap.sh` - one-time root bootstrap: Docker, `deploy` user,
-  `/opt/eldercare-fall-ai`, and swap.
-- `ncloud-deploy.sh` - consumes the uploaded bundle, pulls explicit GHCR image
-  tags, backs up the database, applies Prisma migrations, starts Compose, and
-  runs one smoke check.
-- `scripts/release/manual-production-deploy.mjs` - current local production
-  deploy path while Actions-backed CD is paused: builds/pushes SHA-tagged GHCR
-  images, uploads the bundle, then invokes this VM pull-only deploy script.
-- `docs/decisions/README.md` - deploy
-  decision of record; `.env.host.prod.example` - production env contract. VM
-  access / bootstrap / operate notes are in the section below.
+- `Jenkinsfile` — validates `SHA`/`REF`, checks out `origin/main`, builds
+  `eldercare-backend:<sha>` and `eldercare-front:<sha>`, then invokes deploy.
+- `iwinv-deploy.sh` — deploys exact local SHA-tagged images, backs up PostgreSQL,
+  migrates, starts Compose, and verifies health/version.
+- `iwinv-deploy.test.sh` — mocked dry-run and production-path contracts for
+  gating, retention, rollback/restore ordering, health, and failure propagation.
+- `front-version-image.test.sh` — Docker-level exact-SHA version artifact contract.
+- `iwinv-workflow-contract.test.mjs` — GitHub trigger provenance, token, payload,
+  and bounded-delivery contract.
+- `/opt/eldercare-fall-ai/shared/.env` — host-only production environment contract;
+  never print or track it.
 
-## Conventions
-- Shell scripts are POSIX `sh` and run noninteractively with `set -eu`.
-- `IMAGE_TAG` is required. Treat an empty tag as a deploy error, never as a
-  signal to infer `latest`.
-- The VM pulls already-built backend/front images and runs Docker Compose.
-- Local manual deploy may build application images before upload, but only on
-  the operator machine and only under the resolved commit SHA tag.
-- Production DB migrations are done by deploy tooling with `prisma migrate
-  deploy` from the backend image after `pg_dump -Fc` and `pg_restore --list`
-  validation.
-- Destructive schema reset is demo-only: `DEPLOY_DB_MODE=reset-demo` plus
-  `ALLOW_DESTRUCTIVE_DB_RESET=I_UNDERSTAND_THIS_WIPES_PUBLIC_SCHEMA`.
-- Public exposure is `front` on port `80`; backend and DB stay internal to the
-  Compose network.
-- Cleanup may be best-effort only where failure cannot change deploy outcome;
-  core deploy, migration, and smoke-check failures must exit non-zero.
+## Invariants
+- Accept only a 40-character lowercase hexadecimal `SHA` on `main`
+  (`REF=refs/heads/main`); never infer a branch, SHA, image, env file, Compose
+  profile, or `latest` tag.
+- Server-side backend/front builds are allowed only inside Jenkins and only as
+  `eldercare-backend:<sha>` and `eldercare-front:<sha>`. No local operator build,
+  pull-based fallback, or `git checkout` deploy path exists.
+- Repository checkout is `/opt/eldercare-fall-ai/repo`; backups are under
+  `/opt/eldercare-fall-ai/backups/db/`, releases under `/opt/eldercare-fall-ai/releases/`.
+  Frontend binds only host loopback
+  `127.0.0.1:3000`, while backend and database remain internal. Caddy owns public
+  exposure.
+- Before migration, create a `pg_dump -Fc` backup and validate it with
+  `pg_restore --list`. Migrations run once from deploy tooling, never on app start.
+- Triggering remains disabled until the first manual deploy has passed public
+  validation. GitHub enables it only with `vars.DEPLOY_ENABLED=true`.
+- Fail on the first checkout, build, preflight, backup, migration, Compose, or
+  health error. No hidden retry, automatic rollback, alternate path, or secret
+  output. Rollback and restore are explicit operator actions.
 
 ## Anti-patterns
-- No server-side application image builds or `git checkout` based deploys.
-- No fallback image tag, branch, environment file, or alternate compose profile.
-- No migrate image or backend app-start migration step. Deploy tooling may run
-  one-shot Prisma CLI commands from the backend image.
-- No automatic retry loop after failed pull, migration, `compose up`, or smoke
-  check.
-- No host-destructive operations outside the documented app root and Docker
-  resources.
-- No secret printing while handling `.env`, registry credentials, or SSH inputs.
-
-## VM access, bootstrap, operate
-
-Target VM (Naver Cloud, registry-image pull topology): public IP `<retired-host>` (workflow default `vars.NCLOUD_HOST`), OS `ubuntu-24.04-base`, public `front` nginx on `:80`, while `backend:8080` and `db:5432` stay internal.
-
-One-time access uses Naver Cloud's VPC server-access flow: the login PEM gets the initial administrator password in the console (Server > Server > select the instance > Manage servers > Get admin password > upload the PEM), and then you SSH as `root@<retired-host>`. Reference: Naver Cloud "Access Server (VPC)" guide.
-
-Bootstrap (from a local checkout, as VM `root`):
-
-```bash
-ssh-keygen -t ed25519 -f <REDACTED_SSH_KEY_PATH> -C "eldercare-fall-ai ncloud deploy"
-ssh root@<retired-host> \
-  "DEPLOY_PUBLIC_KEY='$(cat <REDACTED_SSH_KEY_PATH>.pub)' sh -s" \
-  < scripts/deploy/ncloud-bootstrap.sh
-```
-
-`ncloud-bootstrap.sh` installs Docker, enables SSH/Docker, creates the `deploy` user and `/opt/eldercare-fall-ai`, and adds a 2G swapfile for the 1 GB VM.
-
-Production env lives in `/opt/eldercare-fall-ai/shared/.env` (or the GitHub secret `NCLOUD_ENV_FILE`); fill it from `.env.host.prod.example`. The deploy command path, DB modes (`migrate` default / `baseline-existing` / `reset-demo` / `skip`), and super-admin bootstrap (ADR) are owned by `scripts/release/manual-production-deploy.mjs`, so run it with `--dry-run` first:
-
-```bash
-pnpm deploy:prod:manual -- v0.1.0 --dry-run
-pnpm deploy:prod:manual -- v0.1.0
-```
-
-Operate:
-
-```bash
-ssh -i <REDACTED_SSH_KEY_PATH> deploy@<retired-host>
-cd /opt/eldercare-fall-ai/current
-COMPOSE_PROFILES=full docker compose -f compose.yaml -f compose.prod.yaml ps
-docker compose -f compose.yaml -f compose.prod.yaml logs --tail=100 front backend
-```
-
-GitHub Actions (`.github/workflows/deploy-ncloud.yml`) only deploys on explicit `workflow_dispatch`; the release trigger is paused (ADR). Set secrets `NCLOUD_SSH_PRIVATE_KEY` and `NCLOUD_ENV_FILE`, and optional vars `NCLOUD_HOST` and `NCLOUD_SSH_USER`.
+- No Naver Cloud, GHCR, GitHub Actions image build, SSH deploy, or manual-only
+  production topology.
+- No ML deployment, ML image build, or ML service in this CD path; ML remains
+  edge-only.

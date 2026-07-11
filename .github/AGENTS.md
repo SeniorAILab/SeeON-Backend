@@ -1,41 +1,32 @@
-# GitHub agent rules - workflows, issue forms, and repository automation
+# GitHub agent rules — CI and Jenkins CD trigger
 
 ## Overview
-`.github/**` owns GitHub-side automation only: CI, PR checks, labels, and the
-Naver Cloud deploy trigger.
+`.github/**` owns GitHub-side CI, PR automation, and the gated trigger for iwinv
+Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/frontend.
 
 ## Where to look
-- `workflows/ci.yml` - advisory CI jobs; local pre-push remains the real gate.
-- `workflows/pr-check.yml` - PR size/base/draft policy checks.
-- `workflows/deploy-ncloud.yml` - builds GHCR images and deploys the VM.
-- `ISSUE_TEMPLATE/task.yml` and `workflows/issue-auto-label.yml` - issue type
-  routing.
+- `workflows/ci.yml` — CI jobs.
+- `workflows/pr-check.yml` — PR policy.
+- `workflows/deploy-iwinv.yml` — successful-main CI trigger to Jenkins.
 
-## Conventions
-- Keep workflow permissions minimal per job. Raise scopes only for the job that
-  needs them.
-- Production deploy currently runs through the local manual path
-  (`pnpm deploy:prod:manual -- <release-or-sha>`), which builds and pushes
-  SHA-tagged images from the operator machine and then invokes the VM pull-only
-  deploy script.
-- The Deploy Naver Cloud workflow keeps `workflow_dispatch` for explicit
-  operator use, and its release trigger is preserved as commented YAML for
-  future Actions-backed CD re-enable.
-- Prefer `pnpm release:prod -- vX.Y.Z` for production release creation so the
-  release target and tag format stay consistent.
-- Do not add workflow fallback logic. The current cost-control path is the
-  documented local manual deploy command.
-- Workflow inputs and secrets must fail validation before SSH starts. Do not
-  echo private keys, tokens, `.env` content, or passwords.
-- Advisory checks still matter: never treat a pending or red `ci-gate` as safe
-  to merge.
+## Invariants
+- The trigger is disabled by default. Enable it only after the first manual Jenkins
+  deployment passes public validation by setting repository variable
+  `DEPLOY_ENABLED=true`; any other or unset value must not trigger deployment.
+- Trigger only a successful `main` run for `SeniorAILab/eldercare-fall-ai`, sending
+  its exact 40-lowercase-hex `SHA` and `REF=refs/heads/main`. No ordinary merge may
+  bypass these checks.
+- GitHub Actions sends the webhook using `Authorization: Bearer` and repository
+  secret `WEBHOOK_TOKEN`. Jenkins stores the matching server credential as
+  `eldercare-webhook-token`; never expose either value.
+- GitHub Actions does not build, tag, push, SSH-deploy, retry, or roll back
+  production images. Jenkins alone builds exact
+  `eldercare-backend:<sha>`/`eldercare-front:<sha>` images and deploys them.
+- Keep permissions minimal and fail before an external trigger when required input
+  is absent.
 
 ## Anti-patterns
-- No implicit `latest` image tag in production deploys.
-- No production deploy triggered by ordinary `main` merges.
-- No VM-side backend/front image builds from workflow changes.
-- No fallback branch, fallback image, or fallback environment when a deploy
-  input is missing.
-- No automatic deploy retry, rollback, or alternate path that hides the first
-  failure. Retry is a manual operator decision after diagnosis.
-- No broad `write-all` workflow permissions for convenience.
+- No Naver Cloud, GHCR, manual-only deploy, `latest`, fallback ref/image/env, or
+  automatic retry/rollback path.
+- No deployment of ML services or ML images; ML remains edge-only.
+- No broad `write-all` permissions or logging of tokens, credentials, or env data.
