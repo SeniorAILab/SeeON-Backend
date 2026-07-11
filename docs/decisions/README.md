@@ -7,4 +7,4 @@ or durable decision documentation. `init` creates no ADR files and requires no A
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| (none yet) | | | |
+| [ADR-001](./ADR-001-iwinv-jenkins-cd.md) | iwinv 서버의 Jenkins 기반 CD 파이프라인 (front + backend) | Proposed | 2026-07-10 |
