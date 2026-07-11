@@ -443,6 +443,9 @@ assert_not_contains "$log" 'up -d --wait --wait-timeout 120 backend front'
 assert_not_contains "$log" 'image inspect'
 assert_order "$log" 'pg_restore --list' 'pg_restore --username'
 assert_order "$log" 'pg_restore --username' 'has_table_privilege'
+assert_contains "$log" 'REVOKE UPDATE, DELETE ON public.events FROM fall_app'
+assert_order "$log" 'pg_restore --username' 'REVOKE UPDATE, DELETE ON public.events'
+assert_order "$log" 'REVOKE UPDATE, DELETE ON public.events' 'has_table_privilege'
 
 # Current/previous manifest dumps survive rotation and a missing retained dump fails closed.
 pointer "$CURRENT_SHA" current
