@@ -43,3 +43,4 @@ direct host use is limited to explicit rollback or database restore.
   production topology.
 - No ML deployment, ML image build, or ML service in this CD path; ML remains
   edge-only.
+The first production release was bootstrapped manually on 2026-07-11 (G004); this note also served as the harmless change for the rollback drill.
