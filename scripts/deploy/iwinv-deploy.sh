@@ -172,7 +172,7 @@ prisma_migration_rows() {
 domain_table_rows() { compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_type = '\''BASE TABLE'\'' AND table_name <> '\''_prisma_migrations'\'';"'; }
 assert_prisma_managed() { rows=$(prisma_migration_rows); tables=$(domain_table_rows); [ "$rows" -gt 0 ] || [ "$tables" -eq 0 ] || fail 'Refusing migration: existing domain tables lack Prisma migration tracking.'; }
 run_migrations() { log 'docker compose run backend pnpm exec prisma migrate deploy'; compose run --rm --no-deps backend pnpm exec prisma migrate deploy --schema prisma/schema.prisma; }
-bootstrap_super_admin() { compose run --rm --no-deps backend node dist/prisma/seed-super-admin.js; }
+bootstrap_super_admin() { compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js; }
 
 pending_recovery_path() { printf '%s\n' "$RELEASE_DIR/pending.json"; }
 load_pending_recovery() {

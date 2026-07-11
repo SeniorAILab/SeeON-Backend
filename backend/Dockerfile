@@ -25,6 +25,7 @@ ENV NODE_OPTIONS="${NODE_OPTIONS}"
 COPY backend ./backend
 RUN pnpm --filter backend exec prisma generate \
   && pnpm --filter backend build \
+  && pnpm --filter backend exec swc prisma/seed-super-admin.ts src/auth/password.ts -d dist-tools -C module.type=commonjs \
   && pnpm --filter backend deploy --prod --legacy /prod/backend \
   && cp -R /app/backend/prisma /prod/backend/prisma \
   && pnpm --dir /prod/backend exec prisma generate --schema /prod/backend/prisma/schema.prisma
@@ -39,6 +40,7 @@ ENV DEPLOY_SHA="${DEPLOY_SHA}"
 COPY --from=build /prod/backend/package.json ./package.json
 COPY --from=build /prod/backend/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./dist
+COPY --from=build /app/backend/dist-tools ./dist-tools
 COPY --from=build /prod/backend/prisma ./prisma
 
 EXPOSE 8080
