@@ -159,7 +159,16 @@ write_release_env() {
 }
 
 sync_app_role() { compose exec -T db sh < backend/prisma/init/02-sync-app-role.sh; }
-prisma_migration_rows() { compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT CASE WHEN to_regclass('\''public._prisma_migrations'\'') IS NULL THEN -1 ELSE (SELECT count(*) FROM public._prisma_migrations) END;"'; }
+prisma_migration_rows() {
+  # A fresh database has no _prisma_migrations relation, and PostgreSQL rejects a
+  # single statement that references it even behind a CASE branch at parse time.
+  tracked=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public._prisma_migrations'\'') IS NOT NULL;"')
+  if [ "$tracked" = t ]; then
+    compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM public._prisma_migrations;"'
+  else
+    printf '%s\n' -1
+  fi
+}
 domain_table_rows() { compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_type = '\''BASE TABLE'\'' AND table_name <> '\''_prisma_migrations'\'';"'; }
 assert_prisma_managed() { rows=$(prisma_migration_rows); tables=$(domain_table_rows); [ "$rows" -gt 0 ] || [ "$tables" -eq 0 ] || fail 'Refusing migration: existing domain tables lack Prisma migration tracking.'; }
 run_migrations() { log 'docker compose run backend pnpm exec prisma migrate deploy'; compose run --rm --no-deps backend pnpm exec prisma migrate deploy --schema prisma/schema.prisma; }
