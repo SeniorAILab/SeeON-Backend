@@ -28,7 +28,6 @@ front/out/
 !.env.example
 !.env.local.example
 !.env.host.prod.example
-!.env.edge.prod.example
 /edge-cameras*.json
 
 # macOS/local editor noise
@@ -46,24 +45,6 @@ front/out/
 models/
 weights/
 checkpoints/
-# ml/models/ is the single root for all model weights and artifacts.
-# Whole tree is gitignored — ephemeral pose weights, trained artifacts, and
-# third-party checkpoints are all re-acquirable; never commit any of them.
-# RF's model.pkl is not caught by *.pt, and committing metadata.json without
-# weights would make the demo report a model "available" that then fails to load.
-ml/models
-# Run outputs (and the worktree symlink to the main clone's store)
-ml/artifacts
-
-# ml-worker runtime configs carry RTSP URLs / relay token — keep only the example tracked.
-ml/worker/ml-worker.local.yaml
-ml/worker/ml-worker.*.local.yaml
-ml/.runtime/
-
-# ...but the training source package is code, not weights — keep it tracked.
-# (Weight files inside it are still caught by the *.pt/*.pth rules above.)
-!ml/training/models/
-!ml/training/models/*.py
 
 # Agent/tooling state
 .omc/
@@ -77,29 +58,12 @@ ml/.runtime/
 .agents/skills/*/evals/runloop-results/
 
 # Private/large video assets (kept local, NEVER pushed)
-# Relocated assets/ -> ml/data/ (raw inputs + processed clips). Both stay local.
-# Complete chain: only nursing-home-gold.csv is trackable under ml/data.
-# `/ **` content patterns (not bare `ml/data`) so git descends for negations;
-# gold-review/ re-blocked explicitly — CCTV-derived strip images must never
-# become stageable via `git add .`.
-ml/data/**
-!ml/data/eval/
-ml/data/eval/**
-!ml/data/eval/nursing-home-gold.csv
-!ml/data/eval/raw-processed-mapping.csv
-ml/data/eval/gold-review/
 assets/
-# Throwaway experiment scratch (pose-probe weights + annotated frames derived
-# from private footage). Local-only, NEVER pushed.
-ml/.scratch/
 .scratch/
-# extra safety net: block raw media anywhere in the tree
 *.mp4
 *.mov
 *.avi
 *.mkv
-# Autoresearch-loop runtime heartbeat (rewritten every experiment)
-ml/experiments/loop_status.json
 .gstack/
 
 # gjc workflow runtime (specs/plans/state/ultragoal) — local, not source

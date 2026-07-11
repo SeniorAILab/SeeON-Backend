@@ -1,8 +1,8 @@
 name: CI
 
-# Build + test gate for PRs. Path-filtered per package (monorepo: backend, front, ml)
-# so a frontend-only PR never spins up Postgres / runs backend jest, and vice
-# versa. The always-run `ci-gate` job is the single required status check:
+# Build + test gate for PRs. Path-filtered per package so a frontend-only PR
+# never spins up Postgres / runs backend jest, and vice versa. The always-run
+# `ci-gate` job is the single required status check:
 # skipped package jobs count as passing, which avoids the classic
 # path-filter + required-check deadlock (skipped != success for required checks).
 
@@ -28,7 +28,6 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      ml: ${{ steps.filter.outputs.ml }}
       env_contract: ${{ steps.filter.outputs.env_contract }}
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +47,6 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
-              - '.github/workflows/ci.yml'
-            ml:
-              - 'ml/**'
               - '.github/workflows/ci.yml'
             env_contract:
               - 'compose*.yaml'
@@ -144,25 +140,6 @@ jobs:
       - name: Test
         run: pnpm --filter front test
 
-  ml:
-    name: ML (lint + test)
-    needs: changes
-    if: needs.changes.outputs.ml == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: Ruff
-        run: uvx ruff@0.15.17 check .
-        working-directory: ml
-      - name: Install deps
-        run: uv sync
-        working-directory: ml
-      - name: Install ffmpeg (clip recorder H.264 encoder)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Pytest
-        run: uv run pytest
-        working-directory: ml
 
   env-contract:
     name: Env contract
@@ -174,9 +151,17 @@ jobs:
       - name: Verify production env contract
         run: node scripts/env/verify-compose-env-contract.mjs
 
+  repo-residue:
+    name: Host repository residue
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify host repository has no ML residue
+        run: node scripts/repo-residue-check.mjs --repo-role host
+
   ci-gate:
     name: CI gate
-    needs: [backend, frontend, ml, env-contract]
+    needs: [backend, frontend, env-contract, repo-residue]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -184,10 +169,10 @@ jobs:
         run: |
           be='${{ needs.backend.result }}'
           fe='${{ needs.frontend.result }}'
-          ml='${{ needs.ml.result }}'
           env_contract="${{ needs['env-contract'].result }}"
-          echo "backend=$be frontend=$fe ml=$ml env_contract=$env_contract"
-          for r in "$be" "$fe" "$ml" "$env_contract"; do
+          residue='${{ needs['repo-residue'].result }}'
+          echo "backend=$be frontend=$fe env_contract=$env_contract residue=$residue"
+          for r in "$be" "$fe" "$env_contract" "$residue"; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "::error::a required package job did not pass"
               exit 1

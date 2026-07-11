@@ -9,9 +9,8 @@
 # Mirrors `ci.yml` semantics exactly so local == CI:
 #   frontend (front/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint` (BLOCK)
 #   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR)
-#   ml       (ml/**): `ruff check` (BLOCK)
 #
-# Scoped to changed packages so a frontend-only push never needs uv, and vice versa.
+# Scoped to changed packages so a frontend-only push never needs backend tooling.
 # When a changed package's toolchain is missing, it warns and skips (cannot verify) —
 # never a false block. Real lint/type failures block the push.
 #
@@ -38,15 +37,14 @@ changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
 [ -z "$changed" ] && exit 0
 
 # Map changed files -> packages (mirrors ci.yml dorny/paths-filter).
-fe=0; be=0; mlc=0; envc=0
+fe=0; be=0; envc=0
 if printf '%s\n' "$changed" | grep -Eq '^front/';   then fe=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^(backend/|scripts/backend-guard/)'; then be=1; fi
-if printf '%s\n' "$changed" | grep -Eq '^ml/';      then mlc=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^(compose(\..*)?\.ya?ml|\.env.*\.example|scripts/env/|\.github/workflows/ci\.yml|package\.json)$'; then envc=1; fi
 # Shared TS manifests/lockfiles affect both front and backend.
 if printf '%s\n' "$changed" | grep -Eq '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)$'; then fe=1; be=1; fi
 
-[ "$fe" = 0 ] && [ "$be" = 0 ] && [ "$mlc" = 0 ] && [ "$envc" = 0 ] && exit 0
+[ "$fe" = 0 ] && [ "$be" = 0 ] && [ "$envc" = 0 ] && exit 0
 
 if [ "$fe" = 1 ] || [ "$be" = 1 ] || [ "$envc" = 1 ]; then
   if ! command -v pnpm >/dev/null 2>&1; then
@@ -78,17 +76,6 @@ if [ "$envc" = 1 ]; then
   pnpm env:verify || fail=1
 fi
 
-if [ "$mlc" = 1 ]; then
-  if command -v uv >/dev/null 2>&1; then
-    gg_warn "ml changed -> ruff check"
-    ( cd ml && uv run ruff check . ) || fail=1
-  elif command -v ruff >/dev/null 2>&1; then
-    gg_warn "ml changed -> ruff check"
-    ( cd ml && ruff check . ) || fail=1
-  else
-    gg_warn "uv/ruff not found — skipping ml lint gate (install uv to enable)"
-  fi
-fi
 
 if [ "$fail" != 0 ]; then
   gg_die "lint/typecheck failed for changed packages — fix before pushing.

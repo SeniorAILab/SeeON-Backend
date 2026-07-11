@@ -6,8 +6,8 @@ const usage = `Usage:
   pnpm release:prod -- vX.Y.Z [--target <ref>] [--title <title>] [--notes <notes>] [--dry-run]
 
 Creates a non-prerelease GitHub Release. Production images use one commit SHA
-tag for backend, front, ml-api, and ml-worker. While Actions-backed CD is paused,
-deploy the resulting tag with:
+tag for backend and front. While Actions-backed CD is paused, deploy the
+resulting tag with:
   pnpm deploy:prod:manual -- <tag>
 
 Examples:
@@ -138,7 +138,7 @@ function main() {
       "Release created. Actions-backed CD is currently paused.",
       "Deploy this release from the local checkout with:",
       `  pnpm deploy:prod:manual -- ${tag}`,
-      "That command publishes backend/front/ml-api/ml-worker with one commit SHA; edge rollout uses the pinned ml-api/ml-worker images separately.",
+      "That command publishes backend/front with one commit SHA.",
       "",
     ].join("\n"),
   );

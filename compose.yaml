@@ -1,6 +1,4 @@
-# Host stack (single host): db + backend + front(nginx). ML runs on the external
-# edge device — see compose.edge.yaml (ML inference pushes bearer-token-authenticated
-# events to the backend Event API, so ml-serving is not part of this stack).
+# Host stack: db + backend + front (nginx).
 # App services (backend, front) are gated behind the `full` profile so the default
 # `docker compose up` / `pnpm backend:db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
@@ -47,9 +45,6 @@ services:
       DATABASE_URL: postgresql://${APP_DB_USER:-fall_app}:${APP_DB_PASSWORD:-fall_app}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
       # DIRECT_URL keeps the privileged fall superuser for migrations / seed only.
       DIRECT_URL: postgresql://${POSTGRES_USER:-fall}:${POSTGRES_PASSWORD:-fall}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
-      # ML_SERVING_URL is intentionally absent: ML runs on the edge and pushes to /ingest.
-      # The backend MlServingPredictionAdapter pull seam stays dormant;
-      # set ML_SERVING_URL only if a future topology re-enables backend-pull prediction.
       FRONT_ORIGIN: http://localhost:3000
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
       # SMTP_* configures outbound alert email delivery (nodemailer). Dev placeholders
@@ -60,9 +55,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
-      # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
-      # Must match the edge's EDGE_FACILITY_TOKEN exactly; dev placeholder unblocks
-      # `docker compose --profile full up` out of the box.
+      # Shared bearer token for remote Event API producers.
       EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:-dev-only-edge-facility-token-change-me}
     ports:
       - "${BACKEND_PORT:-8080}:8080"

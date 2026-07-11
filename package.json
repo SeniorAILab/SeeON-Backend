@@ -2,7 +2,7 @@
   "name": "eldercare-fall-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "Fall-detection platform monorepo: orchestration layer only. Dependency locks live per ecosystem (pnpm: front/backend, uv: ml).",
+  "description": "Fall-detection platform host services.",
   "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=24"
@@ -12,18 +12,12 @@
     "dev:backend": "node scripts/dev/dev-local.mjs backend",
     "dev:backend:fresh": "node scripts/dev/dev-local.mjs backend --reset",
     "dev:backend:app": "pnpm --filter backend start:dev",
-    "dev:ml": "pnpm dev:ml:api",
-    "dev:ml:api": "uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000",
-    "dev:ml:worker": "uv run --directory ml python -m worker --config worker/ml-worker.local.yaml",
-    "dev:ml:demo": "uv run --directory ml --group demo streamlit run demo/app.py",
     "build:front": "pnpm --filter front build",
     "build:backend": "pnpm --filter backend build",
     "typecheck": "pnpm --filter front exec tsc -b && pnpm --filter backend exec tsc --noEmit",
-    "lint": "pnpm -r lint && uv run --directory ml ruff check .",
-    "dupcheck": "jscpd ml backend/src front/src",
-    "format": "pnpm --filter backend format && uv run --directory ml ruff format .",
+    "lint": "pnpm -r lint",
+    "format": "pnpm --filter backend format",
     "env:verify": "node scripts/env/verify-compose-env-contract.mjs",
-    "edge:preflight": "sh scripts/edge-preflight/check-nvidia-runtime.sh",
     "env:local:verify": "node scripts/dev/ensure-local-env.mjs",
     "backend:db:up": "docker compose --env-file .env.local up -d db",
     "backend:db:down": "docker compose down",
@@ -39,8 +33,5 @@
     "deploy:prod:manual": "node scripts/release/manual-production-deploy.mjs",
     "smoke:backend:no-db": "pnpm --filter backend run smoke:no-db",
     "backend:demo:bind": "SEED_BIND_DEMO_USERS=true pnpm --filter backend run prisma:seed"
-  },
-  "devDependencies": {
-    "jscpd": "^5.0.5"
   }
 }

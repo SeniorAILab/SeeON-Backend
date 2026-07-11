@@ -1,5 +1,4 @@
 # Production overlay for the host stack (db + backend + front[nginx]).
-# ML runs on the external edge device — see compose.edge.yaml.
 services:
   db:
     ports: !reset []
@@ -32,9 +31,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required in prod}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
-      # Shared bearer token the edge ml-api attaches to Event API requests (issue #552).
-      # Deploy order: set this to match the edge's EDGE_FACILITY_TOKEN and deploy the
-      # edge stack first, so ml-api is already sending the bearer before this enforces it.
+      # Shared bearer token for remote Event API producers.
       EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:?EDGE_FACILITY_TOKEN is required in prod}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-}
       NOKYANG_ADMIN_PASSWORD: ${NOKYANG_ADMIN_PASSWORD:-}

@@ -1,6 +1,5 @@
-# Build context is the repo root (.) for all service Dockerfiles, so this
-# root .dockerignore governs every image build. Keep lockfiles + source; drop
-# VCS, installed deps, build outputs, ML data/models, and local env/state.
+# Build context is the repo root for host service Dockerfiles. Keep lockfiles and
+# source; drop VCS, installed dependencies, build outputs, and local env/state.
 .git
 **/node_modules
 **/.next
@@ -8,15 +7,10 @@
 **/.venv
 **/__pycache__
 **/*.pyc
-ml/data
-ml/*.zip
-ml/models
 **/*.pt
 **/*.pth
 **/*.onnx
 **/*.safetensors
-ml/experiments
-ml/.env*
 .gjc
 *.log
 **/.env

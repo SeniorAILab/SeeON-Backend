@@ -5,7 +5,7 @@ export const DEFAULT_LOCAL_ENV_FILE = '.env.local';
 
 const ALLOWED_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const ALLOWED_DB_NAMES = new Set(['fall_dev']);
-const FORBIDDEN_ENV_FILES = new Set(['.env.host.prod', '.env.edge.prod']);
+const FORBIDDEN_ENV_FILES = new Set(['.env.host.prod']);
 
 export class LocalEnvError extends Error {
   constructor(errors) {

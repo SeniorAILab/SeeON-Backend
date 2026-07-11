@@ -6,14 +6,13 @@
 
 ## Overview
 
-Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML edge runtime, and Vite React monitoring dashboard. Root scripts orchestrate packages; implementation ownership lives in scoped `AGENTS.md` files.
+Eldercare fall-prevention host repository: NestJS/PostgreSQL backend and Vite React monitoring dashboard. ML runtime is separated → `SeniorAILab/eldercare-fall-ml`.
 
 ## Structure
 
 ```text
 .
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, Prisma DB
-├── ml/             # uv Python ML API, worker, demo, contracts (training moved to eldercare-dataset-ops, ADR-0004)
 ├── front/          # Vite React facility dashboard and operator UI
 ├── docs/           # architecture, rules, research, exec plans
 ├── scripts/        # git/backend/env/release/deploy guards and automation
@@ -27,11 +26,10 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 
 | Task | Location | Notes |
 | --- | --- | --- |
-| System topology | `docs/architecture.md` | Runtime split and edge/backend/frontend flow when explicitly authored. |
+| System topology | `docs/architecture.md` | Host backend/frontend flow. ML runtime: separated → `SeniorAILab/eldercare-fall-ml`. |
 | Docs scaffold | `docs/research/`, `docs/exec-plan/`, `docs/decisions/`, `docs/rules/` | Init-owned scaffold only; ADRs are explicit-request only. |
 | Backend API / DB | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Controllers/services/repositories, Prisma schema, migrations. |
-| ML runtime | `ml/AGENTS.md`, `ml/worker/AGENTS.md`, `ml/api/AGENTS.md` | Import ladder, RTSP worker, relay API, model boundaries. |
-| Nursing-home edge dashboard access | `docs/rules/nursing-home-edge-dashboard-access.md` | Direct tailnet `:5173` access, firewall check, fallback boundary, and no secrets/topology in docs or logs. |
+| ML runtime / edge dashboard | `SeniorAILab/eldercare-fall-ml` | Separated repository. |
 | Frontend | `front/AGENTS.md`, `front/src/AGENTS.md` | API seam, mock mode boundary, UI state. |
 | Scripts / guards | `scripts/AGENTS.md`, `scripts/backend-guard/README.md` | Hard gates and deploy/release automation. |
 | CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | Size/base checks and package CI. |
@@ -42,14 +40,11 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 | Surface | Entry / Owner | Role |
 | --- | --- | --- |
 | Backend boot | `backend/src/main.ts`, `backend/src/app.module.ts` | Nest app bootstrap and module composition. |
-| Event ingest | `backend/src/events/events.controller.ts`, `event-recorder.service.ts`, `event-alarm.service.ts` | ML facts enter backend and become persisted events/alerts. |
+| Event ingest | `backend/src/events/events.controller.ts`, `event-recorder.service.ts`, `event-alarm.service.ts` | Remote event facts become persisted events/alerts. |
 | Alert policy | `backend/src/alerts/` | Dashboard alert read model and email (SMTP) delivery policy. |
 | Tenancy/auth | `backend/src/auth/`, `backend/src/facilities/`, `backend/src/spaces/` | Facility-scoped auth and topology. |
 | Prisma | `backend/prisma/schema.prisma`, `backend/src/prisma/` | Data model and DB access boundary. |
-| ML API | `ml/api/main.py`, `ml/api/routes/` | Gateway/status/relay API; no model loading. |
-| ML worker | `ml/worker/__main__.py`, `edge_worker.py`, `camera_worker.py` | Long-running stream consumer and orchestration state. |
-| Perception | `ml/worker/sources/`, `runners/`, `perception/`, `domains/` | Frame intake, model runners, observations, domain events. |
-| Training | eldercare-dataset-ops (sibling repo) | Batch artifact creation/evaluation; moved out of this repo per ADR-0004. `ml/artifact_metadata/` keeps only the read-side schema for the live demo. |
+| ML runtime | `SeniorAILab/eldercare-fall-ml` | Separated repository. |
 | Front app | `front/src/main.tsx`, `router.tsx`, `pages/`, `components/` | Facility dashboard routes and views. |
 | Front API seam | `front/src/services/`, `front/src/services/api/` | Backend DTO mapping; components must not fetch directly. |
 
@@ -57,42 +52,36 @@ Eldercare fall-prevention monorepo: NestJS/PostgreSQL backend, FastAPI/worker ML
 
 ```bash
 pnpm install
-cd ml && uv sync
 cp .env.local.example .env.local
 
 pnpm dev:backend:fresh
-pnpm dev:ml
-pnpm dev:ml:worker
 pnpm dev:front
 
 pnpm typecheck
 pnpm lint
 pnpm --filter backend test
 pnpm --filter front test
-uv run --directory ml pytest
 pnpm env:verify
 pnpm --filter backend run dto:check
 sh scripts/backend-guard/check-schema-migration.sh auto
 ```
-
 ## Conventions
 
-- Use `pnpm` for Node packages and `uv` for `ml/`; do not add npm/yarn/pip lockfiles.
-- Local/native/Prisma/Compose env comes from root `.env.local`; host prod from `.env.host.prod`; edge prod from `.env.edge.prod`. Do not create package-local `.env*`.
+- Use `pnpm` for Node packages; do not add npm/yarn lockfiles.
+- Local/native/Prisma/Compose env comes from root `.env.local`; host prod from `.env.host.prod`. Do not create package-local `.env*`.
 - Root `AGENTS.md` is a router. Put durable implementation rules in the owning scoped `AGENTS.md` or `docs/rules/**`, not here.
 - ADRs or decision records belong in `docs/decisions/**` only when the user explicitly asks for them.
-- Split backend, front, ml-api, and ml-worker work into separate PRs by default.
+- Split backend and front work into separate PRs by default. ML runtime work belongs in `SeniorAILab/eldercare-fall-ml`.
 - Cross-surface work proceeds only through agreed API, DTO, event, or schema contracts.
-- Run dependency-free backend/front/ML slices in parallel instead of serializing them.
+- Run dependency-free backend/front slices in parallel instead of serializing them.
 - PRs targeting `main` should be feature-sized and MECE, without hidden dependencies on sibling PRs.
 - When scope expands mid-implementation, record non-blocking additions as follow-up issues and finish the already-scoped deliverable first.
 - Default verification is targeted: changed behavior first, then package lint/type/test gates that cover the touched surface.
 
 ## Anti-Patterns
 
-- Do not reintroduce legacy backend machine-ingest routes, camera HMAC credentials, or `Camera.ingestMode`; Event API is the live ML ingress.
-- Do not put model loading or prediction routes in `ml-api`; live ML belongs in `ml-worker`.
-- Do not add RTSP publishers, MediaMTX, FFmpeg file-to-RTSP helpers, or synthetic camera servers inside this repo. `ml-worker` consumes configured streams.
+- Do not reintroduce legacy backend machine-ingest routes, camera HMAC credentials, or `Camera.ingestMode`; Event API is the remote event ingress.
+- ML runtime implementation belongs in `SeniorAILab/eldercare-fall-ml`.
 - Do not let frontend components call backend APIs directly; use `front/src/services/**`.
 - Do not call mock/stub/fake harnesses E2E. Real E2E claims must pass production code paths; use the owning scoped `AGENTS.md` for detail.
 - Do not duplicate guard logic across CI, package scripts, or hooks. `scripts/**` owns reusable automation.
@@ -100,5 +89,5 @@ sh scripts/backend-guard/check-schema-migration.sh auto
 
 ## Notes
 
-- Existing scoped `AGENTS.md` files are intentional for `backend`, `ml`, `front`, `scripts`, `.github`, and high-complexity subtrees. Read the nearest one before editing files under that directory.
-- CI has separate backend, frontend, ML, and env-contract jobs plus an aggregate `ci-gate`. PR checks enforce base branch policy, same-repo `main` head rejection, and logic-churn size limits.
+- Existing scoped `AGENTS.md` files are intentional for `backend`, `front`, `scripts`, `.github`, and high-complexity subtrees. Read the nearest one before editing files under that directory.
+- CI has separate backend, frontend, env-contract, and host-residue jobs plus an aggregate `ci-gate`. PR checks enforce base branch policy, same-repo `main` head rejection, and logic-churn size limits.

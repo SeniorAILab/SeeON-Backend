@@ -1,141 +1,61 @@
 # eldercare-fall-ai
 
-An eldercare fall-detection platform built as a proof-of-concept (PoC) monorepo. The system pairs a **Vite + React** frontend and **NestJS** backend (TypeScript, managed by pnpm workspaces) with an independent Python ML edge runtime (managed by uv). Production live path is `RTSP -> ml-worker -> ml-api -> backend POST /api/v1/events` plus heartbeat (`POST /api/v1/events/heartbeat`) (ADR): the worker owns camera capture, model/domain evaluation, heartbeats, and alert facts. `ml-api` is a private/local FastAPI health, status, models, debug, and relay surface plus the single backend Event API gateway; live camera ownership and raw frame relay stay outside that API service. Product-level decisions - alert policy, deduplication, and Kakao webhook dispatch - belong exclusively to the backend.
+Host services for the eldercare fall-detection platform: a Vite + React frontend
+and NestJS/PostgreSQL backend.
+
+ML runtime and edge operations are separated → `SeniorAILab/eldercare-fall-ml`.
 
 ## Prerequisites
 
 | Tool | Version |
-|------|---------|
+|---|---|
 | Node.js | ≥ 24 |
 | pnpm | 10.32.1 |
-| uv | any recent version |
 | Docker | any recent version (for PostgreSQL) |
 
 ## Quick Start
 
-Native hot reload is the default daily development loop. Compose runs PostgreSQL by default; app containers are for parity/prod checks.
-
 ```bash
-# 1. Install JS dependencies (front + backend workspace)
 pnpm install
-
-# 2. Install Python dependencies (ml)
-cd ml && uv sync && cd ..
-
-# 3. Copy the single local environment file
-#    .env.local feeds native backend, Vite frontend, Prisma, and local Compose.
 cp .env.local.example .env.local
-
-# 4. Start local backend dependencies + backend
-pnpm dev:backend  # starts db, prepares Prisma, then http://localhost:8080
-
-# Optional first boot or reset: guarded local DB reset, seed, then backend
-pnpm dev:backend:fresh
-
-# 5. Start other app services in separate terminals
-pnpm dev:front       # http://localhost:3000
-pnpm dev:ml          # ml-api / FastAPI private-local surface on http://localhost:8000
-pnpm dev:ml:worker   # reads gitignored ml/worker/ml-worker.local.yaml (1회 cp from ml-worker.example.yaml)
-
-# 6. Register git hooks (core.hooksPath + guard scripts; run once per clone)
+pnpm dev:backend
+pnpm dev:front
 bash scripts/git-guard/setup-hooks.sh
 ```
 
-> Real `.env.local`, `.env.host.prod`, and `.env.edge.prod` files are gitignored.
-> Never commit secrets. Do not create package-local env files under `backend/`,
-> `front/`, or `ml/`.
-
-## Standard ports
-
-| Service | Local URL | Container/service port |
-|---|---|---:|
-| `front` | `http://localhost:3000` | `3000` |
-| `backend` | `http://localhost:8080` | `8080` |
-| `ml-api` | `http://localhost:8000` | `8000` |
-| `db` | `localhost:5432` | `5432` |
-
-Browser-facing URLs must use `localhost` because the browser runs on the host. Compose service names are only for container/server-internal traffic: for example, a future server-side frontend backend call may use `http://backend:8080`. Do not put service-name URLs in `VITE_*` variables. Edge workers relay production facts to `ml-api`, which reaches backend `POST /api/v1/events` and `POST /api/v1/events/heartbeat`; RTSP/video transport stays inside the worker.
-
-For container parity and production-shaped runs:
-
-```bash
-pnpm compose:local:up  # full local host stack via .env.local + --profile full
-pnpm compose:prod:up   # full prod host stack via .env.host.prod image pins
-```
-
-Edge Compose is separate from the host stack and runs the two ML edge services:
-
-```bash
-pnpm edge:preflight
-docker compose --env-file .env.edge.prod -f compose.edge.yaml pull
-docker compose --env-file .env.edge.prod -f compose.edge.yaml up -d
-```
-
-Edge production uses already-built image refs from `.env.edge.prod`; do not use
-`--build` on the edge host. `pnpm edge:preflight` fails before `docker compose`
-when Docker cannot expose the NVIDIA runtime needed by `ml-worker`. Backend Event
-API URL (`API_BACKEND_EVENTS_URL`) and the worker->ml-api relay token live in
-edge `ml-api`/Compose configuration per ADR.
-
-On macOS, prefer the native `pnpm dev:*` loop for daily frontend/backend/ML work. The container host stack (`pnpm compose:local:up`) builds runner images for parity/deploy shaping, not hot-reload dev - there is no `compose.override.yaml` container-dev overlay (ADR).
+Real `.env.local` and `.env.host.prod` files are gitignored. Never commit
+secrets or create package-local env files.
 
 ## Commands
 
 | Script | What it does |
-|--------|-------------|
+|---|---|
 | `pnpm dev:front` | Vite dev server (`front/`) on `:3000` |
-| `pnpm dev:backend` | Verify local env, start PostgreSQL, generate Prisma Client, run `prisma migrate dev`, then start NestJS watch mode (`backend/`) |
-| `pnpm dev:backend:fresh` | Guard-reset `.env.local` DB, replay migrations/seed demo data, then start NestJS watch mode (`backend/`) |
-| `pnpm dev:backend:app` | NestJS dev server only; use when DB is already managed externally |
-| `pnpm dev:ml` | `ml-api` FastAPI private/local surface on `:8000` via uvicorn (`ml/api/`) |
-| `pnpm dev:ml:worker` | `ml-worker` RTSP worker via `python -m worker`; reads gitignored `worker/ml-worker.local.yaml` (1회 `cp ml/worker/ml-worker.example.yaml ml/worker/ml-worker.local.yaml`, set `artifact_dir: ./models/fall/lstm` + real/external RTSP). `python -m worker.edge_worker` still valid. |
-| `pnpm dev:ml:demo` | Streamlit demo UI (`ml/demo/`) |
-| `pnpm lint` | ESLint across TS packages + ruff check for `ml/` |
-| `pnpm format` | Prettier for `backend/` + ruff format for `ml/` |
-| `pnpm typecheck` | `tsc --noEmit` for `front/` and `backend/` |
-| `pnpm backend:db:up` | `docker compose up -d db` — start PostgreSQL for backend |
-| `pnpm backend:db:reset` | Guard `.env.local`, run `prisma migrate reset --force`, regenerate Prisma Client, and seed |
-| `pnpm backend:db:down` | `docker compose down` — stop all Compose services |
-| `pnpm compose:local:up` | Full local host stack (db+backend+front[nginx], `.env.local`, `--profile full`) |
-| `pnpm compose:prod:up` | Production full host stack (`compose.yaml` + `compose.prod.yaml`, `.env.host.prod` image pins) |
-| `pnpm release:prod -- vX.Y.Z` | Create the non-prerelease GitHub Release that triggers production deploy |
-| `pnpm backend:prisma:generate` | Regenerate Prisma Client from `schema.prisma` |
-| `pnpm backend:prisma:migrate` | Run Prisma migrations (`migrate dev`) |
-
-`pnpm dev:backend:fresh` and `pnpm backend:db:reset` intentionally wipe only a
-guard-verified local development DB. They refuse non-local hosts and production
-env files before running Prisma reset. Use `pnpm dev:backend` when you want the
-backend-only loop with DB startup absorbed but without a reset.
+| `pnpm dev:backend` | Verify local env, start PostgreSQL, run Prisma setup, then start NestJS watch mode |
+| `pnpm dev:backend:fresh` | Guard-reset the local DB, seed demo data, then start NestJS |
+| `pnpm dev:backend:app` | NestJS dev server only |
+| `pnpm lint` | ESLint across TypeScript packages |
+| `pnpm format` | Prettier for `backend/` |
+| `pnpm typecheck` | TypeScript checks for `front/` and `backend/` |
+| `pnpm env:verify` | Verify host Compose and environment contracts |
+| `pnpm compose:local:up` | Full local host stack (db, backend, front) |
+| `pnpm compose:prod:up` | Production host stack with `.env.host.prod` image pins |
+| `pnpm release:prod -- vX.Y.Z` | Create a production release |
+| `pnpm deploy:prod:manual -- <ref>` | Build/push host images and deploy the Naver Cloud VM |
 
 ## Architecture
 
-```
+```text
 eldercare-fall-ai/
-├── front/          # Vite + React + TypeScript (frontend SSOT)
+├── front/          # Vite + React + TypeScript
 ├── backend/        # NestJS + TypeScript + Prisma → PostgreSQL
-├── ml/             # 9-package layered edge runtime (ADR); see ml/README.md
-│   ├── contracts/  # L0 pure contracts (frame/observation/model/artifacts/event)
-│   ├── features/   # L0 pure feature math
-│   ├── sources/    # L1 FrameSource intake (video/webcam/rtsp; OpenCV current backend)
-│   ├── runners/    # L1 model runners + ModelRegistry
-│   ├── perception/ # L2 observation assembly
-│   ├── domains/    # L3 domain interpreters (fall, bed_exit)
-│   ├── worker/     # ml-worker process + worker-owned live orchestration/state
-│   ├── events/     # L4 alert/event schemas and publisher (-> POST /api/v1/events)
-│   ├── api/        # ml-api FastAPI: /health, /status, /models, /debug/*
-│   ├── demo/       # Streamlit demo UI (fall classification via api)
-│   ├── dashboard/  # ml-api edge ops dashboard (React+Vite+Tailwind SPA)
-│   ├── data/       # Video dataset — domain-first layout (gitignored; ADR)
-│   └── models/     # Model single root (gitignored; ADR)
-├── docs/
-│   ├── architecture.md   # System diagram and component boundaries
-│   └── decisions/        # ADR (decisions)
-└── compose*.yaml    # host Compose plus compose.edge.yaml for ML edge services
+├── docs/           # Host documentation and decisions
+└── compose*.yaml   # Host Compose
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the full system diagram and component boundaries, and [`docs/decisions/`](docs/decisions/) for decisions covering key decisions such as the database strategy (PostgreSQL everywhere via Docker Compose) and the ML/product boundary.
-
-**Dependency locks are per-ecosystem.** `pnpm-lock.yaml` covers `front/` and `backend/`; `ml/uv.lock` covers the Python project. The root `package.json` is an orchestration layer only — it holds no application dependencies.
+See [`docs/architecture.md`](docs/architecture.md) for host component
+boundaries. ML runtime and edge documentation live in
+`SeniorAILab/eldercare-fall-ml`.
 
 ## MCP: NotebookLM
 

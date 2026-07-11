@@ -13,11 +13,9 @@ test('Given root package scripts When daily dev commands are inspected Then they
     scripts['dev:backend:fresh'],
     'node scripts/dev/dev-local.mjs backend --reset',
   );
-  assert.equal(scripts['dev:ml'], 'pnpm dev:ml:api');
-
-  assert.equal(Object.hasOwn(scripts, 'dev:ml-api'), false);
-  assert.equal(Object.hasOwn(scripts, 'dev:ml-worker'), false);
-  assert.equal(Object.hasOwn(scripts, 'dev:demo'), false);
+  for (const command of ['dev:ml', 'dev:ml:api', 'dev:ml:worker', 'dev:ml:demo']) {
+    assert.equal(Object.hasOwn(scripts, command), false);
+  }
 });
 
 test('Given root package scripts When backend dependencies are inspected Then DB and Prisma commands are backend-owned', () => {
@@ -34,16 +32,4 @@ test('Given root package scripts When backend dependencies are inspected Then DB
   assert.equal(Object.hasOwn(scripts, 'prisma:generate'), false);
   assert.equal(Object.hasOwn(scripts, 'prisma:migrate'), false);
   assert.equal(Object.hasOwn(scripts, 'prisma:seed'), false);
-});
-
-test('Given root package scripts When ML component commands are inspected Then they live under dev:ml namespace', () => {
-  assert.equal(
-    scripts['dev:ml:api'],
-    'uv run --directory ml uvicorn api.main:app --reload --host 127.0.0.1 --port 8000',
-  );
-  assert.equal(
-    scripts['dev:ml:worker'],
-    'uv run --directory ml python -m worker --config worker/ml-worker.local.yaml',
-  );
-  assert.equal(scripts['dev:ml:demo'], 'uv run --directory ml --group demo streamlit run demo/app.py');
 });
