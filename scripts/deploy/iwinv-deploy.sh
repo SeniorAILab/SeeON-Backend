@@ -321,26 +321,23 @@ verify_image_ids() {
 }
 verify_services() {
   backend_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const body=await r.text(); console.log("status="+r.status+"\\nbody="+body); let value; try { value=JSON.parse(body); } catch (_) { process.exit(1); } process.exit(r.ok && value.sha===process.env.EXPECTED_SHA && value.database==="ok" ? 0 : 1);}).catch(error=>{console.log("request_error="+error.message);process.exit(1);})' 2>&1) || { printf 'Backend exact-SHA health verification failed:\n%s\n' "$backend_output" >&2; return 1; }
-  headers=$(mktemp "$APP_ROOT/shared/front-headers.XXXXXX") || fail 'Unable to create frontend health header capture.'
-  TEMP_FILE=$headers
+  # The front check runs inside the front container (like the backend check) so the
+  # deploy works from any executor, including the Jenkins container, which cannot
+  # reach the host loopback where 127.0.0.1:3000 is published.
   body=$(mktemp "$APP_ROOT/shared/front-body.XXXXXX") || fail 'Unable to create frontend health body capture.'
-  TEMP_FILE_SECOND=$body
-  if ! curl --silent --show-error --dump-header "$headers" --output "$body" http://127.0.0.1:3000/version.txt; then
-    printf 'Frontend version request failed; headers:\n' >&2; sed -n '1,120p' "$headers" >&2 || :
-    printf 'Frontend version request body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
+  TEMP_FILE=$body
+  if ! compose exec -T front wget -q -O - http://127.0.0.1:3000/version.txt > "$body"; then
+    printf 'Frontend version request failed; body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
     return 1
   fi
-  http_status=$(sed -n '1s/HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' "$headers") || return 1
   version=$(sed -n '1p' "$body") || return 1
-  if [ "$http_status" != 200 ] || ! printf '%s\n' "$SHA" | cmp -s - "$body"; then
-    printf 'Frontend exact-SHA verification failed (expected HTTP 200 and %s, got HTTP %s and %s); headers:\n' "$SHA" "${http_status:-unreadable}" "$version" >&2
-    sed -n '1,120p' "$headers" >&2 || :
-    printf 'Frontend version body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
+  if ! printf '%s\n' "$SHA" | cmp -s - "$body"; then
+    printf 'Frontend exact-SHA verification failed (expected %s, got %s); body:\n' "$SHA" "${version:-unreadable}" >&2
+    sed -n '1,120p' "$body" >&2 || :
     return 1
   fi
-  rm -f "$headers" "$body" || fail 'Failed to remove frontend health diagnostics.'
+  rm -f "$body" || fail 'Failed to remove frontend health diagnostics.'
   TEMP_FILE=
-  TEMP_FILE_SECOND=
 }
 
 write_immutable_manifest() {

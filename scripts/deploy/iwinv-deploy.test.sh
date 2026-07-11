@@ -40,6 +40,9 @@ if [ "${1:-}" = compose ]; then
     *has_table_privilege*) printf '%s\n' "${MOCK_AUTH_RESULT:-ok}" ;;
     *psql*) printf '0\n' ;;
     *'exec -T db sh'*) ;;
+    *'front wget'*)
+      [ "${MOCK_FRONT_UNREACHABLE:-0}" != 1 ] || exit 1
+      printf '%s\n' "${MOCK_FRONT_VERSION:-$MOCK_SHA}" ;;
     *'backend node'*)
       if [ "${MOCK_BACKEND_FAIL:-0}" = 1 ]; then printf 'status=503\nbody={"sha":"wrong","database":"down"}\n'; exit 1; fi
       printf 'status=200\nbody={"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
@@ -56,21 +59,6 @@ if [ "${1:-}" = compose ]; then
 fi
 exit 1
 EOF
-cat > "$TMP/bin/curl" <<'EOF'
-#!/usr/bin/env sh
-headers='' body=''
-log=${MOCK_LOG:-}
-[ -z "$log" ] || printf '%s\n' "curl $*" >> "$log"
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --dump-header) headers=$2; shift 2 ;;
-    --output) body=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf 'HTTP/1.1 200 OK\r\n\r\n' > "$headers"
-printf '%s\n' "${MOCK_FRONT_VERSION:-$MOCK_SHA}" > "$body"
-EOF
 cat > "$TMP/bin/free" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' 'Mem: 6144 1024 1024 0 4096 4096' 'Swap: 4096 0 4096'
@@ -84,7 +72,7 @@ cat > "$TMP/bin/rmdir" <<'EOF'
 [ "${FAIL_RMDIR:-0}" != 1 ] || exit 1
 exec /bin/rmdir "$@"
 EOF
-chmod +x "$TMP/bin/docker" "$TMP/bin/curl" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir"
+chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir"
 
 cat > "$TMP/host.env" <<'EOF'
 POSTGRES_USER=fall
@@ -308,7 +296,7 @@ for front_version in "$ROLLBACK_SHA" 'not-a-sha'; do
   assert_failure "$status"; assert_contains "$output" 'Frontend exact-SHA verification failed'
   assert_contains "$output" "$front_version"
   log=$(sed -n '1,200p' "$TMP/mock.log")
-  front_version_calls=$(printf '%s\n' "$log" | grep -c '^curl ' || :)
+  front_version_calls=$(printf '%s\n' "$log" | grep -c 'front wget' || :)
   [ "$front_version_calls" -eq 1 ] || { printf 'expected exactly one frontend version attempt, got %s\n' "$front_version_calls" >&2; exit 1; }
 done
 : > "$TMP/mock.log"
@@ -317,7 +305,7 @@ output=$(MOCK_FRONT_VERSION="$(printf '%s\nextra' "$SHA")" run_deploy --rollback
 set -e
 assert_failure "$status"; assert_contains "$output" 'Frontend exact-SHA verification failed'
 log=$(sed -n '1,200p' "$TMP/mock.log")
-front_version_calls=$(printf '%s\n' "$log" | grep -c '^curl ' || :)
+front_version_calls=$(printf '%s\n' "$log" | grep -c 'front wget' || :)
 [ "$front_version_calls" -eq 1 ] || { printf 'expected exactly one frontend version attempt, got %s\n' "$front_version_calls" >&2; exit 1; }
 
 
