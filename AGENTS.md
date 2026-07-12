@@ -64,6 +64,9 @@ pnpm --filter front test
 pnpm env:verify
 pnpm --filter backend run dto:check
 sh scripts/backend-guard/check-schema-migration.sh auto
+
+# Production deployment: publishing a release IS the deploy (merge alone never deploys)
+pnpm release:prod -- vX.Y.Z
 ```
 ## Conventions
 
