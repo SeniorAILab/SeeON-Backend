@@ -49,6 +49,12 @@ explicit rollback or database restore.
   Compose, or health error. No hidden retry, automatic rollback, alternate path,
   or secret output.
 
+## Jenkins job seed
+- `scripts/deploy/jenkins-job-seed.groovy` is the versioned source of truth for
+  the Jenkins Job DSL seed. The server copy at `/opt/jenkins/jobs.groovy` is
+  reapplied by CasC on every Jenkins restart and must stay byte-identical to
+  this file; update both in the same change.
+
 ## Anti-patterns
 - No GHCR, GitHub Actions image build, SSH deploy, `latest`, fallback ref/image/env,
   or automatic retry/rollback path.

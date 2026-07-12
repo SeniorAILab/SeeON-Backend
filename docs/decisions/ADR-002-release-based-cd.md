@@ -82,8 +82,8 @@ so the deployer acts on repository truth rather than payload data.
 - Production cadence is explicitly manual at release issuance time.
 - Stale CI completion, SHA forwarding, and branch-filter logic is unnecessary
   and is removed.
-- `DEPLOY_ENABLED` is a temporary cutover interlock and is scheduled for removal
-  once cutover is complete.
+- The `DEPLOY_ENABLED` cutover interlock was removed at cutover completion;
+  publishing a production release is the only deployment gate.
 - Operators must publish valid production semantic version releases for normal
   production deployments.
 

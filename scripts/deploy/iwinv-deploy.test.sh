@@ -654,6 +654,17 @@ assert_contains "$jenkins" 'scripts/deploy/iwinv-resolve-release.sh'
 assert_contains "$jenkins" "env.NO_OP != '1'"
 assert_not_contains "$jenkins" 'REGISTER-ONLY'
 assert_not_contains "$jenkins" 'params.SHA'
+
+seed=$(cat "$REPO_ROOT/scripts/deploy/jenkins-job-seed.groovy")
+assert_contains "$seed" "pipelineJob('eldercare-fall-ai-cd')"
+assert_contains "$seed" "tokenCredentialId('eldercare-webhook-token')"
+assert_contains "$seed" 'printContributedVariables(false)'
+assert_contains "$seed" 'printPostContent(false)'
+assert_not_contains "$seed" 'genericVariables'
+assert_not_contains "$seed" 'regexpFilter'
+assert_not_contains "$seed" 'REGISTER-ONLY'
+assert_not_contains "$seed" 'stringParam'
+assert_not_contains "$seed" 'workflow_run'
 assert_contains "$jenkins" "stage('Preflight resources')"
 assert_contains "$jenkins" 'sh scripts/deploy/iwinv-deploy.sh --preflight-only'
 assert_order "$jenkins" "stage('Resolve release')" "stage('Build backend')"
