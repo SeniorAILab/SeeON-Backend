@@ -19,11 +19,6 @@ pipeline {
     skipDefaultCheckout(true)
   }
 
-  parameters {
-    // Remove this parameter after the first release build during housekeeping.
-    string(name: 'SHA', defaultValue: '', description: 'Set REGISTER-ONLY for a webhook registration-only run')
-  }
-
   environment {
     DOCKER_BUILDKIT = '1'
     NODE_OPTIONS = '--max-old-space-size=1536'
@@ -33,9 +28,6 @@ pipeline {
 
   stages {
     stage('Resolve release') {
-      when {
-        expression { params.SHA != 'REGISTER-ONLY' }
-      }
       steps {
         script {
           def resolverOutput = sshagent(credentials: ['eldercare-github-deploy-key']) {
@@ -102,7 +94,7 @@ pipeline {
     }
     stage('Preflight resources') {
       when {
-        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+        expression { env.NO_OP != '1' }
       }
       steps {
         sh '''#!/usr/bin/env sh
@@ -114,7 +106,7 @@ pipeline {
 
     stage('Configure Buildx') {
       when {
-        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+        expression { env.NO_OP != '1' }
       }
       steps {
         sh '''#!/usr/bin/env sh
@@ -137,7 +129,7 @@ pipeline {
 
     stage('Build backend') {
       when {
-        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+        expression { env.NO_OP != '1' }
       }
       steps {
         sh '''#!/usr/bin/env sh
@@ -152,7 +144,7 @@ pipeline {
 
     stage('Build frontend') {
       when {
-        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+        expression { env.NO_OP != '1' }
       }
       steps {
         sh '''#!/usr/bin/env sh
@@ -167,7 +159,7 @@ pipeline {
 
     stage('Deploy') {
       when {
-        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+        expression { env.NO_OP != '1' }
       }
       steps {
         lock(resource: 'eldercare-fall-ai-deploy') {

@@ -650,9 +650,10 @@ cmp -s "$TMP/pending.before-code-only-rollback" "$TMP/root/releases/pending.json
 # Jenkins resolves the latest main-reachable release, builds its exact SHA once, and has no alternate delivery path.
 jenkins=$(sed -n '1,220p' "$JENKINSFILE")
 assert_contains "$jenkins" "stage('Resolve release')"
-assert_contains "$jenkins" "params.SHA != 'REGISTER-ONLY'"
 assert_contains "$jenkins" 'scripts/deploy/iwinv-resolve-release.sh'
-assert_contains "$jenkins" "env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY'"
+assert_contains "$jenkins" "env.NO_OP != '1'"
+assert_not_contains "$jenkins" 'REGISTER-ONLY'
+assert_not_contains "$jenkins" 'params.SHA'
 assert_contains "$jenkins" "stage('Preflight resources')"
 assert_contains "$jenkins" 'sh scripts/deploy/iwinv-deploy.sh --preflight-only'
 assert_order "$jenkins" "stage('Resolve release')" "stage('Build backend')"
