@@ -51,10 +51,12 @@ Eldercare fall-prevention host repository: NestJS/PostgreSQL backend and Vite Re
 ## Commands
 
 ```bash
+# Init prerequisites: Docker daemon running; ports from .env.local must be free
+# (front 3000 strictPort · backend 8080 · db POSTGRES_PORT). Run in this order.
 pnpm install
 cp .env.local.example .env.local
 
-pnpm dev:backend:fresh
+pnpm dev:backend:fresh   # db up + migrate + seed + backend watch
 pnpm dev:front
 
 pnpm typecheck
