@@ -46,3 +46,5 @@ direct host use is limited to explicit rollback or database restore.
 The first production release was bootstrapped manually on 2026-07-11 (G004); this note also served as the harmless change for the rollback drill.
 
 True-CD activation E2E: this merge is the first fully automatic deployment (issue #595 resolved).
+
+Periodic E2E re-verification: 2026-07-12 (automatic pipeline check).
