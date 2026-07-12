@@ -70,7 +70,6 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     expect(response.body).toEqual({
       id: seeded.facilityId,
       name: 'Updated Facility',
-      code: seeded.facilityCode,
       address: '123 Main',
       phone: null,
       createdAt: seeded.facilityCreatedAt.toISOString(),
@@ -79,33 +78,9 @@ describe('Facilities and cameras response contracts (e2e)', () => {
       direct.facility.findUniqueOrThrow({ where: { id: seeded.facilityId } }),
     ).resolves.toMatchObject({
       name: 'Updated Facility',
-      code: seeded.facilityCode,
       address: '123 Main',
       phone: null,
     });
-  });
-
-  it('PATCH /facilities/:id rejects immutable code updates with 400', async () => {
-    const seeded = await seedFacilityGraph('patch-code');
-    const adminCookie = await seedSessionCookie(
-      seeded.facilityId,
-      'patch-code-admin',
-      Role.ADMIN,
-    );
-
-    const response = await request(app.getHttpServer())
-      .patch(`/api/v1/facilities/${seeded.facilityId}`)
-      .set('cookie', adminCookie)
-      .send({ code: 'new-code' })
-      .expect(400);
-
-    expect(response.body).toEqual({
-      error: 'bad_request',
-      message: 'Only name, address, and phone may be updated',
-    });
-    await expect(
-      direct.facility.findUniqueOrThrow({ where: { id: seeded.facilityId } }),
-    ).resolves.toMatchObject({ code: seeded.facilityCode });
   });
 
   it('PATCH /facilities/:id denies other facilities and STAFF with 403', async () => {
@@ -202,7 +177,6 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     const facility = await direct.facility.create({
       data: {
         name: `${PREFIX}-facility-${suffix}`,
-        code: `${PREFIX}-${suffix}`,
         address: `${PREFIX}-address-${suffix}`,
         phone: '010-1000-0000',
       },
@@ -233,7 +207,6 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     });
     return {
       facilityId: facility.id,
-      facilityCode: facility.code,
       facilityCreatedAt: facility.createdAt,
       spaceId: space.id,
       cameraId: camera.id,
@@ -291,12 +264,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     await direct.space.deleteMany({ where: { name: { startsWith: PREFIX } } });
     await direct.floor.deleteMany({ where: { name: { startsWith: PREFIX } } });
     await direct.facility.deleteMany({
-      where: {
-        OR: [
-          { name: { startsWith: PREFIX } },
-          { code: { startsWith: PREFIX } },
-        ],
-      },
+      where: { name: { startsWith: PREFIX } },
     });
   }
 });

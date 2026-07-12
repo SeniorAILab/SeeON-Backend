@@ -25,6 +25,13 @@ with a single source module.
 - Prefer clear HTTP assertions over snapshot-style broad response matching.
 - When a test exercises tenant or session behavior, assert both allowed and
   denied paths.
+- Fixture ids/emails/names that appear in more than one place in a file (seed,
+  cleanup, route string, assertion) must derive from a single named builder or
+  constant (see `alert-notes.spec.ts`), never from hand-synced duplicate string
+  literals — no inline `/api/v1/alerts/<raw-id>` route strings. Exception:
+  duplication that is itself the tested behavior (e.g. reusing an idempotency
+  key to assert a conflict). Pre-existing files migrate opportunistically when
+  touched.
 
 ## Anti-patterns
 

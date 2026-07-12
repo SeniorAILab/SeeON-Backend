@@ -9,6 +9,18 @@ import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 
+// 스코프 픽스처 id는 단일 빌더에서만 유도한다 — 시드/클린업/라우트/단언이 같은
+// 리터럴의 수기 일치에 의존하지 않게 한다 (test/AGENTS.md 컨벤션).
+type FixtureSuffix = 'a' | 'b';
+const SUFFIXES: readonly FixtureSuffix[] = ['a', 'b'];
+const fixtureSlug = (s: FixtureSuffix) => `alert-note-${s}`;
+const alertId = (s: FixtureSuffix) => `note-alert-${s}`;
+const cameraId = (s: FixtureSuffix) => `note-camera-${s}`;
+const spaceId = (s: FixtureSuffix) => `note-space-${s}`;
+const floorId = (s: FixtureSuffix) => `note-floor-${s}`;
+const userEmail = (s: FixtureSuffix) => `${fixtureSlug(s)}@example.test`;
+const facilityName = (s: FixtureSuffix) => `Note Facility ${s.toUpperCase()}`;
+
 describe('alert action notes (e2e)', () => {
   let app: INestApplication<App>;
   let direct: PrismaClient;
@@ -25,29 +37,25 @@ describe('alert action notes (e2e)', () => {
 
   beforeEach(async () => {
     await direct.alertNote.deleteMany({
-      where: { alertId: { in: ['note-alert-a', 'note-alert-b'] } },
+      where: { alertId: { in: SUFFIXES.map(alertId) } },
     });
     await direct.alert.deleteMany({
-      where: { id: { in: ['note-alert-a', 'note-alert-b'] } },
+      where: { id: { in: SUFFIXES.map(alertId) } },
     });
     await direct.camera.deleteMany({
-      where: { id: { in: ['note-camera-a', 'note-camera-b'] } },
+      where: { id: { in: SUFFIXES.map(cameraId) } },
     });
     await direct.space.deleteMany({
-      where: { id: { in: ['note-space-a', 'note-space-b'] } },
+      where: { id: { in: SUFFIXES.map(spaceId) } },
     });
     await direct.floor.deleteMany({
-      where: { id: { in: ['note-floor-a', 'note-floor-b'] } },
+      where: { id: { in: SUFFIXES.map(floorId) } },
     });
     await direct.user.deleteMany({
-      where: {
-        email: {
-          in: ['alert-note-a@example.test', 'alert-note-b@example.test'],
-        },
-      },
+      where: { email: { in: SUFFIXES.map(userEmail) } },
     });
     await direct.facility.deleteMany({
-      where: { code: { in: ['alert-note-a', 'alert-note-b'] } },
+      where: { name: { in: SUFFIXES.map(facilityName) } },
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -70,19 +78,19 @@ describe('alert action notes (e2e)', () => {
   it('creates notes, returns them on alert detail, persists authorRole, and hides other-facility alerts', async () => {
     const facilityA = await registerAndGetFacility(
       app,
-      'alert-note-a@example.test',
-      'Note Facility A',
+      userEmail('a'),
+      facilityName('a'),
     );
     const facilityB = await registerAndGetFacility(
       app,
-      'alert-note-b@example.test',
-      'Note Facility B',
+      userEmail('b'),
+      facilityName('b'),
     );
     await seedAlert(facilityA.facilityId, 'a');
     await seedAlert(facilityB.facilityId, 'b');
 
     const created = await request(app.getHttpServer())
-      .post('/api/v1/alerts/note-alert-a/notes')
+      .post(`/api/v1/alerts/${alertId('a')}/notes`)
       .set('cookie', facilityA.sessionCookie)
       .send({ note: '  checked with floor nurse  ' })
       .expect(201);
@@ -96,12 +104,12 @@ describe('alert action notes (e2e)', () => {
     });
 
     const detail = await request(app.getHttpServer())
-      .get('/api/v1/alerts/note-alert-a')
+      .get(`/api/v1/alerts/${alertId('a')}`)
       .set('cookie', facilityA.sessionCookie)
       .expect(200);
 
     expect(detail.body).toMatchObject({
-      id: 'note-alert-a',
+      id: alertId('a'),
       facilityId: facilityA.facilityId,
       notes: [
         {
@@ -115,7 +123,7 @@ describe('alert action notes (e2e)', () => {
     });
 
     await request(app.getHttpServer())
-      .post('/api/v1/alerts/note-alert-b/notes')
+      .post(`/api/v1/alerts/${alertId('b')}/notes`)
       .set('cookie', facilityA.sessionCookie)
       .send({ note: 'wrong facility' })
       .expect(404)
@@ -160,10 +168,10 @@ describe('alert action notes (e2e)', () => {
     };
   }
 
-  async function seedAlert(facilityId: string, suffix: 'a' | 'b') {
+  async function seedAlert(facilityId: string, suffix: FixtureSuffix) {
     await direct.floor.create({
       data: {
-        id: `note-floor-${suffix}`,
+        id: floorId(suffix),
         facilityId,
         name: `Note Floor ${suffix}`,
         orderIndex: 1,
@@ -171,9 +179,9 @@ describe('alert action notes (e2e)', () => {
     });
     await direct.space.create({
       data: {
-        id: `note-space-${suffix}`,
+        id: spaceId(suffix),
         facilityId,
-        floorId: `note-floor-${suffix}`,
+        floorId: floorId(suffix),
         name: `Note Room ${suffix}`,
         type: 'ROOM',
         capacity: 1,
@@ -181,22 +189,22 @@ describe('alert action notes (e2e)', () => {
     });
     await direct.camera.create({
       data: {
-        id: `note-camera-${suffix}`,
+        id: cameraId(suffix),
         facilityId,
-        spaceId: `note-space-${suffix}`,
+        spaceId: spaceId(suffix),
         label: `Note Camera ${suffix}`,
       },
     });
     await direct.alert.create({
       data: {
-        id: `note-alert-${suffix}`,
+        id: alertId(suffix),
         facilityId,
-        cameraId: `note-camera-${suffix}`,
-        spaceId: `note-space-${suffix}`,
+        cameraId: cameraId(suffix),
+        spaceId: spaceId(suffix),
         type: 'fall',
         probability: 0.91,
         detectedAt: new Date('2026-07-03T00:00:00.000Z'),
-        idempotencyKey: `note-alert-${suffix}`,
+        idempotencyKey: alertId(suffix),
       },
     });
   }

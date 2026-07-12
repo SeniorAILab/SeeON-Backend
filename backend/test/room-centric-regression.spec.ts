@@ -45,8 +45,8 @@ describe('room-centric cross-slice regression invariants', () => {
     });
     await direct.facility.createMany({
       data: [
-        { id: 'regression-a', name: 'Regression A', code: 'regression-a' },
-        { id: 'regression-b', name: 'Regression B', code: 'regression-b' },
+        { id: 'regression-a', name: 'Regression A' },
+        { id: 'regression-b', name: 'Regression B' },
       ],
     });
     await direct.floor.createMany({

@@ -74,7 +74,6 @@ function presentFacility(facility: Facility) {
   return {
     id: facility.id,
     name: facility.name,
-    code: facility.code,
     address: facility.address,
     phone: facility.phone,
     createdAt: facility.createdAt.toISOString(),

@@ -370,7 +370,6 @@ describe('Events API (e2e)', () => {
     const facility = await direct.facility.create({
       data: {
         name: `${PREFIX}-facility-${suffix}`,
-        code: `${PREFIX}-${suffix}`,
       },
     });
     const floor = await direct.floor.create({

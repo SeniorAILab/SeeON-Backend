@@ -1,6 +1,5 @@
 import {
   NOKYANG_ADMIN_EMAIL,
-  NOKYANG_FACILITY_CODE,
   nokyangCameras,
   nokyangFacility,
   nokyangFloors,
@@ -11,9 +10,10 @@ import {
 describe('nokyang demo fixture', () => {
   it('defines the 녹양역점 facility identity and graph shape', () => {
     expect(nokyangFacility).toMatchObject({
-      code: NOKYANG_FACILITY_CODE,
       name: '행복한요양원 녹양역점',
+      businessRegistrationNumber: '123-45-67890',
     });
+    // 시설 id는 DB가 발급한다 — fixture는 id를 가지지 않는다.
     expect('id' in nokyangFacility).toBe(false);
     expect(nokyangFloors.every((floor) => !('facilityId' in floor))).toBe(true);
     expect(nokyangSpaces.every((space) => !('facilityId' in space))).toBe(true);

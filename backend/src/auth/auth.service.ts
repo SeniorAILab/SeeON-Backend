@@ -11,7 +11,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword, verifyPassword } from './password';
 import { assertValidPassword, requiredPassword } from './password-policy';
 import { createRegisteredFacilityOwner } from './password-registration';
-import { nextFacilityCode } from './facility-code';
 import { DEFAULT_JWT_TTL, hasRbacCapability } from './auth.constants';
 
 export interface AuthSession {
@@ -123,10 +122,7 @@ export class AuthService {
     }
 
     const facility = await this.prisma.db.facility.create({
-      data: {
-        name,
-        code: await nextFacilityCode(this.prisma, name),
-      },
+      data: { name },
     });
 
     const user = await this.prisma.withFacilityContext(

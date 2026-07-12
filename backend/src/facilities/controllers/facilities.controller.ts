@@ -51,7 +51,7 @@ export class FacilitiesController {
   @ApiOperation({
     summary: 'Update a facility',
     description:
-      'Updates name, address, and phone for the authenticated facility. Facility code is immutable.',
+      'Updates name, address, and phone for the authenticated facility.',
   })
   @ApiBody({ type: UpdateFacilityRequestDto })
   @Patch(':id')
