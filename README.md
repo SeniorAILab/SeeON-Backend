@@ -40,9 +40,11 @@ secrets or create package-local env files.
 | `pnpm env:verify` | Verify host Compose and environment contracts |
 | `pnpm compose:local:up` | Full local host stack (db, backend, front) |
 | `pnpm compose:prod:up` | Production host stack with `.env.host.prod` image pins |
-| `pnpm release:prod -- vX.Y.Z` | Create a production release |
-| `pnpm deploy:prod:manual -- <ref>` | Build/push host images and deploy the Naver Cloud VM |
+| `pnpm release:prod -- vX.Y.Z` | Publish a production release and start deployment |
 
+A production deployment begins when `pnpm release:prod -- vX.Y.Z` publishes a
+strict semantic-version release from `main`; Jenkins resolves that release and
+deploys the corresponding commit SHA images.
 ## Architecture
 
 ```text

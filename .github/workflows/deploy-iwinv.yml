@@ -1,24 +1,43 @@
 name: Deploy iwinv
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  release:
+    types: [published]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: deploy-iwinv-production
-  cancel-in-progress: true
+  # Queue signals so a rejected publication cannot cancel a valid signal.
+  # queue: max keeps every pending signal (default single slot replaces it).
+  cancel-in-progress: false
+  queue: max
 
 jobs:
-  trigger-jenkins:
+  classify:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      is_production: ${{ steps.classify.outputs.is_production }}
+    steps:
+      - id: classify
+        name: Classify production release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -eu
+          is_production=false
+          if [[ "$IS_PRERELEASE" == "false" && "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            is_production=true
+          fi
+          printf 'is_production=%s\n' "$is_production" >> "$GITHUB_OUTPUT"
+
+  trigger:
+    needs: classify
+    # Interlock; remove after cutover.
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
+      needs.classify.outputs.is_production == 'true' &&
       github.repository == 'SeniorAILab/eldercare-fall-ai' &&
       vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
@@ -28,23 +47,18 @@ jobs:
       - name: Validate deployment webhook token
         run: |
           set -eu
+          set +x
           if [[ -z "$WEBHOOK_TOKEN" ]]; then
             echo "::error::WEBHOOK_TOKEN is required when deployment is enabled"
             exit 1
           fi
       - name: Trigger Jenkins deployment
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -eu
-          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::workflow_run head_sha must be a lowercase 40-character SHA"
-            exit 1
-          fi
-          payload="$(jq -nc --arg SHA "$SHA" '{workflow_run: {head_sha: $SHA, head_branch: "main", conclusion: "success"}, ref: "refs/heads/main"}')"
+          set +x
           # Temporary HTTP transport is accepted security debt tracked in #587.
           curl --fail --show-error --silent --connect-timeout 10 --max-time 30 --retry 0 --request POST \
             --header "Authorization: Bearer $WEBHOOK_TOKEN" \
             --header "Content-Type: application/json" \
-            --data "$payload" \
+            --data '{}' \
             http://<iwinv-host>/generic-webhook-trigger/invoke

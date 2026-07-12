@@ -3,16 +3,14 @@
 import { spawnSync } from "node:child_process";
 
 const usage = `Usage:
-  pnpm release:prod -- vX.Y.Z [--target <ref>] [--title <title>] [--notes <notes>] [--dry-run]
+  pnpm release:prod -- vX.Y.Z [--title <title>] [--notes <notes>] [--dry-run]
 
-Creates a non-prerelease GitHub Release. Production images use one commit SHA
-tag for backend and front. While Actions-backed CD is paused, deploy the
-resulting tag with:
-  pnpm deploy:prod:manual -- <tag>
+Creates a non-prerelease GitHub Release from main. Publishing the release starts
+the production deployment.
 
 Examples:
   pnpm release:prod -- v0.1.0
-  pnpm release:prod -- v0.1.1 --target main --notes "Production deploy"
+  pnpm release:prod -- v0.1.1 --notes "Production release"
   pnpm release:prod -- v0.1.1 --dry-run
 `;
 
@@ -20,7 +18,6 @@ function parseArgs(argv) {
   const options = {
     dryRun: false,
     notes: undefined,
-    target: "main",
     title: undefined,
   };
   const positionals = [];
@@ -35,11 +32,6 @@ function parseArgs(argv) {
     }
     if (arg === "--dry-run") {
       options.dryRun = true;
-      continue;
-    }
-    if (arg === "--target" || arg === "-t") {
-      options.target = readValue(argv, index, arg);
-      index += 1;
       continue;
     }
     if (arg === "--title") {
@@ -74,17 +66,17 @@ function readValue(argv, index, optionName) {
 }
 
 function validateTag(tag) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
+  if (!/^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag)) {
     throw new Error(
       `Production release tag must use vMAJOR.MINOR.PATCH format, got "${tag}".`,
     );
   }
 }
 
-function run(command, args, options = {}) {
+function run(command, args) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
-    stdio: options.stdio ?? "inherit",
+    stdio: "inherit",
   });
 
   if (result.error) {
@@ -93,7 +85,6 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} exited with ${result.status}.`);
   }
-  return result;
 }
 
 function quoteShell(value) {
@@ -109,19 +100,20 @@ function main() {
 
   validateTag(tag);
 
-  const title = options.title ?? tag;
-  const notes = options.notes ?? `Production release ${tag}`;
   const ghArgs = [
     "release",
     "create",
     tag,
     "--target",
-    options.target,
+    "main",
     "--title",
-    title,
-    "--notes",
-    notes,
+    options.title ?? tag,
   ];
+  if (options.notes === undefined) {
+    ghArgs.push("--generate-notes");
+  } else {
+    ghArgs.push("--notes", options.notes);
+  }
 
   if (options.dryRun) {
     process.stdout.write(`gh ${ghArgs.map(quoteShell).join(" ")}\n`);
@@ -129,18 +121,10 @@ function main() {
   }
 
   run("gh", ["auth", "status"]);
-  process.stdout.write(
-    `Creating production release ${tag} targeting ${options.target}.\n`,
-  );
+  process.stdout.write(`Creating production release ${tag} targeting main.\n`);
   run("gh", ghArgs);
   process.stdout.write(
-    [
-      "Release created. Actions-backed CD is currently paused.",
-      "Deploy this release from the local checkout with:",
-      `  pnpm deploy:prod:manual -- ${tag}`,
-      "That command publishes backend/front with one commit SHA.",
-      "",
-    ].join("\n"),
+    `Release created. Publishing this release starts automatic production deployment.\n`,
   );
 }
 

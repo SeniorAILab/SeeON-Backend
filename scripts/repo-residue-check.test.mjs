@@ -63,6 +63,52 @@ test('host role requires a reason when an allowed residue path is declared', () 
   }
 });
 
+test('host role rejects retired CD residue in deployment surfaces', () => {
+  const repo = fixture();
+  try {
+    const retiredReleaseResidue = [
+      ['manual', 'production-'].join('-'),
+      ['ncloud', 'deploy'].join('-'),
+      ['ncloud', 'bootstrap'].join('-'),
+      ['release:prod', 'manual'].join(':'),
+      ['deploy:prod', 'manual'].join(':'),
+      ['Actions-backed CD is', 'paused'].join(' '),
+    ].join('\n');
+    repo.file('scripts/release/legacy.mjs', retiredReleaseResidue);
+    repo.file(
+      '.github/workflows/deploy-iwinv.yml',
+      `${'workflow' + '_run'}\n${['refs/heads', 'main'].join('/')}`,
+    );
+
+    const result = check(repo.root, 'host');
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /manual production release path/);
+    assert.match(result.stderr, /retired ncloud deploy path/);
+    assert.match(result.stderr, /retired ncloud bootstrap path/);
+    assert.match(result.stderr, /manual production release command/);
+    assert.match(result.stderr, /manual production deploy command/);
+    assert.match(result.stderr, /paused Actions CD guidance/);
+    assert.match(result.stderr, /run-completion trigger/);
+    assert.match(result.stderr, /main-ref webhook filter/);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('host role ignores retired CD text outside deployment surfaces', () => {
+  const repo = fixture();
+  try {
+    repo.file('docs/history.txt', ['manual', 'production-'].join('-'));
+
+    const result = check(repo.root, 'host');
+
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    repo.cleanup();
+  }
+});
+
 test('ml role enforces the flattened edge layout and rejects host coupling', () => {
   const repo = fixture();
   try {
@@ -76,7 +122,7 @@ test('ml role enforces the flattened edge layout and rejects host coupling', () 
     repo.file('.github/workflows/edge-images.yml');
     execFileSync(process.execPath, [checker, '--repo-role', 'ml', '--root', repo.root]);
 
-    repo.file('scripts/deploy/ncloud-deploy.sh', 'deploy:prod:manual');
+    repo.file('scripts/deploy/legacy.sh', 'compose.prod.yaml');
     repo.file('old.txt', 'ghcr.io/seniorailab/eldercare-fall-ai/ml-worker:test');
     repo.directory('ml');
     const result = check(repo.root, 'ml');

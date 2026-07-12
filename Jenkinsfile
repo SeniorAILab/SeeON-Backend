@@ -8,15 +8,9 @@ pipeline {
 
   triggers {
     GenericTrigger(
-      genericVariables: [
-        [key: 'SHA', value: '$.workflow_run.head_sha', expressionType: 'JSONPath'],
-        [key: 'REF', value: '$.ref', expressionType: 'JSONPath']
-      ],
       tokenCredentialId: 'eldercare-webhook-token',
       printContributedVariables: false,
-      printPostContent: false,
-      regexpFilterText: '$REF',
-      regexpFilterExpression: '^refs/heads/main$'
+      printPostContent: false
     )
   }
 
@@ -26,56 +20,90 @@ pipeline {
   }
 
   parameters {
-    string(name: 'SHA', defaultValue: '', description: 'GitHub webhook commit SHA')
-    string(name: 'REF', defaultValue: '', description: 'GitHub webhook ref')
+    // Remove this parameter after the first release build during housekeeping.
+    string(name: 'SHA', defaultValue: '', description: 'Set REGISTER-ONLY for a webhook registration-only run')
   }
 
   environment {
     DOCKER_BUILDKIT = '1'
     NODE_OPTIONS = '--max-old-space-size=1536'
     BUILDX_BUILDER = 'eldercare-local'
+    DEPLOY_ROOT = '/opt/eldercare-fall-ai'
   }
 
   stages {
-    stage('Validate event') {
-      steps {
-        sh '''#!/usr/bin/env sh
-          set -eu
-          case "$SHA" in
-            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-            *) echo 'SHA must be exactly 40 lowercase hexadecimal characters.' >&2; exit 1 ;;
-          esac
-          [ "$REF" = 'refs/heads/main' ] || { echo 'REF must be refs/heads/main.' >&2; exit 1; }
-        '''
+    stage('Resolve release') {
+      when {
+        expression { params.SHA != 'REGISTER-ONLY' }
       }
-    }
-
-    stage('Fetch exact main') {
       steps {
-        sshagent(credentials: ['eldercare-github-deploy-key']) {
-          sh '''#!/usr/bin/env sh
-            set -eu
-            repository='git@github.com:SeniorAILab/eldercare-fall-ai.git'
-            if [ ! -d .git ]; then git init; fi
-            remotes=$(git remote) || { echo 'Unable to list Git remotes.' >&2; exit 1; }
-            if printf '%s\n' "$remotes" | grep -Fx 'origin' >/dev/null; then
-              git remote set-url origin "$repository"
-            else
-              git remote add origin "$repository"
-            fi
-            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-            origin_sha=$(git rev-parse refs/remotes/origin/main)
-            if [ "$origin_sha" != "$SHA" ]; then
-              echo "Discarding stale event for $SHA; origin/main is $origin_sha." >&2
-              exit 1
-            fi
-            git checkout --detach --force "$SHA"
-            git clean -ffdqx
-          '''
+        script {
+          def resolverOutput = sshagent(credentials: ['eldercare-github-deploy-key']) {
+            sh(
+              script: '''#!/usr/bin/env sh
+                set -eu
+                repository='git@github.com:SeniorAILab/eldercare-fall-ai.git'
+                if [ ! -d .git ]; then git init 1>&2; fi
+                remotes=$(git remote) || { echo 'Unable to list Git remotes.' >&2; exit 1; }
+                if printf '%s\n' "$remotes" | grep -Fx 'origin' >/dev/null; then
+                  git remote set-url origin "$repository"
+                else
+                  git remote add origin "$repository"
+                fi
+                git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+                trap 'rm -f "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"' EXIT HUP INT TERM
+                git show refs/remotes/origin/main:scripts/deploy/iwinv-resolve-release.sh > "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
+                RELEASES_DIR="$DEPLOY_ROOT/releases" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
+              ''',
+              returnStdout: true
+            ).trim()
+          }
+          def releaseValues = [:]
+          resolverOutput.readLines().each { line ->
+            if (line.trim().isEmpty()) {
+              return
+            }
+            def match = line =~ /^(RELEASE_TAG|RELEASE_SHA|NO_OP)=(.*)$/
+            if (!match.matches()) {
+              error("Unexpected resolver output line: ${line}")
+            }
+            def key = match[0][1]
+            if (releaseValues.containsKey(key)) {
+              error("Resolver output contains duplicate ${key}")
+            }
+            releaseValues[key] = match[0][2]
+          }
+          ['RELEASE_TAG', 'RELEASE_SHA', 'NO_OP'].each { key ->
+            if (!releaseValues.containsKey(key)) {
+              error("Resolver output is missing ${key}")
+            }
+          }
+          if (!(releaseValues.RELEASE_TAG ==~ /v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)/)) {
+            error("Resolver output has invalid RELEASE_TAG: ${releaseValues.RELEASE_TAG}")
+          }
+          if (!(releaseValues.RELEASE_SHA ==~ /[0-9a-f]{40}/)) {
+            error("Resolver output has invalid RELEASE_SHA: ${releaseValues.RELEASE_SHA}")
+          }
+          if (!['0', '1'].contains(releaseValues.NO_OP)) {
+            error("Resolver output has invalid NO_OP: ${releaseValues.NO_OP}")
+          }
+          env.RELEASE_TAG = releaseValues.RELEASE_TAG
+          env.RELEASE_SHA = releaseValues.RELEASE_SHA
+          env.NO_OP = releaseValues.NO_OP
+          if (env.NO_OP != '1') {
+            sh '''#!/usr/bin/env sh
+              set -eu
+              git checkout --detach --force "$RELEASE_SHA"
+              git clean -ffdqx
+            '''
+          }
         }
       }
     }
     stage('Preflight resources') {
+      when {
+        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
@@ -85,6 +113,9 @@ pipeline {
     }
 
     stage('Configure Buildx') {
+      when {
+        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
@@ -105,35 +136,44 @@ pipeline {
     }
 
     stage('Build backend') {
+      when {
+        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
           docker buildx build --builder "$BUILDX_BUILDER" --load \
-            --build-arg DEPLOY_SHA="$SHA" \
+            --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
-            --tag "eldercare-backend:$SHA" --file backend/Dockerfile .
+            --tag "eldercare-backend:$RELEASE_SHA" --file backend/Dockerfile .
         '''
       }
     }
 
     stage('Build frontend') {
+      when {
+        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
           docker buildx build --builder "$BUILDX_BUILDER" --load \
-            --build-arg DEPLOY_SHA="$SHA" \
+            --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
-            --tag "eldercare-front:$SHA" --file front/Dockerfile .
+            --tag "eldercare-front:$RELEASE_SHA" --file front/Dockerfile .
         '''
       }
     }
 
     stage('Deploy') {
+      when {
+        expression { env.NO_OP != '1' && params.SHA != 'REGISTER-ONLY' }
+      }
       steps {
         lock(resource: 'eldercare-fall-ai-deploy') {
           sh '''#!/usr/bin/env sh
             set -eu
-            sh scripts/deploy/iwinv-deploy.sh --sha "$SHA"
+            sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"
           '''
         }
       }
@@ -144,8 +184,8 @@ pipeline {
     failure {
       emailext(
         to: 'admin@example.com',
-        subject: "[eldercare-fall-ai] Jenkins deploy failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: "Deployment failed for SHA ${params.SHA}. Build: ${env.BUILD_URL}"
+        subject: "[eldercare-fall-ai] Jenkins deploy failed: ${env.RELEASE_SHA ?: 'unresolved'}",
+        body: "Deployment failed for release SHA ${env.RELEASE_SHA ?: 'unresolved'}. Build: ${env.BUILD_URL}"
       )
     }
   }

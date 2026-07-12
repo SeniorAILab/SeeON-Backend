@@ -2,7 +2,7 @@
 slug: ADR-001-iwinv-jenkins-cd
 date: 2026-07-10
 author: gjc (deep-interview with 고범수)
-status: Proposed
+status: Superseded by ADR-002
 references: []
 refines: []
 ---
@@ -11,7 +11,7 @@ refines: []
 
 ## Status
 
-Proposed — 스펙 인터뷰에서 결정 확정, 구현 착수 전. 구현 완료 시 Accepted로 전환.
+Superseded by [ADR-002: Release-based CD](ADR-002-release-based-cd.md).
 
 ## Date
 

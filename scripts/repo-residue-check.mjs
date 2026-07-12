@@ -7,6 +7,25 @@ const selfPaths = new Set([
   'scripts/repo-residue-check.mjs',
   'scripts/repo-residue-check.test.mjs',
 ]);
+const legacyHostCdPatterns = [
+  { pattern: /manual-production-/i, message: 'host repository retains a manual production release path' },
+  { pattern: /ncloud-deploy/i, message: 'host repository retains the retired ncloud deploy path' },
+  { pattern: /ncloud-bootstrap/i, message: 'host repository retains the retired ncloud bootstrap path' },
+  { pattern: /release:prod:manual/i, message: 'host repository retains a manual production release command' },
+  { pattern: /deploy:prod:manual/i, message: 'host repository retains a manual production deploy command' },
+  { pattern: /Actions-backed CD is paused/i, message: 'host repository retains paused Actions CD guidance' },
+  {
+    paths: new Set(['.github/workflows/deploy-iwinv.yml']),
+    pattern: /\bworkflow_run\b/i,
+    message: 'host repository retains a deploy workflow run-completion trigger',
+  },
+  {
+    paths: new Set(['.github/workflows/deploy-iwinv.yml']),
+    pattern: /refs\/heads\/main/i,
+    message: 'host repository retains a main-ref webhook filter',
+  },
+];
+
 
 function parseArgs(argv) {
   const options = { allow: new Map(), repoRole: undefined, root: process.cwd() };
@@ -82,6 +101,19 @@ function hasPath(root, path) {
   return existsSync(resolve(root, path));
 }
 
+function isLegacyHostCdPath(path) {
+  return (
+    path.startsWith('.github/workflows/') ||
+    path === '.github/AGENTS.md' ||
+    path === 'Jenkinsfile' ||
+    path.startsWith('scripts/deploy/') ||
+    path.startsWith('scripts/release/') ||
+    path === 'scripts/AGENTS.md' ||
+    path === 'package.json' ||
+    path === 'README.md'
+  );
+}
+
 function hostViolations(root, files) {
   const violations = [];
   for (const path of ['ml', 'compose.edge.yaml']) {
@@ -107,6 +139,14 @@ function hostViolations(root, files) {
       violations.push(violation(path, 'release entrypoint retains four-image ML release semantics'));
     }
   }
+  for (const path of files.filter(isLegacyHostCdPath)) {
+    const text = fileText(root, path);
+    for (const { paths, pattern, message } of legacyHostCdPatterns) {
+      if ((!paths || paths.has(path)) && pattern.test(text)) {
+        violations.push(violation(path, message));
+      }
+    }
+  }
   return violations;
 }
 
@@ -128,7 +168,7 @@ function mlViolations(root, files) {
   if (hasPath(root, 'ml')) violations.push(violation('ml', 'ML repository retains the old ml/ prefix'));
 
   const oldNamespace = /ghcr\.io\/seniorailab\/eldercare-fall-ai\/ml-(api|worker)/i;
-  const hostCoupling = /ncloud-deploy|deploy:prod:manual|compose\.prod\.yaml|scripts\/deploy\/ncloud|scripts\/release\/manual-production/i;
+  const hostCoupling = /compose\.prod\.yaml/i;
   for (const path of files) {
     if (selfPaths.has(path)) continue;
     const text = fileText(root, path);
