@@ -24,6 +24,11 @@ const legacyHostCdPatterns = [
     pattern: /refs\/heads\/main/i,
     message: 'host repository retains a main-ref webhook filter',
   },
+  {
+    paths: new Set(['.github/workflows/deploy-iwinv.yml', 'Jenkinsfile', '.github/AGENTS.md', 'scripts/deploy/AGENTS.md', 'scripts/AGENTS.md', 'README.md', 'package.json']),
+    pattern: /DEPLOY_ENABLED/,
+    message: 'host repository retains the removed cutover interlock variable',
+  },
 ];
 
 

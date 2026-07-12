@@ -25,8 +25,8 @@ iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/fronte
   `eldercare-backend:<sha>`/`eldercare-front:<sha>` images and deploys them.
 - Keep permissions minimal and fail before an external trigger when required
   release classification input is absent.
-- `DEPLOY_ENABLED` is a cutover interlock and will be removed when cutover
-  completes.
+- The trigger gate is classification plus canonical repository identity; no
+  additional enablement variable exists.
 
 ## Anti-patterns
 - No GHCR, `latest`, fallback ref/image/env, or automatic retry/rollback path.

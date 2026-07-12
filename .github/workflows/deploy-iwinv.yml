@@ -35,11 +35,9 @@ jobs:
 
   trigger:
     needs: classify
-    # Interlock; remove after cutover.
     if: >-
       needs.classify.outputs.is_production == 'true' &&
-      github.repository == 'SeniorAILab/eldercare-fall-ai' &&
-      vars.DEPLOY_ENABLED == 'true'
+      github.repository == 'SeniorAILab/eldercare-fall-ai'
     runs-on: ubuntu-latest
     env:
       WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}

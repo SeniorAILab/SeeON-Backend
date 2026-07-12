@@ -13,7 +13,6 @@ const workflow = await readFile(workflowUrl, 'utf8');
 const requiredTriggerPredicates = [
   "needs.classify.outputs.is_production == 'true'",
   "github.repository == 'SeniorAILab/eldercare-fall-ai'",
-  "vars.DEPLOY_ENABLED == 'true'",
 ];
 
 const requiredDeliveryFragments = [
@@ -100,7 +99,7 @@ function assertWorkflowContract(source) {
   for (const predicate of requiredTriggerPredicates) {
     requireFragment(gate, predicate, `trigger gate predicate ${predicate}`);
   }
-  requireFragment(triggerJob, '# Interlock; remove after cutover.', 'cutover interlock comment');
+  assert.ok(!workflow.includes('DEPLOY_ENABLED'), 'cutover interlock must stay removed');
 
   for (const fragment of requiredDeliveryFragments) {
     requireFragment(triggerJob, fragment, `delivery contract fragment ${fragment}`);
