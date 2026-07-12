@@ -1,6 +1,5 @@
 import { SpaceType } from '@prisma/client';
 
-export const NOKYANG_FACILITY_CODE = 'happy-nokyang';
 export const NOKYANG_ADMIN_EMAIL = 'nokyang-admin@example.com';
 
 export type FixtureItem = {
@@ -32,7 +31,6 @@ export function verifyUniqueIds(
 
 export type FacilitySeed = {
   readonly name: string;
-  readonly code: string;
   readonly address: string;
   readonly phone: string;
   readonly businessRegistrationNumber: string;
@@ -61,7 +59,6 @@ export type CameraSeed = {
 
 export const nokyangFacility: FacilitySeed = {
   name: '행복한요양원 녹양역점',
-  code: 'happy-nokyang',
   address: '경기도 의정부시 녹양로 12',
   phone: '031-123-4567',
   businessRegistrationNumber: '123-45-67890',

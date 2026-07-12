@@ -50,7 +50,6 @@ model Facility {
   id                         String   @id @default(cuid())
   name                       String
   businessRegistrationNumber String?  @map("business_registration_number")
-  code                       String   @unique @map("code")
   address                    String?  @map("address")
   phone                      String?  @map("phone")
   createdAt                  DateTime @default(now()) @map("created_at")

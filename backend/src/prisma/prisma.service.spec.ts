@@ -41,8 +41,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
 
     await direct.facility.createMany({
       data: [
-        { id: 'facility-a', name: 'Facility A', code: 'facility-a' },
-        { id: 'facility-b', name: 'Facility B', code: 'facility-b' },
+        { id: 'facility-a', name: 'Facility A' },
+        { id: 'facility-b', name: 'Facility B' },
       ],
     });
 

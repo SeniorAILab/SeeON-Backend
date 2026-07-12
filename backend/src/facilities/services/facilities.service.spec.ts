@@ -6,7 +6,6 @@ describe('FacilitiesService', () => {
   const facility = {
     id: 'facility-session',
     name: 'Happy Home',
-    code: 'happy-home',
     address: null,
     phone: null,
     businessRegistrationNumber: null,
@@ -16,7 +15,6 @@ describe('FacilitiesService', () => {
     ...facility,
     id: 'other-facility',
     name: 'Other Home',
-    code: 'other-home',
   };
 
   it('reads the facility root directly by session facilityId', async () => {
@@ -25,7 +23,7 @@ describe('FacilitiesService', () => {
     };
     const service = new FacilitiesService(repository as never);
     await expect(service.current('facility-session')).resolves.toMatchObject({
-      code: 'happy-home',
+      name: 'Happy Home',
     });
     expect(repository.getByFacilityId).toHaveBeenCalledWith('facility-session');
   });
@@ -39,7 +37,7 @@ describe('FacilitiesService', () => {
       service.getScoped('facility-session', 'facility-session'),
     ).resolves.toMatchObject({
       id: 'facility-session',
-      code: 'happy-home',
+      name: 'Happy Home',
     });
     expect(repository.getByFacilityId).toHaveBeenCalledWith('facility-session');
   });
@@ -55,17 +53,14 @@ describe('FacilitiesService', () => {
     expect(repository.getByFacilityId).not.toHaveBeenCalled();
   });
 
-  it('ignores immutable code updates', async () => {
+  it('updates only name, address, and phone', async () => {
     const repository = {
       updateByFacilityId: jest
         .fn()
         .mockResolvedValue({ ...facility, name: 'New Name' }),
     };
     const service = new FacilitiesService(repository as never);
-    await service.update('facility-session', {
-      name: 'New Name',
-      code: 'evil',
-    } as unknown as Parameters<FacilitiesService['update']>[1]);
+    await service.update('facility-session', { name: 'New Name' });
     expect(repository.updateByFacilityId).toHaveBeenCalledWith(
       'facility-session',
       { name: 'New Name', address: undefined, phone: undefined },

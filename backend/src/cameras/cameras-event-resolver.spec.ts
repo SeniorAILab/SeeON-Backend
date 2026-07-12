@@ -39,7 +39,6 @@ describe('CamerasService event ingest resolver', () => {
       data: {
         id: 'event-ingest-facility',
         name: 'Event Ingest Facility',
-        code: 'event-ingest-facility',
       },
     });
     await direct.floor.create({

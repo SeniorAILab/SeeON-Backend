@@ -31,8 +31,8 @@ describe('placement RLS tenant isolation', () => {
     });
     await direct.facility.createMany({
       data: [
-        { id: 'rls-a', name: 'RLS A', code: 'rls-a' },
-        { id: 'rls-b', name: 'RLS B', code: 'rls-b' },
+        { id: 'rls-a', name: 'RLS A' },
+        { id: 'rls-b', name: 'RLS B' },
       ],
     });
     await direct.floor.createMany({

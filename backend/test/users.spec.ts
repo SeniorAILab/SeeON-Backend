@@ -41,7 +41,7 @@ describe('facility-scoped users API (e2e)', () => {
       where: { email: { endsWith: '@users-api.example.test' } },
     });
     await direct.facility.deleteMany({
-      where: { code: { in: ['USERS-A', 'USERS-B'] } },
+      where: { name: { in: ['Users A 요양원', 'Users B 요양원'] } },
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

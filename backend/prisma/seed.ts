@@ -21,17 +21,23 @@ const prisma = new PrismaClient({
 });
 
 async function upsertFacility(tx: Prisma.TransactionClient): Promise<string> {
-  const facility = await tx.facility.upsert({
-    where: { code: nokyangFacility.code },
-    update: {
-      address: nokyangFacility.address,
+  // 멱등키: 문자 code 제거 이후 사업자등록번호(실세계 유일키)로 기존 시설을 찾는다.
+  // 시설 id는 항상 DB가 발급한다.
+  const existing = await tx.facility.findFirst({
+    where: {
       businessRegistrationNumber: nokyangFacility.businessRegistrationNumber,
-      code: nokyangFacility.code,
-      name: nokyangFacility.name,
-      phone: nokyangFacility.phone,
     },
-    create: nokyangFacility,
+    select: { id: true },
   });
+  const data = {
+    address: nokyangFacility.address,
+    businessRegistrationNumber: nokyangFacility.businessRegistrationNumber,
+    name: nokyangFacility.name,
+    phone: nokyangFacility.phone,
+  };
+  const facility = existing
+    ? await tx.facility.update({ where: { id: existing.id }, data })
+    : await tx.facility.create({ data });
   return facility.id;
 }
 
