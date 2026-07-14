@@ -48,6 +48,12 @@ explicit rollback or database restore.
 - Fail on the first resolution, checkout, build, preflight, backup, migration,
   Compose, or health error. No hidden retry, automatic rollback, alternate path,
   or secret output.
+- The prod backend image compiles the full seed to `dist-tools/prisma/seed.js`
+  (nokyang demo + super-admin) alongside `seed-super-admin.js`. A one-time
+  destructive DB reset reseeds with `node dist-tools/prisma/seed.js` (or
+  `pnpm --dir backend db:seed:prod`) after `prisma migrate deploy`; it requires
+  `DIRECT_URL` and `NOKYANG_ADMIN_PASSWORD` and never logs secrets. Routine
+  deploys still run only migrate deploy + super-admin bootstrap.
 
 ## Jenkins job seed
 - `scripts/deploy/jenkins-job-seed.groovy` is the versioned source of truth for
