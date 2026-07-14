@@ -17,10 +17,13 @@ export interface EdgeIngestRequest {
 
 /**
  * Dedicated variant of cameras/edge-facility-token.guard.ts (issue #552) for the
- * Event API ingest routes (record, heartbeat). Checks the same shared edge bearer
- * token, but does not require an x-facility-id header: Event ingest resolves
+ * Event API ingest routes (record, heartbeat, snapshot upload — #567). Checks the
+ * same shared edge bearer
+ * token, but does not require an x-facility-id header: record/heartbeat resolve
  * facility/tenancy server-side from camera_id ownership
- * (CamerasService.resolveForEventIngest), not from a client-declared header.
+ * (CamerasService.resolveForEventIngest), and snapshot upload resolves it from
+ * eventId ownership (EventRecorderService.resolveForSnapshot) — never from a
+ * client-declared header.
  */
 @Injectable()
 export class EdgeIngestTokenGuard implements CanActivate {
