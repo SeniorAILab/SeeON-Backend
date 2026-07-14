@@ -16,6 +16,7 @@
     "prisma:migrate": "dotenv -e ../.env.local -- prisma migrate dev",
     "prisma:reset:local": "node ../scripts/dev/assert-local-db-env.mjs ../.env.local && dotenv -e ../.env.local -- prisma migrate reset --force && prisma generate && dotenv -e ../.env.local -- ts-node prisma/seed.ts",
     "prisma:seed": "dotenv -e ../.env.local -- ts-node prisma/seed.ts",
+    "db:check-admin-drift": "ts-node prisma/check-admin-secret-drift.ts",
     "lint": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\" --fix",
     "dto:check": "node ../scripts/backend-guard/check-dto-contracts.mjs",

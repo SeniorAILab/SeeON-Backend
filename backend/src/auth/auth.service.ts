@@ -121,20 +121,23 @@ export class AuthService {
       return this.createJwtSession(existing);
     }
 
-    const facility = await this.prisma.db.facility.create({
-      data: { name },
-    });
+    const user = await this.prisma.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
 
-    const user = await this.prisma.withFacilityContext(
-      facility.id,
-      async (tx) => {
-        const updated = await tx.user.update({
-          where: { id: userId },
-          data: { facilityId: facility.id, role: 'ADMIN' },
-        });
-        return updated;
-      },
-    );
+      const current = await tx.user.findUnique({
+        where: { id: userId },
+      });
+      if (!current) throw new UnauthorizedException('Unknown user');
+      if (current.facilityId) return current;
+
+      const facility = await tx.facility.create({
+        data: { name },
+      });
+      return tx.user.update({
+        where: { id: userId },
+        data: { facilityId: facility.id, role: 'ADMIN' },
+      });
+    });
 
     return this.createJwtSession(user);
   }

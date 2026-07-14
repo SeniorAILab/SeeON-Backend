@@ -164,7 +164,7 @@ async function upsertCameras(
   }
 }
 
-async function seedNokyangDemo(): Promise<string> {
+export async function seedNokyangDemo(): Promise<string> {
   verifyNokyangFixture();
   return prisma.$transaction(async (tx) => {
     const facilityId = await upsertFacility(tx);
@@ -194,9 +194,11 @@ async function main(): Promise<void> {
   console.log('Seed complete.');
 }
 
-main()
-  .catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((error: unknown) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
