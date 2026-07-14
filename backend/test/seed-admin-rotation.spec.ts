@@ -60,11 +60,12 @@ describe('Nokyang seeded admin password rotation', () => {
     await seedNokyangDemo();
     const idempotentAdmin = await direct.user.findUniqueOrThrow({
       where: { email: NOKYANG_ADMIN_EMAIL },
-      select: { passwordHash: true },
+      select: { passwordHash: true, sessionVersion: true },
     });
 
     expect(await verifyPassword(ROTATED_PASSWORD, idempotentAdmin.passwordHash ?? '')).toBe(
       true,
     );
+    expect(idempotentAdmin.sessionVersion).toBe(rotatedAdmin.sessionVersion);
   });
 });
