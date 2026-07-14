@@ -90,6 +90,110 @@ describe('AuthService JWT password login', () => {
     });
   });
 });
+describe('AuthService facility onboarding', () => {
+  const unassignedUser = {
+    id: 'user-1',
+    facilityId: null,
+    email: 'admin@example.test',
+    nickname: '관리자',
+    role: 'STAFF',
+    sessionVersion: 0,
+  };
+
+  it('rolls back the new facility when assigning it to the user fails', async () => {
+    let facilityCount = 0;
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'user-1' }]),
+      user: {
+        findUnique: jest.fn().mockResolvedValue(unassignedUser),
+        update: jest.fn().mockRejectedValue(new Error('user update failed')),
+      },
+      facility: { create: jest.fn().mockResolvedValue({ id: 'facility-1' }) },
+    };
+    const prisma = {
+      db: {
+        user: { findUnique: jest.fn().mockResolvedValue(unassignedUser) },
+        $transaction: jest.fn(
+          async (callback: (client: typeof tx) => Promise<unknown>) => {
+            try {
+              const result = await callback(tx);
+              facilityCount += 1;
+              return result;
+            } catch (error) {
+              throw error;
+            }
+          },
+        ),
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await expect(
+      service.createFacilityForUser('user-1', '새 요양원'),
+    ).rejects.toThrow('user update failed');
+
+    expect(tx.facility.create).toHaveBeenCalledWith({
+      data: { name: '새 요양원' },
+    });
+    expect(facilityCount).toBe(0);
+  });
+
+  it('returns the facility session found after the transaction lock without creating another facility', async () => {
+    const assignedUser = {
+      ...unassignedUser,
+      facilityId: 'facility-existing',
+      role: 'ADMIN',
+    };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'user-1' }]),
+      user: {
+        findUnique: jest.fn().mockResolvedValue(assignedUser),
+        update: jest.fn(),
+      },
+      facility: { create: jest.fn() },
+    };
+    const prisma = {
+      db: {
+        user: { findUnique: jest.fn().mockResolvedValue(unassignedUser) },
+        $transaction: jest.fn(
+          (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+        ),
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await expect(
+      service.createFacilityForUser('user-1', '새 요양원'),
+    ).resolves.toMatchObject({
+      user: assignedUser,
+      token: 'jwt-token',
+    });
+
+    expect(tx.facility.create).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('returns early for a user who already has a facility without starting a transaction', async () => {
+    const assignedUser = {
+      ...unassignedUser,
+      facilityId: 'facility-existing',
+      role: 'ADMIN',
+    };
+    const prisma = {
+      db: {
+        user: { findUnique: jest.fn().mockResolvedValue(assignedUser) },
+        $transaction: jest.fn(),
+      },
+    };
+    const service = new AuthService(prisma as never, jwtMock() as never, config());
+
+    await expect(
+      service.createFacilityForUser('user-1', '새 요양원'),
+    ).resolves.toMatchObject({ user: assignedUser });
+
+    expect(prisma.db.$transaction).not.toHaveBeenCalled();
+  });
+});
 
 describe('AuthService email-alert settings', () => {
   it('returns settings with effective email falling back to the login email', async () => {

@@ -8,7 +8,7 @@ import {
   nokyangSpaces,
   verifyNokyangFixture,
 } from './demo-nokyang.fixture';
-import { hashPassword } from '../src/auth/password';
+import { hashPassword, verifyPassword } from '../src/auth/password';
 import { bootstrapSuperAdmin, readSuperAdminConfig } from './seed-super-admin';
 
 const directUrl = process.env.DIRECT_URL;
@@ -61,22 +61,35 @@ async function upsertAdmin(
   tx: Prisma.TransactionClient,
   facilityId: string,
 ): Promise<void> {
-  const passwordHash = await hashPassword(readNokyangDemoPassword(process.env));
+  const password = readNokyangDemoPassword(process.env);
+  const existing = await tx.user.findUnique({
+    where: { email: NOKYANG_ADMIN_EMAIL },
+    select: { passwordHash: true },
+  });
+  const passwordMatches =
+    existing?.passwordHash != null
+      ? await verifyPassword(password, existing.passwordHash)
+      : false;
+  const passwordHash = passwordMatches ? undefined : await hashPassword(password);
   await tx.user.upsert({
     where: { email: NOKYANG_ADMIN_EMAIL },
     update: {
       facilityId,
       nickname: '녹양역점 관리자',
-      passwordHash,
       role: 'ADMIN',
-      sessionVersion: { increment: 1 },
+      ...(passwordMatches
+        ? {}
+        : {
+            passwordHash,
+            sessionVersion: { increment: 1 },
+          }),
     },
     create: {
       email: NOKYANG_ADMIN_EMAIL,
       facilityId,
       id: 'user_nokyang_admin',
       nickname: '녹양역점 관리자',
-      passwordHash,
+      passwordHash: passwordHash ?? (await hashPassword(password)),
       role: 'ADMIN',
     },
   });
@@ -86,22 +99,35 @@ async function upsertStaff(
   tx: Prisma.TransactionClient,
   facilityId: string,
 ): Promise<void> {
-  const passwordHash = await hashPassword(readNokyangDemoPassword(process.env));
+  const password = readNokyangDemoPassword(process.env);
+  const existing = await tx.user.findUnique({
+    where: { email: NOKYANG_STAFF_EMAIL },
+    select: { passwordHash: true },
+  });
+  const passwordMatches =
+    existing?.passwordHash != null
+      ? await verifyPassword(password, existing.passwordHash)
+      : false;
+  const passwordHash = passwordMatches ? undefined : await hashPassword(password);
   await tx.user.upsert({
     where: { email: NOKYANG_STAFF_EMAIL },
     update: {
       facilityId,
       nickname: '녹양역점 요양보호사',
-      passwordHash,
       role: 'STAFF',
-      sessionVersion: { increment: 1 },
+      ...(passwordMatches
+        ? {}
+        : {
+            passwordHash,
+            sessionVersion: { increment: 1 },
+          }),
     },
     create: {
       email: NOKYANG_STAFF_EMAIL,
       facilityId,
       id: 'user_nokyang_staff',
       nickname: '녹양역점 요양보호사',
-      passwordHash,
+      passwordHash: passwordHash ?? (await hashPassword(password)),
       role: 'STAFF',
     },
   });
@@ -164,7 +190,7 @@ async function upsertCameras(
   }
 }
 
-async function seedNokyangDemo(): Promise<string> {
+export async function seedNokyangDemo(): Promise<string> {
   verifyNokyangFixture();
   return prisma.$transaction(async (tx) => {
     const facilityId = await upsertFacility(tx);
@@ -194,9 +220,11 @@ async function main(): Promise<void> {
   console.log('Seed complete.');
 }
 
-main()
-  .catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((error: unknown) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
