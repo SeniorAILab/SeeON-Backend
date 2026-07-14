@@ -103,6 +103,7 @@ export class EventsController {
   })
   @Put(':eventId/snapshot')
   @HttpCode(201)
+  @UseGuards(EdgeIngestTokenGuard)
   async uploadSnapshot(
     @Req() req: RequestWithAuth,
     @Param('eventId') eventId: string,

@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { EventsController } from './events.controller.js';
+import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
 import type { EventAlarmService } from './event-alarm.service.js';
 import type { EventRecorderService } from './event-recorder.service.js';
 import type { CamerasService } from '../cameras/cameras.service.js';
@@ -184,6 +186,16 @@ describe('EventsController heartbeat', () => {
   });
 });
 
+describe('EventsController guards', () => {
+  it('guards snapshot uploads with the edge ingest token', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      EventsController.prototype.uploadSnapshot,
+    );
+
+    expect(guards).toContain(EdgeIngestTokenGuard);
+  });
+});
 describe('EventsController uploadSnapshot', () => {
   let snapshotDir: string | undefined;
 

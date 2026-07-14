@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 export const EDGE_RELAY_TOKEN_HEADER = 'x-edge-relay-token';
 
@@ -33,7 +34,7 @@ export class EdgeIngestTokenGuard implements CanActivate {
     if (token === null) {
       throw new UnauthorizedException('edge facility token required');
     }
-    if (token !== expected) {
+    if (!tokensMatch(token, expected)) {
       throw new ForbiddenException('edge facility token mismatch');
     }
 
@@ -51,6 +52,11 @@ export class EdgeIngestTokenGuard implements CanActivate {
     }
     return token;
   }
+}
+function tokensMatch(token: string, expected: string): boolean {
+  const tokenHash = createHash('sha256').update(token).digest();
+  const expectedHash = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(tokenHash, expectedHash);
 }
 
 function requestToken(request: EdgeIngestRequest): string | null {

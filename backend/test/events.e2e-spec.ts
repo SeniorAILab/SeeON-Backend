@@ -11,6 +11,9 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AlertWriterService } from '../src/alerts/alert-writer.service';
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -117,6 +120,77 @@ describe('Events API (e2e)', () => {
         confidence: 0.9,
       })
       .expect(403);
+  });
+  it('requires the edge ingest token before changing an event snapshot', async () => {
+    const seeded = await seedFacilityGraph('snapshot-token');
+    const created = await postEvent({
+      camera_id: seeded.cameraId,
+      type: 'fall',
+      detected_at: '2026-06-26T04:00:02.000Z',
+      confidence: 0.9,
+    }).expect(201);
+    const eventId = created.body.id as string;
+    const snapshotKey = `${seeded.facilityId}/${eventId}.jpg`;
+    const previousSnapshotDir = process.env.SNAPSHOT_DIR;
+    const snapshotDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'events-e2e-snapshot-'),
+    );
+    process.env.SNAPSHOT_DIR = snapshotDir;
+    const existingSnapshot = Buffer.from('existing-snapshot');
+    const snapshotPath = path.join(snapshotDir, snapshotKey);
+
+    try {
+      await fs.promises.mkdir(path.dirname(snapshotPath), { recursive: true });
+      await fs.promises.writeFile(snapshotPath, existingSnapshot);
+      await direct.event.update({
+        where: { id: eventId },
+        data: { snapshotKey },
+      });
+
+      await request(app.getHttpServer())
+        .put(`/api/v1/events/${eventId}/snapshot`)
+        .set('Content-Type', 'image/jpeg')
+        .send(Buffer.from('unauthorized-snapshot'))
+        .expect(401);
+      await expect(
+        direct.event.findUniqueOrThrow({ where: { id: eventId } }),
+      ).resolves.toMatchObject({ snapshotKey });
+      await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
+        existingSnapshot,
+      );
+
+      await request(app.getHttpServer())
+        .put(`/api/v1/events/${eventId}/snapshot`)
+        .set('Authorization', 'Bearer wrong-token')
+        .set('Content-Type', 'image/jpeg')
+        .send(Buffer.from('wrong-token-snapshot'))
+        .expect(403);
+      await expect(
+        direct.event.findUniqueOrThrow({ where: { id: eventId } }),
+      ).resolves.toMatchObject({ snapshotKey });
+      await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
+        existingSnapshot,
+      );
+
+      const uploaded = await putSnapshot(
+        eventId,
+        Buffer.from('authorized-snapshot'),
+      ).expect(201);
+      expect(uploaded.body).toEqual({ snapshotKey });
+      await expect(
+        direct.event.findUniqueOrThrow({ where: { id: eventId } }),
+      ).resolves.toMatchObject({ snapshotKey });
+      await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
+        Buffer.from('authorized-snapshot'),
+      );
+    } finally {
+      if (previousSnapshotDir === undefined) {
+        delete process.env.SNAPSHOT_DIR;
+      } else {
+        process.env.SNAPSHOT_DIR = previousSnapshotDir;
+      }
+      await fs.promises.rm(snapshotDir, { recursive: true, force: true });
+    }
   });
   it('records events idempotently, scopes GET by facility, denies unbound/RLS and UPDATE/DELETE', async () => {
     const first = await seedFacilityGraph('a');
@@ -363,6 +437,13 @@ describe('Events API (e2e)', () => {
     return request(app.getHttpServer())
       .post('/api/v1/events/heartbeat')
       .set('Authorization', `Bearer ${EDGE_TOKEN}`)
+      .send(body);
+  }
+  function putSnapshot(eventId: string, body: Buffer) {
+    return request(app.getHttpServer())
+      .put(`/api/v1/events/${eventId}/snapshot`)
+      .set('Authorization', `Bearer ${EDGE_TOKEN}`)
+      .set('Content-Type', 'image/jpeg')
       .send(body);
   }
 
