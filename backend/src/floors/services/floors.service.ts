@@ -47,17 +47,25 @@ export class FloorsService {
     return presentFloor(floor);
   }
   async remove(facilityId: string, id: string) {
-    await this.ensureExists(facilityId, id);
-    const activeSpaces = await this.floorsRepository.countActiveSpaces(
+    const result = await this.floorsRepository.deleteWithDescendants(
       facilityId,
       id,
     );
-    if (activeSpaces > 0)
+    if (result.status === 'not_found')
+      throw new NotFoundException({
+        error: 'not_found',
+        message: 'Floor not found',
+      });
+    if (result.status === 'active_spaces')
       throw new ConflictException({
         error: 'conflict',
         message: 'Floor cannot be deleted while active spaces reference it',
       });
-    await this.floorsRepository.deleteWithDescendants(facilityId, id);
+    if (result.status === 'referenced_spaces')
+      throw new ConflictException({
+        error: 'conflict',
+        message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
+      });
   }
   private async ensureExists(facilityId: string, id: string) {
     const floor = await this.floorsRepository.findById(facilityId, id);

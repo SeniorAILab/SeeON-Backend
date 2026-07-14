@@ -63,4 +63,24 @@ describe('SpacesService', () => {
       'space-1',
     );
   });
+  it('restores soft-deleted spaces through an isActive update', async () => {
+    const inactive = { ...space, isActive: false };
+    const restored = { ...space, isActive: true };
+    const { service, repository } = serviceWith({
+      findById: jest.fn().mockResolvedValue(inactive),
+      update: jest.fn().mockResolvedValue(restored),
+    });
+
+    await expect(
+      service.update('facility-session', 'space-1', { isActive: true }),
+    ).resolves.toMatchObject({ isActive: true });
+    expect(repository.update).toHaveBeenCalledWith('facility-session', 'space-1', {
+      floorId: undefined,
+      name: undefined,
+      type: undefined,
+      capacity: undefined,
+      isActive: true,
+      assignedStaff: undefined,
+    });
+  });
 });
