@@ -333,6 +333,81 @@ describe('Events API (e2e)', () => {
     expect(retrievedIds).toHaveLength(seededCount);
     expect(new Set(retrievedIds).size).toBe(seededCount);
   });
+  it('orders equal timestamps by id across cursor pages and falls back for malformed cursors', async () => {
+    const seeded = await seedFacilityGraph('pagination-ties');
+    const cookie = await seedSessionCookie(
+      seeded.facilityId,
+      'pagination-ties',
+    );
+    const tieDetectedAt = new Date('2026-07-02T00:00:00.000Z');
+    const events = [
+      ...Array.from({ length: 55 }, (_, index) => ({
+        id: `${PREFIX}-tie-${String(index).padStart(2, '0')}`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: tieDetectedAt,
+        dedupKey: `${PREFIX}-pagination-tie-${index}`,
+      })),
+      {
+        id: `${PREFIX}-newer-a`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: new Date('2026-07-02T00:01:00.000Z'),
+        dedupKey: `${PREFIX}-pagination-tie-newer-a`,
+      },
+      {
+        id: `${PREFIX}-newer-b`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: new Date('2026-07-02T00:02:00.000Z'),
+        dedupKey: `${PREFIX}-pagination-tie-newer-b`,
+      },
+    ];
+    await direct.event.createMany({ data: events });
+
+    const expected = await direct.event.findMany({
+      where: { facilityId: seeded.facilityId },
+      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
+    const firstPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .set('cookie', cookie)
+      .expect(200);
+    expect(firstPage.body.items.map((event: { id: string }) => event.id)).toEqual(
+      expected.slice(0, 50).map((event) => event.id),
+    );
+
+    const retrievedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await request(app.getHttpServer())
+        .get('/api/v1/events')
+        .query(cursor ? { cursor } : {})
+        .set('cookie', cookie)
+        .expect(200);
+      retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
+      cursor = page.body.nextCursor;
+    } while (cursor);
+
+    expect(retrievedIds).toEqual(expected.map((event) => event.id));
+    expect(new Set(retrievedIds).size).toBe(events.length);
+
+    const malformedCursorPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .query({ cursor: '%%%' })
+      .set('cookie', cookie)
+      .expect(200);
+    expect(
+      malformedCursorPage.body.items.map((event: { id: string }) => event.id),
+    ).toEqual(expected.slice(0, 50).map((event) => event.id));
+  });
 
   it('rejects unsupported event types without persisting an Event row', async () => {
     const seeded = await seedFacilityGraph('invalid-type');

@@ -189,25 +189,30 @@ function encodeListCursor(event: Pick<Event, 'detectedAt' | 'id'>): string {
 
 function decodeListCursor(
   cursor: string | undefined,
-): { detectedAt: Date; id: string } | undefined {
-  if (!cursor) return undefined;
+): { detectedAt: Date; id: string } | null {
+  if (!cursor) return null;
 
   try {
-    const [detectedAtIso, id, ...extra] = Buffer.from(cursor, 'base64')
-      .toString('utf8')
-      .split('|');
+    const decoded = Buffer.from(cursor, 'base64');
+    if (decoded.toString('base64') !== cursor) return null;
+
+    const value = decoded.toString('utf8');
+    const separator = value.lastIndexOf('|');
+    if (separator <= 0 || separator === value.length - 1) return null;
+
+    const detectedAtIso = value.slice(0, separator);
+    const id = value.slice(separator + 1);
     const detectedAt = new Date(detectedAtIso);
     if (
-      extra.length > 0 ||
-      !detectedAtIso ||
-      !id ||
-      Number.isNaN(detectedAt.getTime())
+      Number.isNaN(detectedAt.getTime()) ||
+      detectedAt.toISOString() !== detectedAtIso
     ) {
-      return undefined;
+      return null;
     }
+
     return { detectedAt, id };
   } catch {
-    return undefined;
+    return null;
   }
 }
 

@@ -252,16 +252,29 @@ describe('EventRecorderService', () => {
     });
   });
 
-  it('treats an invalid cursor as the first page and clamps limits', async () => {
+  it.each([
+    '%%%',
+    Buffer.from('2026-06-26T02:00:00Z|evt_2').toString('base64'),
+    Buffer.from('2026-06-26T02:00:00.000Z|').toString('base64'),
+    Buffer.from('2026-06-26T02:00:00.000Z|evt_2|extra').toString('base64'),
+  ])(
+    'treats invalid cursor %s as the first page and clamps limits',
+    async (cursor) => {
+      const { subject, tx } = makeSubject();
+      tx.event.findMany.mockResolvedValue([]);
+
+      await subject.list('fac_1', { cursor, limit: 500 });
+      expect(tx.event.findMany).toHaveBeenLastCalledWith({
+        where: undefined,
+        orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+        take: 201,
+      });
+    },
+  );
+
+  it('uses the default limit for a missing cursor', async () => {
     const { subject, tx } = makeSubject();
     tx.event.findMany.mockResolvedValue([]);
-
-    await subject.list('fac_1', { cursor: 'not-a-cursor', limit: 500 });
-    expect(tx.event.findMany).toHaveBeenLastCalledWith({
-      where: undefined,
-      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
-      take: 201,
-    });
 
     await subject.list('fac_1');
     expect(tx.event.findMany).toHaveBeenLastCalledWith({

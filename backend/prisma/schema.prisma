@@ -235,7 +235,6 @@ model Event {
 
   @@unique([facilityId, id])
   @@unique([facilityId, dedupKey])
-  @@index([facilityId, detectedAt])
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
   @@map("events")
