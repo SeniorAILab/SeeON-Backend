@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   EventRecorderService,
@@ -257,32 +258,32 @@ describe('EventRecorderService', () => {
     Buffer.from('2026-06-26T02:00:00Z|evt_2').toString('base64'),
     Buffer.from('2026-06-26T02:00:00.000Z|').toString('base64'),
     Buffer.from('2026-06-26T02:00:00.000Z|evt_2|extra').toString('base64'),
+  ])('rejects invalid cursor %s before querying', async (cursor) => {
+    const { subject, tx } = makeSubject();
+
+    await expect(subject.list('fac_1', { cursor, limit: 500 })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(tx.event.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { cursor: undefined, limit: undefined, take: 51 },
+    { cursor: '', limit: 500, take: 201 },
   ])(
-    'treats invalid cursor %s as the first page and clamps limits',
-    async (cursor) => {
+    'uses the first page without a cursor (%o)',
+    async ({ cursor, limit, take }) => {
       const { subject, tx } = makeSubject();
       tx.event.findMany.mockResolvedValue([]);
 
-      await subject.list('fac_1', { cursor, limit: 500 });
+      await subject.list('fac_1', { cursor, limit });
       expect(tx.event.findMany).toHaveBeenLastCalledWith({
         where: undefined,
         orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
-        take: 201,
+        take,
       });
     },
   );
-
-  it('uses the default limit for a missing cursor', async () => {
-    const { subject, tx } = makeSubject();
-    tx.event.findMany.mockResolvedValue([]);
-
-    await subject.list('fac_1');
-    expect(tx.event.findMany).toHaveBeenLastCalledWith({
-      where: undefined,
-      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
-      take: 51,
-    });
-  });
   it('does not invoke side-effect dependencies', async () => {
     const { subject, tx } = makeSubject();
     tx.event.create.mockResolvedValue({ id: 'evt_1' });

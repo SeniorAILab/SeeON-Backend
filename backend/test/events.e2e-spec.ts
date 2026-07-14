@@ -333,7 +333,7 @@ describe('Events API (e2e)', () => {
     expect(retrievedIds).toHaveLength(seededCount);
     expect(new Set(retrievedIds).size).toBe(seededCount);
   });
-  it('orders equal timestamps by id across cursor pages and falls back for malformed cursors', async () => {
+  it('orders equal timestamps by id across cursor pages and rejects malformed cursors', async () => {
     const seeded = await seedFacilityGraph('pagination-ties');
     const cookie = await seedSessionCookie(
       seeded.facilityId,
@@ -399,14 +399,11 @@ describe('Events API (e2e)', () => {
     expect(retrievedIds).toEqual(expected.map((event) => event.id));
     expect(new Set(retrievedIds).size).toBe(events.length);
 
-    const malformedCursorPage = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .get('/api/v1/events')
       .query({ cursor: '%%%' })
       .set('cookie', cookie)
-      .expect(200);
-    expect(
-      malformedCursorPage.body.items.map((event: { id: string }) => event.id),
-    ).toEqual(expected.slice(0, 50).map((event) => event.id));
+      .expect(400);
   });
 
   it('rejects unsupported event types without persisting an Event row', async () => {

@@ -130,7 +130,12 @@ export class EventRecorderService {
     query: ListEventsQueryDto = {},
   ): Promise<ListedEventsResult> {
     const limit = Math.min(query.limit ?? 50, 200);
-    const cursor = decodeListCursor(query.cursor);
+    let cursor: { detectedAt: Date; id: string } | null = null;
+    if (query.cursor !== undefined && query.cursor !== '') {
+      cursor = decodeListCursor(query.cursor);
+      if (!cursor) throw new BadRequestException('invalid cursor');
+    }
+
     const where: Prisma.EventWhereInput | undefined = cursor
       ? {
           OR: [
@@ -197,8 +202,14 @@ function decodeListCursor(
     if (decoded.toString('base64') !== cursor) return null;
 
     const value = decoded.toString('utf8');
-    const separator = value.lastIndexOf('|');
-    if (separator <= 0 || separator === value.length - 1) return null;
+    const separator = value.indexOf('|');
+    if (
+      separator <= 0 ||
+      separator !== value.lastIndexOf('|') ||
+      separator === value.length - 1
+    ) {
+      return null;
+    }
 
     const detectedAtIso = value.slice(0, separator);
     const id = value.slice(separator + 1);
