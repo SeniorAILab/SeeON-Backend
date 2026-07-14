@@ -1,4 +1,3 @@
-import { ConflictException } from '@nestjs/common';
 import type { FloorsRepository } from '../repositories/floors.repository';
 import { FloorsService } from './floors.service';
 
@@ -53,7 +52,12 @@ describe('FloorsService', () => {
     });
     await expect(
       service.remove('facility-session', 'floor-1'),
-    ).rejects.toBeInstanceOf(ConflictException);
+    ).rejects.toMatchObject({
+      response: {
+        error: 'conflict',
+        message: 'Floor cannot be deleted while active spaces reference it',
+      },
+    });
     expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
   });
 
