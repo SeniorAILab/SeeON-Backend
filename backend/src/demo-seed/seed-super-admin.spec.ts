@@ -6,6 +6,8 @@ import {
   type ExistingSuperAdmin,
   type SuperAdminPrisma,
 } from '../../prisma/seed-super-admin';
+const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
+
 
 describe('super-admin bootstrap config', () => {
   it('skips when SUPER_ADMIN_PASSWORD is unset or empty', () => {
@@ -35,14 +37,14 @@ describe('super-admin bootstrap config', () => {
         SUPER_ADMIN_PASSWORD: 'pw',
         SUPER_ADMIN_EMAIL: '  admin@example.com  ',
         SUPER_ADMIN_NICKNAME: '  Boss  ',
-        SUPER_ADMIN_FACILITY_ID: '  fac_happy_nokyang  ',
+        SUPER_ADMIN_FACILITY_ID: `  ${SCOPED_FACILITY_ID}  `,
       }),
     ).toEqual({
       skip: false,
       email: 'admin@example.com',
       password: 'pw',
       nickname: 'Boss',
-      facilityId: 'fac_happy_nokyang',
+      facilityId: SCOPED_FACILITY_ID,
     });
   });
 });
@@ -78,7 +80,7 @@ describe('super-admin action decision', () => {
           id: 'u1',
           role: 'ADMIN',
           passwordHash: 'hash',
-          facilityId: 'fac_happy_nokyang',
+          facilityId: SCOPED_FACILITY_ID,
         },
         matches: true,
         facilityId: null,
@@ -108,7 +110,7 @@ describe('super-admin action decision', () => {
           id: 'u1',
           role: 'SUPER_ADMIN',
           passwordHash: 'hash',
-          facilityId: 'fac_happy_nokyang',
+          facilityId: SCOPED_FACILITY_ID,
         },
         matches: true,
         facilityId: null,
@@ -168,7 +170,7 @@ describe('bootstrapSuperAdmin wiring', () => {
       id: 'user_nokyang_admin',
       role: 'ADMIN',
       passwordHash: await hashPassword('old-password'),
-      facilityId: 'fac_happy_nokyang',
+      facilityId: SCOPED_FACILITY_ID,
     });
     await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
     expect(create).not.toHaveBeenCalled();
@@ -188,7 +190,7 @@ describe('bootstrapSuperAdmin wiring', () => {
       id: 'user-super',
       role: 'SUPER_ADMIN',
       passwordHash: await hashPassword(config.password),
-      facilityId: 'fac_happy_nokyang',
+      facilityId: SCOPED_FACILITY_ID,
     });
     await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
     expect(create).not.toHaveBeenCalled();

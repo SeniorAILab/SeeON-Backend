@@ -22,6 +22,7 @@ See `src/AGENTS.md` before changing Nest application code. See
   deploy-time database replay.
 - Event API (`POST /api/v1/events` + `POST /api/v1/events/heartbeat`) is the only ML ingress; do not reintroduce legacy machine-ingest routes, HMAC camera credentials, or `Camera.ingestMode`.
 - Never commit real `.env*`; native dev reads the repo-root `.env.local` SSOT.
+- Backend spec 파일에서 `fac_happy_nokyang` 같은 scoped-id 문자열은 파일별 이름 있는 상수 하나에서 파생해야 합니다.
 
 
 ## Event ingest rollout contract (issue #388 cutover)
