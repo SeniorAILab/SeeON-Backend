@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -22,6 +23,8 @@ import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
 import {
   type EventResponseDto,
+  ListEventsQueryDto,
+  type PaginatedEventsResponseDto,
   RecordEventRequestDto,
   RecordHeartbeatRequestDto,
   type RecordHeartbeatResponseDto,
@@ -147,10 +150,13 @@ export class EventsController {
   @ApiCookieAuth()
   @UseGuards(JwtAuthGuard, RequireFacilityGuard)
   @UseInterceptors(FacilityContextInterceptor)
-  async list(@Req() req: RequestWithAuth): Promise<EventResponseDto[]> {
+  async list(
+    @Req() req: RequestWithAuth,
+    @Query() query: ListEventsQueryDto,
+  ): Promise<PaginatedEventsResponseDto> {
     const facilityId = requireFacilityId(req);
-    const events = await this.recorder.list(facilityId);
-    return events.map(toEventResponseDto);
+    const { items, nextCursor } = await this.recorder.list(facilityId, query);
+    return { items: items.map(toEventResponseDto), nextCursor };
   }
 }
 

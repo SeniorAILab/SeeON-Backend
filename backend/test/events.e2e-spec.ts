@@ -242,16 +242,18 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', firstCookie)
       .expect(200);
-    expect(firstList.body.map((event: { id: string }) => event.id)).toEqual([
+    expect(firstList.body.items.map((event: { id: string }) => event.id)).toEqual([
       created.body.id,
     ]);
+    expect(firstList.body.nextCursor).toBeNull();
 
     const secondList = await request(app.getHttpServer())
       .get('/api/v1/events')
       .set('cookie', secondCookie)
       .expect(200);
-    expect(secondList.body).toHaveLength(1);
-    expect(secondList.body[0].id).not.toBe(created.body.id);
+    expect(secondList.body.items).toHaveLength(1);
+    expect(secondList.body.items[0].id).not.toBe(created.body.id);
+    expect(secondList.body.nextCursor).toBeNull();
 
     await expect(app.get(PrismaService).db.event.findMany()).rejects.toThrow(
       'without a facility context',
@@ -270,6 +272,138 @@ describe('Events API (e2e)', () => {
         await tx.$executeRaw`DELETE FROM events WHERE id = ${created.body.id}`;
       }),
     ).rejects.toThrow(/permission denied|privilege/i);
+  });
+  it('paginates event history without overlap and caps explicit limits', async () => {
+    const seeded = await seedFacilityGraph('pagination');
+    const cookie = await seedSessionCookie(seeded.facilityId, 'pagination');
+    const seededCount = 205;
+    const baseDetectedAt = new Date('2026-07-01T00:00:00.000Z');
+
+    await direct.event.createMany({
+      data: Array.from({ length: seededCount }, (_, index) => ({
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: new Date(baseDetectedAt.getTime() + index * 1_000),
+        dedupKey: `${PREFIX}-pagination-${index}`,
+      })),
+    });
+
+    const firstPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .set('cookie', cookie)
+      .expect(200);
+    expect(firstPage.body.items).toHaveLength(50);
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .query({ cursor: firstPage.body.nextCursor })
+      .set('cookie', cookie)
+      .expect(200);
+    expect(secondPage.body.items).toHaveLength(50);
+    expect(
+      secondPage.body.items.some((event: { id: string }) =>
+        firstPage.body.items.some(
+          (firstEvent: { id: string }) => firstEvent.id === event.id,
+        ),
+      ),
+    ).toBe(false);
+
+    const cappedPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .query({ limit: 500 })
+      .set('cookie', cookie)
+      .expect(200);
+    expect(cappedPage.body.items).toHaveLength(200);
+
+    const retrievedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await request(app.getHttpServer())
+        .get('/api/v1/events')
+        .query(cursor ? { cursor } : {})
+        .set('cookie', cookie)
+        .expect(200);
+      retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
+      cursor = page.body.nextCursor;
+    } while (cursor);
+
+    expect(retrievedIds).toHaveLength(seededCount);
+    expect(new Set(retrievedIds).size).toBe(seededCount);
+  });
+  it('orders equal timestamps by id across cursor pages and rejects malformed cursors', async () => {
+    const seeded = await seedFacilityGraph('pagination-ties');
+    const cookie = await seedSessionCookie(
+      seeded.facilityId,
+      'pagination-ties',
+    );
+    const tieDetectedAt = new Date('2026-07-02T00:00:00.000Z');
+    const events = [
+      ...Array.from({ length: 55 }, (_, index) => ({
+        id: `${PREFIX}-tie-${String(index).padStart(2, '0')}`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: tieDetectedAt,
+        dedupKey: `${PREFIX}-pagination-tie-${index}`,
+      })),
+      {
+        id: `${PREFIX}-newer-a`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: new Date('2026-07-02T00:01:00.000Z'),
+        dedupKey: `${PREFIX}-pagination-tie-newer-a`,
+      },
+      {
+        id: `${PREFIX}-newer-b`,
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        detectedAt: new Date('2026-07-02T00:02:00.000Z'),
+        dedupKey: `${PREFIX}-pagination-tie-newer-b`,
+      },
+    ];
+    await direct.event.createMany({ data: events });
+
+    const expected = await direct.event.findMany({
+      where: { facilityId: seeded.facilityId },
+      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
+    const firstPage = await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .set('cookie', cookie)
+      .expect(200);
+    expect(firstPage.body.items.map((event: { id: string }) => event.id)).toEqual(
+      expected.slice(0, 50).map((event) => event.id),
+    );
+
+    const retrievedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await request(app.getHttpServer())
+        .get('/api/v1/events')
+        .query(cursor ? { cursor } : {})
+        .set('cookie', cookie)
+        .expect(200);
+      retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
+      cursor = page.body.nextCursor;
+    } while (cursor);
+
+    expect(retrievedIds).toEqual(expected.map((event) => event.id));
+    expect(new Set(retrievedIds).size).toBe(events.length);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/events')
+      .query({ cursor: '%%%' })
+      .set('cookie', cookie)
+      .expect(400);
   });
 
   it('rejects unsupported event types without persisting an Event row', async () => {

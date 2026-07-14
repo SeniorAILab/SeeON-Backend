@@ -1,9 +1,11 @@
 import { Transform } from 'class-transformer';
 import {
   IsDate,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Min,
   ValidateIf,
 } from 'class-validator';
 
@@ -71,6 +73,20 @@ export class RecordHeartbeatRequestDto {
   @IsString()
   camera_id!: string;
 }
+export class ListEventsQueryDto {
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? Number(value) : value,
+  )
+  @IsInt()
+  @Min(1)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
 
 export interface RecordHeartbeatResponseDto {
   ok: true;
@@ -98,4 +114,8 @@ export interface EventResponseDto {
   operatingThreshold: number | null;
   snapshotKey: string | null;
   clockSource: string | null;
+}
+export interface PaginatedEventsResponseDto {
+  items: EventResponseDto[];
+  nextCursor: string | null;
 }

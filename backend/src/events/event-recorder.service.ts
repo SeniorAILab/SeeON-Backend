@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { CamerasService } from '../cameras/cameras.service.js';
 import { AlertEventTypes } from '../alerts/dto/alert-events.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import type { ListEventsQueryDto } from './dto/event.dto.js';
 
 const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
 const ALLOWED_EVENT_TYPE_SET = new Set<string>(ALLOWED_EVENT_TYPES);
@@ -25,6 +26,11 @@ export interface RecordedEventResult {
   event: Event;
   duplicate: boolean;
 }
+export interface ListedEventsResult {
+  items: Event[];
+  nextCursor: string | null;
+}
+
 
 @Injectable()
 export class EventRecorderService {
@@ -119,12 +125,42 @@ export class EventRecorderService {
     });
   }
 
-  async list(facilityId: string): Promise<Event[]> {
-    return this.prisma.withFacilityContext(
+  async list(
+    facilityId: string,
+    query: ListEventsQueryDto = {},
+  ): Promise<ListedEventsResult> {
+    const limit = Math.min(query.limit ?? 50, 200);
+    let cursor: { detectedAt: Date; id: string } | null = null;
+    if (query.cursor !== undefined && query.cursor !== '') {
+      cursor = decodeListCursor(query.cursor);
+      if (!cursor) throw new BadRequestException('invalid cursor');
+    }
+
+    const where: Prisma.EventWhereInput | undefined = cursor
+      ? {
+          OR: [
+            { detectedAt: { lt: cursor.detectedAt } },
+            { detectedAt: cursor.detectedAt, id: { lt: cursor.id } },
+          ],
+        }
+      : undefined;
+    const rows = await this.prisma.withFacilityContext(
       facilityId,
       (tx: Prisma.TransactionClient) =>
-        tx.event.findMany({ orderBy: { detectedAt: 'desc' } }),
+        tx.event.findMany({
+          where,
+          orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+          take: limit + 1,
+        }),
     );
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items.at(-1);
+
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeListCursor(last) : null,
+    };
   }
 }
 
@@ -149,6 +185,46 @@ function normalizeEventType(rawType: string): string {
     );
   }
   return type;
+}
+function encodeListCursor(event: Pick<Event, 'detectedAt' | 'id'>): string {
+  return Buffer.from(`${event.detectedAt.toISOString()}|${event.id}`).toString(
+    'base64',
+  );
+}
+
+function decodeListCursor(
+  cursor: string | undefined,
+): { detectedAt: Date; id: string } | null {
+  if (!cursor) return null;
+
+  try {
+    const decoded = Buffer.from(cursor, 'base64');
+    if (decoded.toString('base64') !== cursor) return null;
+
+    const value = decoded.toString('utf8');
+    const separator = value.indexOf('|');
+    if (
+      separator <= 0 ||
+      separator !== value.lastIndexOf('|') ||
+      separator === value.length - 1
+    ) {
+      return null;
+    }
+
+    const detectedAtIso = value.slice(0, separator);
+    const id = value.slice(separator + 1);
+    const detectedAt = new Date(detectedAtIso);
+    if (
+      Number.isNaN(detectedAt.getTime()) ||
+      detectedAt.toISOString() !== detectedAtIso
+    ) {
+      return null;
+    }
+
+    return { detectedAt, id };
+  } catch {
+    return null;
+  }
 }
 
 function isDedupConflict(err: unknown): boolean {

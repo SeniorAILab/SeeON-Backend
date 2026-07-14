@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   EventRecorderService,
@@ -15,6 +16,7 @@ describe('EventRecorderService', () => {
         create: jest.fn(),
         findUniqueOrThrow: jest.fn(),
         update: jest.fn(),
+        findMany: jest.fn(),
       },
       alert: {
         updateMany: jest.fn(),
@@ -203,6 +205,85 @@ describe('EventRecorderService', () => {
     });
     expect(tx.event.update).not.toHaveBeenCalled();
   });
+  it('returns a bounded keyset page and opaque cursor for the last returned event', async () => {
+    const { subject, tx } = makeSubject();
+    const events = [
+      { id: 'evt_3', detectedAt: new Date('2026-06-26T03:00:00.000Z') },
+      { id: 'evt_2', detectedAt: new Date('2026-06-26T02:00:00.000Z') },
+      { id: 'evt_1', detectedAt: new Date('2026-06-26T01:00:00.000Z') },
+    ];
+    tx.event.findMany.mockResolvedValue(events);
+
+    await expect(subject.list('fac_1', { limit: 2 })).resolves.toEqual({
+      items: events.slice(0, 2),
+      nextCursor: Buffer.from('2026-06-26T02:00:00.000Z|evt_2').toString(
+        'base64',
+      ),
+    });
+    expect(tx.event.findMany).toHaveBeenCalledWith({
+      where: undefined,
+      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+      take: 3,
+    });
+  });
+
+  it('uses an exclusive compound boundary for a valid cursor', async () => {
+    const { subject, tx } = makeSubject();
+    const cursor = Buffer.from('2026-06-26T02:00:00.000Z|evt_2').toString(
+      'base64',
+    );
+    tx.event.findMany.mockResolvedValue([]);
+
+    await expect(subject.list('fac_1', { cursor })).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(tx.event.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { detectedAt: { lt: new Date('2026-06-26T02:00:00.000Z') } },
+          {
+            detectedAt: new Date('2026-06-26T02:00:00.000Z'),
+            id: { lt: 'evt_2' },
+          },
+        ],
+      },
+      orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+      take: 51,
+    });
+  });
+
+  it.each([
+    '%%%',
+    Buffer.from('2026-06-26T02:00:00Z|evt_2').toString('base64'),
+    Buffer.from('2026-06-26T02:00:00.000Z|').toString('base64'),
+    Buffer.from('2026-06-26T02:00:00.000Z|evt_2|extra').toString('base64'),
+  ])('rejects invalid cursor %s before querying', async (cursor) => {
+    const { subject, tx } = makeSubject();
+
+    await expect(subject.list('fac_1', { cursor, limit: 500 })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(tx.event.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { cursor: undefined, limit: undefined, take: 51 },
+    { cursor: '', limit: 500, take: 201 },
+  ])(
+    'uses the first page without a cursor (%o)',
+    async ({ cursor, limit, take }) => {
+      const { subject, tx } = makeSubject();
+      tx.event.findMany.mockResolvedValue([]);
+
+      await subject.list('fac_1', { cursor, limit });
+      expect(tx.event.findMany).toHaveBeenLastCalledWith({
+        where: undefined,
+        orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+        take,
+      });
+    },
+  );
   it('does not invoke side-effect dependencies', async () => {
     const { subject, tx } = makeSubject();
     tx.event.create.mockResolvedValue({ id: 'evt_1' });

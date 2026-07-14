@@ -143,6 +143,48 @@ describe('EventsController record', () => {
     });
   });
 });
+describe('EventsController list', () => {
+  it('passes the query to the recorder and returns the paginated response shape', async () => {
+    const event = {
+      id: 'event-1',
+      facilityId: 'facility-1',
+      cameraId: 'camera-1',
+      spaceId: 'space-1',
+      type: 'fall',
+      confidence: 0.9,
+      detectedAt: new Date('2026-06-26T01:02:03.456Z'),
+      clipId: null,
+      createdAt: new Date('2026-06-26T01:02:03.456Z'),
+      modifiedAt: new Date('2026-06-26T01:02:03.456Z'),
+      configVersion: null,
+      modelVersion: null,
+      detectorVersion: null,
+      operatingThreshold: null,
+      snapshotKey: null,
+      clockSource: null,
+    };
+    const eventAlarm = {} as EventAlarmService;
+    const recorder = {
+      list: jest.fn().mockResolvedValue({
+        items: [event],
+        nextCursor: 'opaque-cursor',
+      }),
+    } as unknown as jest.Mocked<EventRecorderService>;
+    const cameras = {} as CamerasService;
+    const controller = new EventsController(eventAlarm, recorder, cameras);
+
+    await expect(
+      controller.list(
+        { effectiveFacilityId: 'facility-1' } as never,
+        { limit: 25, cursor: 'previous-cursor' },
+      ),
+    ).resolves.toEqual({ items: [event], nextCursor: 'opaque-cursor' });
+    expect(recorder.list).toHaveBeenCalledWith('facility-1', {
+      limit: 25,
+      cursor: 'previous-cursor',
+    });
+  });
+});
 describe('EventsController heartbeat', () => {
   it('resolves the camera through event ingest and records a heartbeat', async () => {
     const eventAlarm = {} as EventAlarmService;
