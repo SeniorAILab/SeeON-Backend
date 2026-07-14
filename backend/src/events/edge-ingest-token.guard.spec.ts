@@ -66,6 +66,11 @@ describe('EdgeIngestTokenGuard', () => {
         contextFor({ 'x-edge-relay-token': 'wrong-token' }).context,
       ),
     ).toThrow(ForbiddenException);
+    expect(() =>
+      guard.canActivate(
+        contextFor({ authorization: 'Bearer edge-tokeo' }).context,
+      ),
+    ).toThrow(ForbiddenException);
   });
 
   it('does not require a facility scope header', () => {

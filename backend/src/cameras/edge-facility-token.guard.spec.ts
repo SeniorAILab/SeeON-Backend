@@ -59,6 +59,14 @@ describe('EdgeFacilityTokenGuard', () => {
         }).context,
       ),
     ).toThrow(ForbiddenException);
+    expect(() =>
+      guard.canActivate(
+        contextFor({
+          authorization: 'Bearer edge-tokeo',
+          'x-facility-id': 'facility-1',
+        }).context,
+      ),
+    ).toThrow(ForbiddenException);
   });
 
   it('rejects requests without a facility scope', () => {
