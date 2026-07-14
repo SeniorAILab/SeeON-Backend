@@ -42,10 +42,8 @@ scripts/
   layering checks remain warn-first.
 - Production release issuance is the deployment trigger. Release and deploy
   scripts must use explicit refs or image tags.
-- Production DB deploy defaults to `DEPLOY_DB_MODE=migrate`: backup with
-  `pg_dump -Fc`, validate with `pg_restore --list`, then run
-  `prisma migrate deploy` from deploy tooling. `baseline-existing` and
-  `reset-demo` require explicit allow flags.
+- Production DB deploy runs `prisma migrate deploy` through `scripts/deploy/iwinv-deploy.sh`; there is no `DEPLOY_DB_MODE`, `baseline-existing`, or `reset-demo` mode.
+- Before migration, `iwinv-deploy.sh` backs up with `pg_dump -Fc` and validates the dump with `pg_restore --list`. Restore with `iwinv-deploy.sh --restore-db <dump> --ack-data-loss`.
 - Env verification reads tracked example contracts. Real `.env*` files remain
   gitignored and must not be generated here.
 

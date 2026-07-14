@@ -3,6 +3,8 @@ import type { ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RequireFacilityGuard, type RequestWithAuth } from './jwt-auth.guard';
 import { JwtStrategy, jwtCookieExtractor } from './jwt.strategy';
+const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
+
 
 function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
   return {
@@ -75,7 +77,7 @@ describe('RequireFacilityGuard', () => {
 
   it('allows facility-less super admins to enter an explicitly selected facility scope', () => {
     const request = {
-      headers: { 'x-facility-id': 'fac_happy_nokyang' },
+      headers: { 'x-facility-id': SCOPED_FACILITY_ID },
       user: {
         id: 'user-1',
         email: '<REDACTED_NOTIFICATION_EMAIL>',
@@ -89,13 +91,13 @@ describe('RequireFacilityGuard', () => {
     expect(new RequireFacilityGuard().canActivate(contextFor(request))).toBe(
       true,
     );
-    expect(request.effectiveFacilityId).toBe('fac_happy_nokyang');
+    expect(request.effectiveFacilityId).toBe(SCOPED_FACILITY_ID);
   });
 
   it('allows facility-less super admins to enter a facility scope from EventSource query', () => {
     const request = {
       headers: {},
-      query: { facilityId: 'fac_happy_nokyang' },
+      query: { facilityId: SCOPED_FACILITY_ID },
       user: {
         id: 'user-1',
         email: '<REDACTED_NOTIFICATION_EMAIL>',
@@ -109,12 +111,12 @@ describe('RequireFacilityGuard', () => {
     expect(new RequireFacilityGuard().canActivate(contextFor(request))).toBe(
       true,
     );
-    expect(request.effectiveFacilityId).toBe('fac_happy_nokyang');
+    expect(request.effectiveFacilityId).toBe(SCOPED_FACILITY_ID);
   });
 
   it('rejects facility-less non-super users even when they send a facility scope header', () => {
     const request = {
-      headers: { 'x-facility-id': 'fac_happy_nokyang' },
+      headers: { 'x-facility-id': SCOPED_FACILITY_ID },
       user: {
         id: 'user-1',
         email: 'staff@example.test',
