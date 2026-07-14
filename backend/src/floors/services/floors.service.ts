@@ -57,6 +57,16 @@ export class FloorsService {
         error: 'conflict',
         message: 'Floor cannot be deleted while active spaces reference it',
       });
+    const referencedSpaces =
+      await this.floorsRepository.countDescendantSpaceReferences(
+        facilityId,
+        id,
+      );
+    if (referencedSpaces > 0)
+      throw new ConflictException({
+        error: 'conflict',
+        message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
+      });
     await this.floorsRepository.deleteWithDescendants(facilityId, id);
   }
   private async ensureExists(facilityId: string, id: string) {

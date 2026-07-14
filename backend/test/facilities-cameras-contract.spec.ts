@@ -173,6 +173,43 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     expect(getOne.body).toEqual(afterList.body[0]);
   });
 
+  it('DELETE /floors/:id returns 409 and preserves events for hidden referenced spaces', async () => {
+    const seeded = await seedFacilityGraph('hidden-referenced-floor');
+    const adminCookie = await seedSessionCookie(
+      seeded.facilityId,
+      'hidden-referenced-floor-admin',
+      Role.ADMIN,
+    );
+    await direct.space.update({
+      where: { id: seeded.spaceId },
+      data: { isActive: false },
+    });
+    const event = await direct.event.create({
+      data: {
+        facilityId: seeded.facilityId,
+        cameraId: seeded.cameraId,
+        spaceId: seeded.spaceId,
+        type: 'fall',
+        confidence: 0.9,
+        detectedAt: new Date('2026-07-14T00:00:00.000Z'),
+        dedupKey: `${PREFIX}-hidden-referenced-floor-event`,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .delete(`/api/v1/floors/${seeded.floorId}`)
+      .set('cookie', adminCookie)
+      .expect(409);
+
+    expect(response.body).toEqual({
+      error: 'conflict',
+      message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
+    });
+    await expect(
+      direct.event.findUnique({ where: { id: event.id } }),
+    ).resolves.toMatchObject({ id: event.id });
+  });
+
   async function seedFacilityGraph(suffix: string) {
     const facility = await direct.facility.create({
       data: {
@@ -208,6 +245,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     return {
       facilityId: facility.id,
       facilityCreatedAt: facility.createdAt,
+      floorId: floor.id,
       spaceId: space.id,
       cameraId: camera.id,
       cameraLabel: camera.label,

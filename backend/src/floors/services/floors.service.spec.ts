@@ -60,15 +60,38 @@ describe('FloorsService', () => {
     });
     expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
   });
+  it('rejects hard delete when inactive child spaces have references', async () => {
+    const { service, repository } = serviceWith({
+      findById: jest.fn().mockResolvedValue(floor),
+      countActiveSpaces: jest.fn().mockResolvedValue(0),
+      countDescendantSpaceReferences: jest.fn().mockResolvedValue(1),
+      deleteWithDescendants: jest.fn(),
+    });
+
+    await expect(
+      service.remove('facility-session', 'floor-1'),
+    ).rejects.toMatchObject({
+      response: {
+        error: 'conflict',
+        message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
+      },
+    });
+    expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
+  });
 
   it('cascade-removes soft-deleted child spaces before deleting the floor', async () => {
     const { service, repository } = serviceWith({
       findById: jest.fn().mockResolvedValue(floor),
       countActiveSpaces: jest.fn().mockResolvedValue(0),
+      countDescendantSpaceReferences: jest.fn().mockResolvedValue(0),
       deleteWithDescendants: jest.fn().mockResolvedValue(undefined),
     });
     await service.remove('facility-session', 'floor-1');
     expect(repository.countActiveSpaces).toHaveBeenCalledWith(
+      'facility-session',
+      'floor-1',
+    );
+    expect(repository.countDescendantSpaceReferences).toHaveBeenCalledWith(
       'facility-session',
       'floor-1',
     );

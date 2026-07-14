@@ -40,6 +40,20 @@ export class FloorsRepository {
       tx.space.count({ where: { floorId, isActive: true } }),
     );
   }
+  async countDescendantSpaceReferences(
+    facilityId: string,
+    floorId: string,
+  ) {
+    return this.prisma.withFacilityContext(facilityId, async (tx) => {
+      const spaceWhere = { floorId };
+      const [cameras, alerts, events] = await Promise.all([
+        tx.camera.count({ where: { space: spaceWhere } }),
+        tx.alert.count({ where: { space: spaceWhere } }),
+        tx.event.count({ where: { space: spaceWhere } }),
+      ]);
+      return cameras + alerts + events;
+    });
+  }
 
   deleteWithDescendants(facilityId: string, id: string) {
     return this.prisma.withFacilityContext(facilityId, async (tx) => {
