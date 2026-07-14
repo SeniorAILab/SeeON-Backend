@@ -20,13 +20,13 @@ See `src/AGENTS.md` before changing Nest application code. See
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.
 - See `prisma/AGENTS.md` before changing schema, migrations, runtime DB roles, or
   deploy-time database replay.
-- Event API (`POST /api/v1/events` + `POST /api/v1/events/heartbeat`) is the only ML ingress; do not reintroduce legacy machine-ingest routes, HMAC camera credentials, or `Camera.ingestMode`.
+- Event API (`POST /api/v1/events` + `POST /api/v1/events/heartbeat`) is the only ML *event-fact* ingress; `PUT /api/v1/events/:eventId/snapshot` is an authenticated auxiliary edge route. All three share `EdgeIngestTokenGuard` (edge bearer, #567). Do not reintroduce legacy machine-ingest routes, HMAC camera credentials, or `Camera.ingestMode`.
 - Never commit real `.env*`; native dev reads the repo-root `.env.local` SSOT.
 - Backend spec 파일에서 `fac_happy_nokyang` 같은 scoped-id 문자열은 파일별 이름 있는 상수 하나에서 파생해야 합니다.
 
 
 ## Event ingest rollout contract (issue #388 cutover)
-- `POST /api/v1/events` and `POST /api/v1/events/heartbeat` are the only live ML ingress endpoints.
+- `POST /api/v1/events` and `POST /api/v1/events/heartbeat` are the only live ML event-fact ingress endpoints; `PUT /api/v1/events/:eventId/snapshot` is an authenticated auxiliary edge route sharing the same `EdgeIngestTokenGuard` (#567) — it is not a legacy/unguarded route.
 - Removed machine-ingest routes, camera HMAC credentials, and `Camera.ingestMode` must stay removed rather than lingering as compatibility aliases.
 - `CamerasService.recordHeartbeat` remains used by `EventsController.heartbeat`.
 
