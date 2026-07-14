@@ -46,9 +46,9 @@ describe('FloorsService', () => {
 
   it('rejects hard delete when active child spaces exist', async () => {
     const { service, repository } = serviceWith({
-      findById: jest.fn().mockResolvedValue(floor),
-      countActiveSpaces: jest.fn().mockResolvedValue(1),
-      deleteWithDescendants: jest.fn(),
+      deleteWithDescendants: jest.fn().mockResolvedValue({
+        status: 'active_spaces',
+      }),
     });
     await expect(
       service.remove('facility-session', 'floor-1'),
@@ -58,14 +58,17 @@ describe('FloorsService', () => {
         message: 'Floor cannot be deleted while active spaces reference it',
       },
     });
-    expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
+    expect(repository.deleteWithDescendants).toHaveBeenCalledWith(
+      'facility-session',
+      'floor-1',
+    );
   });
+
   it('rejects hard delete when inactive child spaces have references', async () => {
-    const { service, repository } = serviceWith({
-      findById: jest.fn().mockResolvedValue(floor),
-      countActiveSpaces: jest.fn().mockResolvedValue(0),
-      countDescendantSpaceReferences: jest.fn().mockResolvedValue(1),
-      deleteWithDescendants: jest.fn(),
+    const { service } = serviceWith({
+      deleteWithDescendants: jest.fn().mockResolvedValue({
+        status: 'referenced_spaces',
+      }),
     });
 
     await expect(
@@ -76,25 +79,15 @@ describe('FloorsService', () => {
         message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
       },
     });
-    expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
   });
 
-  it('cascade-removes soft-deleted child spaces before deleting the floor', async () => {
+  it('cascade-removes eligible soft-deleted child spaces and the floor atomically', async () => {
     const { service, repository } = serviceWith({
-      findById: jest.fn().mockResolvedValue(floor),
-      countActiveSpaces: jest.fn().mockResolvedValue(0),
-      countDescendantSpaceReferences: jest.fn().mockResolvedValue(0),
-      deleteWithDescendants: jest.fn().mockResolvedValue(undefined),
+      deleteWithDescendants: jest.fn().mockResolvedValue({ status: 'deleted' }),
     });
-    await service.remove('facility-session', 'floor-1');
-    expect(repository.countActiveSpaces).toHaveBeenCalledWith(
-      'facility-session',
-      'floor-1',
-    );
-    expect(repository.countDescendantSpaceReferences).toHaveBeenCalledWith(
-      'facility-session',
-      'floor-1',
-    );
+    await expect(
+      service.remove('facility-session', 'floor-1'),
+    ).resolves.toBeUndefined();
     expect(repository.deleteWithDescendants).toHaveBeenCalledWith(
       'facility-session',
       'floor-1',

@@ -209,6 +209,30 @@ describe('Facilities and cameras response contracts (e2e)', () => {
       direct.event.findUnique({ where: { id: event.id } }),
     ).resolves.toMatchObject({ id: event.id });
   });
+  it('DELETE /floors/:id rejects an active descendant during transactional deletion', async () => {
+    const seeded = await seedFacilityGraph('active-transactional-floor');
+    const adminCookie = await seedSessionCookie(
+      seeded.facilityId,
+      'active-transactional-floor-admin',
+      Role.ADMIN,
+    );
+
+    const response = await request(app.getHttpServer())
+      .delete(`/api/v1/floors/${seeded.floorId}`)
+      .set('cookie', adminCookie)
+      .expect(409);
+
+    expect(response.body).toEqual({
+      error: 'conflict',
+      message: 'Floor cannot be deleted while active spaces reference it',
+    });
+    await expect(
+      direct.floor.findUnique({ where: { id: seeded.floorId } }),
+    ).resolves.toMatchObject({ id: seeded.floorId });
+    await expect(
+      direct.space.findUnique({ where: { id: seeded.spaceId } }),
+    ).resolves.toMatchObject({ id: seeded.spaceId, isActive: true });
+  });
 
   async function seedFacilityGraph(suffix: string) {
     const facility = await direct.facility.create({
