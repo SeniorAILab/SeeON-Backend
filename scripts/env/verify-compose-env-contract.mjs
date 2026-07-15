@@ -24,7 +24,7 @@ SMTP_SECURE=false
 NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
 EDGE_FACILITY_TOKEN=prod-edge-facility-token-32-chars
 BACKEND_IMAGE=eldercare-backend:0123456789abcdef0123456789abcdef01234567
-FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567
+FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567\nMEDIA_RETENTION_DAYS=60\nMEDIA_MIN_FREE_BYTES=1073741824\nMEDIA_CLIP_MAX_BYTES=268435456
 `;
 const implicitSecureHostEnv = completeHostEnv
   .replace('SMTP_PORT=587\n', 'SMTP_PORT=465\n')

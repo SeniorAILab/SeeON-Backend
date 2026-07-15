@@ -40,9 +40,15 @@ services:
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
       SUPER_ADMIN_NICKNAME: ${SUPER_ADMIN_NICKNAME:-}
       SUPER_ADMIN_FACILITY_ID: ${SUPER_ADMIN_FACILITY_ID:-}
+      EVENT_CLIPS_ENABLED: ${EVENT_CLIPS_ENABLED:-false}
+      MEDIA_CLIP_DIR: /app/backend/clips
+      MEDIA_RETENTION_DAYS: ${MEDIA_RETENTION_DAYS:?MEDIA_RETENTION_DAYS is required in prod}
+      MEDIA_MIN_FREE_BYTES: ${MEDIA_MIN_FREE_BYTES:?MEDIA_MIN_FREE_BYTES is required in prod}
+      MEDIA_CLIP_MAX_BYTES: ${MEDIA_CLIP_MAX_BYTES:?MEDIA_CLIP_MAX_BYTES is required in prod}
     ports: !reset []
     volumes:
       - snapshots:/app/backend/snapshots
+      - clips:/app/backend/clips
     healthcheck:
       test: ["CMD-SHELL", "node -e 'fetch(\"http://127.0.0.1:8080/health\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'"]
       interval: 5s
@@ -66,3 +72,4 @@ services:
 
 volumes:
   snapshots:
+  clips:

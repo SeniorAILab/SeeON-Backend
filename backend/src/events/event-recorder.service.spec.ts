@@ -7,6 +7,7 @@ import {
 
 describe('EventRecorderService', () => {
   const detectedAt = new Date('2026-06-26T12:34:56.789Z');
+  const edgeEventId = '123e4567-e89b-42d3-a456-426614174000';
   const camera = { id: 'cam_sp_202', facilityId: 'fac_1', spaceId: 'space_1' };
 
   function makeSubject() {
@@ -109,6 +110,98 @@ describe('EventRecorderService', () => {
         clockSource: 'edge_wall_clock',
       }),
     });
+  });
+
+  it('uses a canonical edge event id as the stable idempotency identity', async () => {
+    // Given: the edge persisted a UUIDv4 before attempting network delivery.
+    const { subject, tx } = makeSubject();
+    const created = { id: 'evt_edge', edgeEventId };
+    tx.event.create.mockResolvedValue(created);
+
+    // When: the event is recorded.
+    await expect(
+      subject.record({
+        cameraId: camera.id,
+        type: 'fall',
+        detectedAt,
+        edgeEventId,
+      }),
+    ).resolves.toEqual({ event: created, duplicate: false });
+
+    // Then: the backend stores the edge identity and derives deduplication from it.
+    const createCalls = tx.event.create.mock.calls as unknown as Array<
+      [
+        {
+          data: { edgeEventId: string; dedupKey: string };
+        },
+      ]
+    >;
+    expect(createCalls[0]?.[0].data).toMatchObject({
+      edgeEventId,
+      dedupKey:
+        '7b7c6d41ca592336c550e5ff38554707a1791797734195fe8a595dac42b82dfd',
+    });
+  });
+
+  it('rejects non-canonical or non-v4 edge event identities before camera lookup', async () => {
+    // Given: identifiers that are UUID-like but violate the event-clip contract.
+    const { subject, cameras, tx } = makeSubject();
+
+    // When: the invalid identities cross the event boundary.
+    const attempts = [
+      '123E4567-E89B-42D3-A456-426614174000',
+      '123e4567-e89b-12d3-a456-426614174000',
+      'not-a-uuid',
+    ].map((invalidEdgeEventId) =>
+      subject.record({
+        cameraId: camera.id,
+        type: 'fall',
+        detectedAt,
+        edgeEventId: invalidEdgeEventId,
+      }),
+    );
+
+    // Then: none reaches camera or persistence ownership resolution.
+    await Promise.all(
+      attempts.map((attempt) =>
+        expect(attempt).rejects.toThrow(
+          'edge_event_id must be a canonical lowercase UUIDv4',
+        ),
+      ),
+    );
+    expect(cameras.resolveForEventIngest).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an immutable payload mismatch for a replayed edge event id', async () => {
+    // Given: the UUID already owns an event with different immutable facts.
+    const { subject, tx } = makeSubject();
+    const duplicate = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['facility_id', 'edge_event_id'] },
+      },
+    );
+    tx.event.create.mockRejectedValue(duplicate);
+    tx.event.findUniqueOrThrow.mockResolvedValue({
+      cameraId: camera.id,
+      type: 'fall',
+      detectedAt: new Date(detectedAt.getTime() + 1_000),
+      confidence: null,
+      edgeEventId,
+    });
+
+    // When/Then: an at-least-once retry cannot mutate the original event.
+    await expect(
+      subject.record({
+        cameraId: camera.id,
+        type: 'fall',
+        detectedAt,
+        edgeEventId,
+      }),
+    ).rejects.toThrow('edge_event_id payload conflict');
   });
 
   it('rejects unknown event types before writing', async () => {

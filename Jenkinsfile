@@ -99,6 +99,7 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
+          sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env"
           sh scripts/deploy/iwinv-deploy.sh --preflight-only
         '''
       }
@@ -149,9 +150,12 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
+          VITE_EVENT_CLIPS_ENABLED=$(sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env" --print-front-flag)
+          export VITE_EVENT_CLIPS_ENABLED
           docker buildx build --builder "$BUILDX_BUILDER" --load \
             --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
+            --build-arg VITE_EVENT_CLIPS_ENABLED="$VITE_EVENT_CLIPS_ENABLED" \
             --tag "eldercare-front:$RELEASE_SHA" --file front/Dockerfile .
         '''
       }

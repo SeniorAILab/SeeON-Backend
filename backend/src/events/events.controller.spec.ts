@@ -173,12 +173,18 @@ describe('EventsController list', () => {
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
-    await expect(
-      controller.list(
-        { effectiveFacilityId: 'facility-1' } as never,
-        { limit: 25, cursor: 'previous-cursor' },
-      ),
-    ).resolves.toEqual({ items: [event], nextCursor: 'opaque-cursor' });
+    const listed = await controller.list(
+      { effectiveFacilityId: 'facility-1' } as never,
+      { limit: 25, cursor: 'previous-cursor' },
+    );
+
+    expect(listed.nextCursor).toBe('opaque-cursor');
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0]).toMatchObject({
+      id: event.id,
+      facilityId: event.facilityId,
+    });
+    expect(listed.items[0]).not.toHaveProperty('clipId');
     expect(recorder.list).toHaveBeenCalledWith('facility-1', {
       limit: 25,
       cursor: 'previous-cursor',

@@ -65,6 +65,10 @@ export class RecordEventRequestDto {
   @IsString()
   clock_source?: string;
 
+  @ValidateIf((o: RecordEventRequestDto) => o.edge_event_id !== undefined)
+  @IsString()
+  edge_event_id?: string;
+
   // Never read by the controller or service today (dead field on the wire
   // contract) — stays fully permissive per the "no manual check today" rule.
   facility_id?: string;
@@ -87,15 +91,21 @@ export class ListEventsQueryDto {
   cursor?: string;
 }
 
-
 export interface RecordHeartbeatResponseDto {
   ok: true;
 }
 
-export interface RecordEventResponseDto {
-  id: string;
-  status: 'created' | 'duplicate';
-}
+export type RecordEventResponseDto =
+  | {
+      readonly id: string;
+      readonly status: 'created' | 'duplicate';
+    }
+  | {
+      readonly id: string;
+      readonly event_id: string;
+      readonly edge_event_id: string;
+      readonly status: 'accepted';
+    };
 
 export interface EventResponseDto {
   id: string;
@@ -105,7 +115,6 @@ export interface EventResponseDto {
   type: string;
   confidence: number | null;
   detectedAt: Date;
-  clipId: string | null;
   createdAt: Date;
   modifiedAt: Date;
   configVersion: number | null;

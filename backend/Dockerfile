@@ -4,7 +4,7 @@ FROM node:24-alpine AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN apk add --no-cache libc6-compat openssl \
+RUN apk add --no-cache ffmpeg libc6-compat openssl \
   && corepack enable \
   && corepack prepare pnpm@10.32.1 --activate
 

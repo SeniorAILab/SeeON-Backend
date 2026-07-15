@@ -24,6 +24,7 @@ const event: RecordedEventResult['event'] = {
   snapshotKey: null,
   clockSource: null,
   clipId: null,
+  edgeEventId: null,
 };
 
 function setup(recordedEvent = event) {

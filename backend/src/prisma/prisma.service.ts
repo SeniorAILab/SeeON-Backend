@@ -16,6 +16,10 @@ const TENANT_MODELS = new Set([
   'Alert',
   'AlertNote',
   'Event',
+  'MediaClip',
+  'EventMediaBinding',
+  'MediaRetentionHold',
+  'MediaAccessLog',
   'Floor',
   'Space',
 ]);

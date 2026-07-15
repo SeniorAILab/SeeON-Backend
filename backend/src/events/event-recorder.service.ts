@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type Event } from '@prisma/client';
 import * as crypto from 'crypto';
 import { CamerasService } from '../cameras/cameras.service.js';
@@ -20,6 +25,7 @@ export interface RecordEventInput {
   snapshotKey?: string | null;
   clockSource?: string;
   clipId?: string;
+  edgeEventId?: string;
 }
 
 export interface RecordedEventResult {
@@ -31,7 +37,6 @@ export interface ListedEventsResult {
   nextCursor: string | null;
 }
 
-
 @Injectable()
 export class EventRecorderService {
   constructor(
@@ -40,6 +45,7 @@ export class EventRecorderService {
   ) {}
 
   async record(input: RecordEventInput): Promise<RecordedEventResult> {
+    const edgeEventId = normalizeEdgeEventId(input.edgeEventId);
     const cameraId = input.cameraId.trim();
     const type = normalizeEventType(input.type);
     if (!cameraId) throw new BadRequestException('camera_id is required');
@@ -52,7 +58,9 @@ export class EventRecorderService {
 
     const camera = await this.cameras.resolveForEventIngest(cameraId);
     const detectedAt = input.detectedAt;
-    const dedupKey = buildEventDedupKey(cameraId, detectedAt, type);
+    const dedupKey = edgeEventId
+      ? buildEdgeEventDedupKey(edgeEventId)
+      : buildEventDedupKey(cameraId, detectedAt, type);
 
     try {
       const event = await this.prisma.withFacilityContext(
@@ -77,11 +85,30 @@ export class EventRecorderService {
               // is ignored at create; that upload route is the sole non-null setter.
               snapshotKey: null,
               clockSource: input.clockSource ?? null,
+              edgeEventId,
             },
           }),
       );
       return { event, duplicate: false };
     } catch (err: unknown) {
+      if (edgeEventId && isUniqueConflict(err)) {
+        const existing = await this.prisma.withFacilityContext(
+          camera.facilityId,
+          (tx) =>
+            tx.event.findUniqueOrThrow({
+              where: {
+                facilityId_edgeEventId: {
+                  facilityId: camera.facilityId,
+                  edgeEventId,
+                },
+              },
+            }),
+        );
+        if (!sameEdgeEvent(existing, input, camera.id, type, detectedAt)) {
+          throw new ConflictException('edge_event_id payload conflict');
+        }
+        return { event: existing, duplicate: true };
+      }
       if (!isDedupConflict(err)) throw err;
       const existing = await this.prisma.withFacilityContext(
         camera.facilityId,
@@ -103,7 +130,7 @@ export class EventRecorderService {
       { id: string; facilityId: string }[]
     >`SELECT id, facility_id AS "facilityId" FROM get_event_for_snapshot(${eventId})`;
 
-    const event = rows[0];
+    const event = rows.at(0);
     if (!event) throw new NotFoundException('unknown_event');
 
     return event;
@@ -162,6 +189,47 @@ export class EventRecorderService {
       nextCursor: hasMore && last ? encodeListCursor(last) : null,
     };
   }
+}
+
+const CANONICAL_UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function normalizeEdgeEventId(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!CANONICAL_UUID_V4.test(value)) {
+    throw new BadRequestException(
+      'edge_event_id must be a canonical lowercase UUIDv4',
+    );
+  }
+  return value;
+}
+
+function buildEdgeEventDedupKey(edgeEventId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`edge:${edgeEventId}`)
+    .digest('hex');
+}
+
+function sameEdgeEvent(
+  event: Event,
+  input: RecordEventInput,
+  cameraId: string,
+  type: string,
+  detectedAt: Date,
+): boolean {
+  return (
+    event.cameraId === cameraId &&
+    event.type === type &&
+    event.detectedAt.getTime() === detectedAt.getTime() &&
+    event.confidence === (input.confidence ?? null) &&
+    event.configVersion === (input.configVersion ?? null) &&
+    event.modelVersion === (input.modelVersion ?? null) &&
+    event.detectorVersion === (input.detectorVersion ?? null) &&
+    event.operatingThreshold === (input.operatingThreshold ?? null) &&
+    event.clockSource === (input.clockSource ?? null) &&
+    event.clipId === (input.clipId ?? null)
+  );
 }
 
 export function buildEventDedupKey(
@@ -228,13 +296,20 @@ function decodeListCursor(
 }
 
 function isDedupConflict(err: unknown): boolean {
-  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (err.code !== 'P2002') return false;
+  if (!isUniqueConflict(err)) return false;
   const target = err.meta?.target;
   return (
     target === null ||
     (Array.isArray(target) &&
       target.includes('facility_id') &&
       target.includes('dedup_key'))
+  );
+}
+
+function isUniqueConflict(
+  err: unknown,
+): err is Prisma.PrismaClientKnownRequestError {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
   );
 }

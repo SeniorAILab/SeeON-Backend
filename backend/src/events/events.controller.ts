@@ -1,22 +1,24 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
-import * as fs from 'fs';
+import type { Response } from 'express';
 import * as path from 'path';
-import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
@@ -32,13 +34,18 @@ import {
 } from './dto/event.dto.js';
 import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
-import { EventRecorderService } from './event-recorder.service.js';
 import {
+  EventRecorderService,
+  type ListedEventsResult,
+} from './event-recorder.service.js';
+import {
+  IMMUTABLE_FILE_RESULT,
   MAX_SNAPSHOT_BYTES,
   SNAPSHOT_EXTENSIONS,
   readRequestBody,
   resolveSnapshotPath,
   snapshotRoot,
+  writeImmutableFile,
 } from '../common/snapshot-storage.js';
 
 @Controller({ path: 'events', version: '1' })
@@ -75,7 +82,16 @@ export class EventsController {
       snapshotKey: body.snapshot_key,
       clockSource: body.clock_source,
       clipId: optionalTrimmedString(body.clip_id),
+      edgeEventId: body.edge_event_id,
     });
+    if (result.event.edgeEventId) {
+      return {
+        id: result.event.id,
+        event_id: result.event.id,
+        edge_event_id: result.event.edgeEventId,
+        status: 'accepted',
+      };
+    }
     return {
       id: result.event.id,
       status: result.duplicate ? 'duplicate' : 'created',
@@ -93,7 +109,7 @@ export class EventsController {
   async heartbeat(
     @Body() body: RecordHeartbeatRequestDto,
   ): Promise<RecordHeartbeatResponseDto> {
-    const cameraId = requireString(body?.camera_id, 'camera_id');
+    const cameraId = requireString(body.camera_id, 'camera_id');
     const camera = await this.cameras.resolveForEventIngest(cameraId);
     await this.cameras.recordHeartbeat(camera.facilityId, camera.id);
     return { ok: true };
@@ -110,6 +126,7 @@ export class EventsController {
   async uploadSnapshot(
     @Req() req: RequestWithAuth,
     @Param('eventId') eventId: string,
+    @Res({ passthrough: true }) response?: Response,
   ) {
     rejectClientSuppliedSnapshotKey(req);
 
@@ -131,12 +148,22 @@ export class EventsController {
       `${event.id}.${extension}`,
     );
     const filePath = resolveSnapshotPath(snapshotRoot(), snapshotKey);
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, body);
+    const writeResult = await writeImmutableFile(filePath, body);
+    if (writeResult === IMMUTABLE_FILE_RESULT.CONFLICT) {
+      throw new ConflictException(
+        'Snapshot already exists with different bytes',
+      );
+    }
+
     await this.recorder.persistSnapshotKey(
       event.facilityId,
       event.id,
       snapshotKey,
+    );
+    response?.status(
+      writeResult === IMMUTABLE_FILE_RESULT.CREATED
+        ? HttpStatus.CREATED
+        : HttpStatus.OK,
     );
 
     return { snapshotKey };
@@ -170,7 +197,6 @@ function requireString(value: unknown, field: string): string {
   }
   return value;
 }
-
 
 function optionalTrimmedString(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
@@ -217,7 +243,9 @@ function requireFacilityId(req: RequestWithAuth): string {
   return facilityId;
 }
 
-function toEventResponseDto(event: Event): EventResponseDto {
+function toEventResponseDto(
+  event: ListedEventsResult['items'][number],
+): EventResponseDto {
   return {
     id: event.id,
     facilityId: event.facilityId,
@@ -226,7 +254,6 @@ function toEventResponseDto(event: Event): EventResponseDto {
     type: event.type,
     confidence: event.confidence,
     detectedAt: event.detectedAt,
-    clipId: event.clipId,
     createdAt: event.createdAt,
     modifiedAt: event.modifiedAt,
     configVersion: event.configVersion,
