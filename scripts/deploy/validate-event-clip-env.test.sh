@@ -45,6 +45,19 @@ write_valid_env "$valid_env"
 sh "$SCRIPT" "$valid_env"
 [ "$(sh "$SCRIPT" "$valid_env" --print-front-flag)" = false ]
 
+# Given mismatched backend and frontend gates, release preparation fails closed.
+mismatch_env=$TMP/mismatch.env
+write_valid_env "$mismatch_env"
+sed 's/VITE_EVENT_CLIPS_ENABLED=false/VITE_EVENT_CLIPS_ENABLED=true/' "$mismatch_env" > "$mismatch_env.next"
+mv "$mismatch_env.next" "$mismatch_env"
+chmod 600 "$mismatch_env"
+set +e
+output=$(sh "$SCRIPT" "$mismatch_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'EVENT_CLIPS_ENABLED and VITE_EVENT_CLIPS_ENABLED must match'
+assert_not_contains "$output" 'must-not-leak'
+
 # Given 59-day retention, when validated, then release preparation fails closed.
 retention_env=$TMP/retention.env
 write_valid_env "$retention_env"
