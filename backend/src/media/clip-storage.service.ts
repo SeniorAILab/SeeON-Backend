@@ -1,4 +1,8 @@
 import {
+  cleanupContainedFile,
+  type ContainedFile,
+} from './clip-storage-containment.js';
+import {
   CLIP_STORAGE_ERROR_CODES,
   ClipStorageError,
   type ClipPersistRequest,
@@ -23,14 +27,13 @@ import {
   hasPublishedClip,
   mapStorageFailure,
   publishStagedClip,
-  removeFileIfPresent,
 } from './clip-storage-publish.js';
 import { reconcileClipStorage } from './clip-storage-reconcile.js';
 
 type CleanupContext = {
   readonly clipLock: ClipLock | undefined;
   readonly storageLock: ClipLock | undefined;
-  readonly temporaryPath: string | undefined;
+  readonly temporaryFile: ContainedFile | undefined;
   readonly primaryFailure: unknown;
 };
 
@@ -51,7 +54,7 @@ export class ClipStorageService {
     validatePersistRequest(request, this.dependencies.config.maximumBytes);
     let storageLock: ClipLock | undefined;
     let clipLock: ClipLock | undefined;
-    let temporaryPath: string | undefined;
+    let temporaryFile: ContainedFile | undefined;
     let primaryFailure: unknown;
     try {
       await ensureStorageLayout(this.dependencies.config.rootDir);
@@ -61,7 +64,7 @@ export class ClipStorageService {
         await this.assertCapacity(request.expectedSizeBytes);
       }
       const staged = await stageClip(this.dependencies, request);
-      temporaryPath = staged.temporaryPath;
+      temporaryFile = staged.temporaryFile;
       const published = await publishStagedClip(
         this.dependencies,
         request,
@@ -82,7 +85,7 @@ export class ClipStorageService {
       await cleanupPersist({
         clipLock,
         storageLock,
-        temporaryPath,
+        temporaryFile,
         primaryFailure,
       });
     }
@@ -112,8 +115,8 @@ export class ClipStorageService {
 async function cleanupPersist(context: CleanupContext): Promise<void> {
   const cleanupFailures: unknown[] = [];
   try {
-    if (context.temporaryPath !== undefined) {
-      await removeFileIfPresent(context.temporaryPath);
+    if (context.temporaryFile !== undefined) {
+      await cleanupContainedFile(context.temporaryFile);
     }
   } catch (error) {
     cleanupFailures.push(error);

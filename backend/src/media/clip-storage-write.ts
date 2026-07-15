@@ -1,7 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
-import * as path from 'node:path';
+import {
+  assertContainedFile,
+  cleanupContainedFile,
+  closeVerifiedDirectory,
+  createContainedFile,
+  openVerifiedDirectory,
+  type ContainedFile,
+  type VerifiedDirectory,
+} from './clip-storage-containment.js';
 import {
   CLIP_STORAGE_ERROR_CODES,
   ClipStorageError,
@@ -15,7 +23,7 @@ const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export type StagedClip = ClipInspection & {
-  readonly temporaryPath: string;
+  readonly temporaryFile: ContainedFile;
   readonly sha256: string;
   readonly sizeBytes: number;
 };
@@ -59,14 +67,10 @@ export function isSafeStorageSegment(
 }
 
 export async function ensureStorageLayout(rootDir: string): Promise<void> {
-  await fs.mkdir(path.join(rootDir, '.staging'), {
-    recursive: true,
-    mode: 0o700,
-  });
-  await fs.mkdir(path.join(rootDir, '.locks'), {
-    recursive: true,
-    mode: 0o700,
-  });
+  const staging = await openVerifiedDirectory(rootDir, ['.staging']);
+  await closeVerifiedDirectory(staging);
+  const locks = await openVerifiedDirectory(rootDir, ['.locks']);
+  await closeVerifiedDirectory(locks);
 }
 
 export async function readAvailableBytes(rootDir: string): Promise<bigint> {
@@ -78,27 +82,21 @@ export async function stageClip(
   dependencies: ClipStorageDependencies,
   request: ClipPersistRequest,
 ): Promise<StagedClip> {
-  const temporaryDir = path.join(
-    dependencies.config.rootDir,
-    '.staging',
-    request.facilityId,
-    request.clipId,
-  );
-  await fs.mkdir(temporaryDir, { recursive: true, mode: 0o700 });
-  const temporaryPath = path.join(temporaryDir, `${randomUUID()}.part`);
-  const handle = await fs.open(
-    temporaryPath,
-    constants.O_CREAT |
-      constants.O_EXCL |
-      constants.O_WRONLY |
-      constants.O_NOFOLLOW,
-    0o600,
-  );
-  const hash = createHash('sha256');
-  let sizeBytes = 0;
-  let overflow = false;
-
+  let temporaryDirectory: VerifiedDirectory | undefined;
+  let temporaryFile: ContainedFile | undefined;
   try {
+    temporaryDirectory = await openVerifiedDirectory(
+      dependencies.config.rootDir,
+      ['.staging', request.facilityId, request.clipId],
+    );
+    temporaryFile = await createContainedFile(
+      temporaryDirectory,
+      `${randomUUID()}.part`,
+    );
+    const hash = createHash('sha256');
+    let sizeBytes = 0;
+    let overflow = false;
+
     try {
       for await (const chunk of request.source) {
         const value: unknown = chunk;
@@ -109,16 +107,14 @@ export async function stageClip(
             overflow = true;
           } else {
             sizeBytes = nextSize;
-            await writeAll(handle, bytes);
+            await writeAll(temporaryFile.handle, bytes);
             hash.update(bytes);
           }
         }
       }
-      await handle.sync();
+      await temporaryFile.handle.sync();
     } catch (error) {
       throw mapStorageFailure(error);
-    } finally {
-      await handle.close();
     }
 
     if (overflow) {
@@ -140,25 +136,29 @@ export async function stageClip(
         'clip checksum does not match declared checksum',
       );
     }
-    const inspection = await dependencies.inspector.inspect(temporaryPath);
+    await assertContainedFile(temporaryFile);
+    const inspection = await dependencies.inspector.inspect(temporaryFile.path);
+    await assertContainedFile(temporaryFile);
     if (inspection.durationMs !== request.expectedDurationMs) {
       throw new ClipStorageError(
         CLIP_STORAGE_ERROR_CODES.DURATION_MISMATCH,
         'clip duration does not match declared duration',
       );
     }
-    return { temporaryPath, sha256, sizeBytes, ...inspection };
+    return { temporaryFile, sha256, sizeBytes, ...inspection };
   } catch (error) {
+    if (temporaryFile === undefined) {
+      await temporaryDirectory?.handle.close().catch(() => undefined);
+      throw error;
+    }
     try {
-      await fs.unlink(temporaryPath);
+      await cleanupContainedFile(temporaryFile);
     } catch (cleanupError) {
-      if (!hasErrorCode(cleanupError, 'ENOENT')) {
-        throw new ClipStorageError(
-          CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
-          'failed to remove a rejected staged clip',
-          { cause: new AggregateError([error, cleanupError]) },
-        );
-      }
+      throw new ClipStorageError(
+        CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
+        'failed to remove a rejected staged clip',
+        { cause: new AggregateError([error, cleanupError]) },
+      );
     }
     throw error;
   }
@@ -185,14 +185,5 @@ function toBuffer(value: unknown): Buffer {
   throw new ClipStorageError(
     CLIP_STORAGE_ERROR_CODES.INVALID_INPUT,
     'clip stream emitted an unsupported chunk',
-  );
-}
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === code
   );
 }
