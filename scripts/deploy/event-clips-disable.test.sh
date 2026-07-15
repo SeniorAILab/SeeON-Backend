@@ -37,7 +37,7 @@ if [ "${1:-}" = compose ]; then
         [ -f "$2" ] || { printf 'missing env file: %s\n' "$2" >&2; exit 1; }
         shift 2
         ;;
-      -f) shift 2 ;;
+      -f|--profile) shift 2 ;;
       *) break ;;
     esac
   done
@@ -126,6 +126,7 @@ assert_not_contains "$output" "$SHA"
 log=$(cat "$TMP/docker.log")
 assert_order "$log" 'stop backend' 'ps -q --status running backend'
 assert_order "$log" 'ps -q --status running backend' 'up -d --no-deps --wait --wait-timeout 120 backend'
+assert_contains "$log" '--profile full config'
 assert_not_contains "$log" 'stop db'
 assert_not_contains "$log" 'stop front'
 assert_not_contains "$log" 'up -d db'

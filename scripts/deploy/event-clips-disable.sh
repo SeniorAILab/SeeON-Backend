@@ -159,7 +159,7 @@ TEMP_FILE=''
 chmod 600 "$FEATURE_ENV"
 FEATURE_OVERRIDE_REQUIRED=1
 
-feature_config=$(compose config) || fail 'unable to render disabled feature configuration'
+feature_config=$(compose --profile full config) || fail 'unable to render disabled feature configuration'
 printf '%s\n' "$feature_config" | grep -E 'EVENT_CLIPS_ENABLED:[[:space:]]*"?false"?' >/dev/null || {
   fail 'disabled feature configuration was not applied'
 }
