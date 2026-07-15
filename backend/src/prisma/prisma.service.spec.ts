@@ -179,6 +179,18 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await expect(prisma.db.alertNote.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );
+    await expect(prisma.db.mediaClip.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
+    await expect(prisma.db.eventMediaBinding.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
+    await expect(
+      prisma.db.mediaRetentionHold.findMany(),
+    ).rejects.toBeInstanceOf(MissingTenantContextError);
+    await expect(prisma.db.mediaAccessLog.findMany()).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
     await expect(prisma.db.floor.findMany()).rejects.toBeInstanceOf(
       MissingTenantContextError,
     );

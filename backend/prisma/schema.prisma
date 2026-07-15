@@ -43,6 +43,57 @@ enum SpaceType {
   ETC
 }
 
+enum MediaClipStatus {
+  PENDING
+  READY
+  UNAVAILABLE
+  EXPIRED
+  DELETED
+}
+
+enum MediaStorageState {
+  NONE
+  STAGED
+  READY
+  DELETING
+  DELETED
+}
+
+enum MediaClipReason {
+  CAPTURE_FAILED
+  QUEUE_FULL
+  CORRUPT
+  LEGACY_MISSING
+  UPLOAD_TIMEOUT
+  STORAGE_MISSING
+  RETENTION_EXPIRED
+  ADMIN_DELETED
+  LEGAL_ERASURE
+}
+
+enum MediaHoldKind {
+  LEGAL
+  ACCESS_REQUEST
+  INCIDENT
+}
+
+enum MediaAccessAction {
+  METADATA_READ
+  CONTENT_GRANTED
+  CONTENT_COMPLETED
+  CONTENT_ABORTED
+  PLAY_STARTED
+  FULLSCREEN_ENTERED
+}
+
+enum MediaAccessOutcome {
+  ALLOWED
+  DENIED
+  NOT_FOUND
+  NOT_READY
+  FAILED
+}
+
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
@@ -65,7 +116,8 @@ model Facility {
 
   events Event[]
 
-  mlConfig MlFacilityConfig?
+  mediaClips MediaClip[]
+  mlConfig   MlFacilityConfig?
 
   @@map("facilities")
 }
@@ -133,7 +185,8 @@ model Camera {
   space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   alerts   Alert[]
 
-  events Event[]
+  events     Event[]
+  mediaClips MediaClip[]
 
   @@unique([facilityId, id])
   @@unique([facilityId, label])
@@ -227,17 +280,121 @@ model Event {
   snapshotKey        String?  @map("snapshot_key")
   clockSource        String?  @map("clock_source")
   clipId             String?  @map("clip_id")
+  edgeEventId        String?  @map("edge_event_id") @db.Uuid
 
   facility     Facility @relation(fields: [facilityId], references: [id])
   camera       Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
   space        Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   originAlerts Alert[]  @relation("AlertOriginEvent")
 
+  mediaBinding EventMediaBinding?
+
   @@unique([facilityId, id])
   @@unique([facilityId, dedupKey])
+  @@unique([facilityId, edgeEventId])
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
   @@map("events")
+}
+
+/// Backend-owned clip aggregate. Lifecycle tombstones remain in this row.
+model MediaClip {
+  id             String            @id @default(cuid())
+  facilityId     String            @map("facility_id")
+  cameraId       String            @map("camera_id")
+  externalClipId String            @map("external_clip_id") @db.VarChar(200)
+  status         MediaClipStatus   @default(PENDING)
+  stateVersion   Int               @default(1) @map("state_version")
+  reason         MediaClipReason?
+  storageState   MediaStorageState @default(NONE) @map("storage_state")
+  storageKey     String?           @unique @map("storage_key")
+  contentType    String?           @map("content_type")
+  byteSize       BigInt?           @map("byte_size")
+  sha256         String?           @db.Char(64)
+  codec          String?           @db.VarChar(32)
+  durationMs     Int?              @map("duration_ms")
+  finalizedAt    DateTime?         @map("finalized_at")
+  clipStartAt    DateTime?         @map("clip_start_at")
+  clipEndAt      DateTime?         @map("clip_end_at")
+  stagedAt       DateTime?         @map("staged_at")
+  readyAt        DateTime?         @map("ready_at")
+  expiresAt      DateTime?         @map("expires_at")
+  expiredAt      DateTime?         @map("expired_at")
+  deletedAt      DateTime?         @map("deleted_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  facility Facility             @relation(fields: [facilityId], references: [id])
+  camera   Camera               @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  events   EventMediaBinding[]
+  holds    MediaRetentionHold[]
+
+  @@unique([facilityId, id])
+  @@unique([facilityId, externalClipId])
+  @@index([facilityId, status, expiresAt])
+  @@index([facilityId, storageState, stagedAt])
+  @@map("media_clips")
+}
+
+/// One immutable event binds to at most one clip; a clip may bind many events.
+model EventMediaBinding {
+  eventId    String   @id @map("event_id")
+  facilityId String   @map("facility_id")
+  clipId     String   @map("clip_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  event Event     @relation(fields: [facilityId, eventId], references: [facilityId, id])
+  clip  MediaClip @relation(fields: [facilityId, clipId], references: [facilityId, id])
+
+  @@unique([facilityId, eventId])
+  @@index([facilityId, clipId])
+  @@map("event_media_bindings")
+}
+
+model MediaRetentionHold {
+  id               String        @id @default(cuid())
+  facilityId       String        @map("facility_id")
+  clipId           String        @map("clip_id")
+  kind             MediaHoldKind
+  reason           String        @db.VarChar(500)
+  createdByUserId  String?       @map("created_by_user_id")
+  releasedByUserId String?       @map("released_by_user_id")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  releasedAt       DateTime?     @map("released_at")
+
+  clip MediaClip @relation(fields: [facilityId, clipId], references: [facilityId, id])
+
+  @@index([facilityId, clipId, releasedAt])
+  @@map("media_retention_holds")
+}
+
+/// Append-only audit snapshots intentionally avoid cascading relations.
+model MediaAccessLog {
+  id              BigInt             @id @default(autoincrement())
+  facilityId      String             @map("facility_id")
+  actorUserId     String             @map("actor_user_id")
+  actorRole       Role               @map("actor_role")
+  clipId          String?            @map("clip_id")
+  alertId         String?            @map("alert_id")
+  targetAlertHash String             @map("target_alert_hash") @db.Char(64)
+  action          MediaAccessAction
+  outcome         MediaAccessOutcome
+  httpStatus      Int                @map("http_status")
+  requestId       String             @map("request_id") @db.VarChar(64)
+  interactionId   String?            @map("interaction_id") @db.VarChar(64)
+  rangeStart      BigInt?            @map("range_start")
+  rangeEnd        BigInt?            @map("range_end")
+  bytesPlanned    BigInt?            @map("bytes_planned")
+  bytesActual     BigInt?            @map("bytes_actual")
+  ipHash          String?            @map("ip_hash") @db.Char(64)
+  userAgent       String?            @map("user_agent") @db.VarChar(512)
+  occurredAt      DateTime           @default(now()) @map("occurred_at")
+
+  @@unique([actorUserId, interactionId])
+  @@index([facilityId, occurredAt])
+  @@index([facilityId, clipId, occurredAt])
+  @@index([requestId])
+  @@map("media_access_logs")
 }
 
 /// Facility floor. RLS-protected. Composite unique (facilityId, id) supports
