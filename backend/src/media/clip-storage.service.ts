@@ -1,0 +1,118 @@
+import {
+  CLIP_STORAGE_ERROR_CODES,
+  ClipStorageError,
+  type ClipPersistRequest,
+  type ClipReconciliationReport,
+  type ClipStorageDependencies,
+  type ClipStorageReference,
+  type PersistedClip,
+} from './clip-storage.types.js';
+import type { ClipLock } from './clip-storage-write.js';
+import {
+  acquireClipLock,
+  ensureStorageLayout,
+  readAvailableBytes,
+  releaseClipLock,
+  stageClip,
+  validatePersistRequest,
+} from './clip-storage-write.js';
+import {
+  mapStorageFailure,
+  publishStagedClip,
+  removeFileIfPresent,
+} from './clip-storage-publish.js';
+import { reconcileClipStorage } from './clip-storage-reconcile.js';
+
+type CleanupContext = {
+  readonly lock: ClipLock | undefined;
+  readonly temporaryPath: string | undefined;
+  readonly primaryFailure: unknown;
+};
+
+export class ClipStorageService {
+  constructor(private readonly dependencies: ClipStorageDependencies) {}
+
+  async persist(request: ClipPersistRequest): Promise<PersistedClip> {
+    validatePersistRequest(request, this.dependencies.config.maximumBytes);
+    let lock: ClipLock | undefined;
+    let temporaryPath: string | undefined;
+    let primaryFailure: unknown;
+    try {
+      await ensureStorageLayout(this.dependencies.config.rootDir);
+      lock = await acquireClipLock(this.dependencies, request);
+      await this.assertCapacity(request.expectedSizeBytes);
+      const staged = await stageClip(this.dependencies, request);
+      temporaryPath = staged.temporaryPath;
+      const published = await publishStagedClip(
+        this.dependencies,
+        request,
+        staged,
+      );
+      return {
+        storageKey: published.storageKey,
+        sha256: staged.sha256,
+        sizeBytes: staged.sizeBytes,
+        codec: staged.codec,
+        durationMs: staged.durationMs,
+        duplicate: published.duplicate,
+      };
+    } catch (error) {
+      primaryFailure = error;
+      throw mapStorageFailure(error);
+    } finally {
+      await cleanupPersist({ lock, temporaryPath, primaryFailure });
+    }
+  }
+
+  async reconcile(
+    references: readonly ClipStorageReference[],
+  ): Promise<ClipReconciliationReport> {
+    return reconcileClipStorage(this.dependencies.config, references);
+  }
+
+  private async assertCapacity(expectedSizeBytes: number): Promise<void> {
+    const availableBytes = this.dependencies.availableBytes
+      ? await this.dependencies.availableBytes()
+      : await readAvailableBytes(this.dependencies.config.rootDir);
+    const requiredBytes =
+      this.dependencies.config.minimumFreeBytes + BigInt(expectedSizeBytes);
+    if (availableBytes < requiredBytes) {
+      throw new ClipStorageError(
+        CLIP_STORAGE_ERROR_CODES.INSUFFICIENT_STORAGE,
+        'clip storage reserve would be breached',
+      );
+    }
+  }
+}
+
+async function cleanupPersist(context: CleanupContext): Promise<void> {
+  const cleanupFailures: unknown[] = [];
+  try {
+    if (context.temporaryPath !== undefined) {
+      await removeFileIfPresent(context.temporaryPath);
+    }
+  } catch (error) {
+    cleanupFailures.push(error);
+  }
+  try {
+    if (context.lock !== undefined) await releaseClipLock(context.lock);
+  } catch (error) {
+    cleanupFailures.push(error);
+  }
+  if (cleanupFailures.length === 0) return;
+
+  const failures =
+    context.primaryFailure === undefined
+      ? cleanupFailures
+      : [context.primaryFailure, ...cleanupFailures];
+  throw new ClipStorageError(
+    CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
+    'clip persistence cleanup failed',
+    {
+      cause: new AggregateError(
+        failures,
+        'clip persistence and cleanup failures',
+      ),
+    },
+  );
+}
