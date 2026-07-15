@@ -49,6 +49,7 @@ if [ "${1:-}" = compose ]; then
     *' config '*) ;;
     *' pull db '*) ;;
     *' up -d --wait --wait-timeout 120 db '*) ;;
+    *' ps -q --status running backend '*) ;;
     *' up -d --wait --wait-timeout 120 backend front '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
     *' stop front backend '*) ;;
     *'prisma migrate deploy'*) [ "${MOCK_MIGRATE_FAIL:-0}" != 1 ] || exit 1 ;;

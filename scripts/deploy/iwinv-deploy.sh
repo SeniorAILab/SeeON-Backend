@@ -9,6 +9,7 @@ BACKUP_DIR=${BACKUP_DIR:-$APP_ROOT/backups/db}
 RELEASE_DIR=${RELEASE_DIR:-$APP_ROOT/releases}
 LOCK_DIR=$APP_ROOT/shared/deploy.lock
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
+FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
 COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
 MEMORY_MIN_MB=${MEMORY_MIN_MB:-1024}
 DISK_MIN_MB=${DISK_MIN_MB:-2048}
@@ -78,20 +79,39 @@ if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
   exit 0
 fi
 need docker; need curl; need grep; need sed; need cmp; need sha256sum
-need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need head; need mktemp
+need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need head; need mktemp; need stat
 [ -d "$APP_DIR" ] || fail "Missing deployment directory: $APP_DIR"
 [ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
 [ -f "$APP_DIR/compose.prod.yaml" ] || fail "Missing compose.prod.yaml in $APP_DIR"
 [ -f "$ENV_FILE" ] || fail "Missing production environment file: $ENV_FILE"
+if [ -e "$FEATURE_ENV" ] || [ -L "$FEATURE_ENV" ]; then
+  [ ! -L "$FEATURE_ENV" ] && [ -f "$FEATURE_ENV" ] || fail "Invalid event clip feature override: $FEATURE_ENV"
+  printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
+  feature_mode=$(stat -c '%a' "$FEATURE_ENV") || fail "Unable to inspect event clip feature override: $FEATURE_ENV"
+  case "$feature_mode" in 400|600) ;; *) fail "Invalid event clip feature override permissions: $FEATURE_ENV" ;; esac
+fi
 cd "$APP_DIR"
 
 compose() {
   # shellcheck disable=SC2086 # Fixed pair of Compose file arguments.
   if [ -f "$RELEASE_ENV" ]; then
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
+    if [ -f "$FEATURE_ENV" ]; then
+      docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+    else
+      docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
+    fi
   else
-    BACKEND_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
+    if [ -f "$FEATURE_ENV" ]; then
+      BACKEND_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+    else
+      BACKEND_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
+    fi
   fi
+}
+assert_backend_stopped() {
+  if [ "$DRY_RUN" -eq 1 ]; then log 'would assert old backend is stopped before replacement'; return; fi
+  running_backend=$(compose ps -q --status running backend)
+  [ -z "$running_backend" ] || fail 'Old backend is still running; zero-overlap replacement refused.'
 }
 cleanup() {
   status=$?
@@ -476,6 +496,7 @@ fi
 
 if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
   run compose stop front backend
+  assert_backend_stopped
   run compose up -d --wait --wait-timeout 120 db
   if [ "$RESTORE_COUNT" -eq 1 ]; then
     validate_restore_dump
@@ -494,6 +515,7 @@ fi
 
 if [ "$HAS_CURRENT" -eq 1 ]; then
   run compose stop front backend
+  assert_backend_stopped
   if [ "$DRY_RUN" -eq 1 ]; then
     if [ -n "$PENDING_DUMP" ]; then
       log "would reuse pending validated pre-migration dump $PENDING_DUMP"
