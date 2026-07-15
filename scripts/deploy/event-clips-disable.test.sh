@@ -33,7 +33,11 @@ if [ "${1:-}" = compose ]; then
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --env-file|-f) shift 2 ;;
+      --env-file)
+        [ -f "$2" ] || { printf 'missing env file: %s\n' "$2" >&2; exit 1; }
+        shift 2
+        ;;
+      -f) shift 2 ;;
       *) break ;;
     esac
   done
@@ -46,7 +50,11 @@ if [ "${1:-}" = compose ]; then
     *' ps -q front '*) printf '%s\n' front-container ;;
     *' stop backend '*) printf '%s\n' stopped > "$MOCK_BACKEND_STATE" ;;
     *' up -d --no-deps --wait --wait-timeout 120 backend '*) printf '%s\n' running > "$MOCK_BACKEND_STATE" ;;
-    *' config '*) printf '%s\n' 'EVENT_CLIPS_ENABLED: "false"' ;;
+    *' config '*)
+      printf '%s\n' 'EVENT_CLIPS_ENABLED: "false"'
+      [ "${MOCK_REMOVE_FEATURE_AFTER_CONFIG:-0}" -eq 0 ] || rm -f "$MOCK_FEATURE_ENV"
+      [ "${MOCK_REWRITE_FEATURE_AFTER_CONFIG:-0}" -eq 0 ] || printf '%s\n' 'EVENT_CLIPS_ENABLED=true' > "$MOCK_FEATURE_ENV"
+      ;;
     *) printf 'unexpected compose command: %s\n' "$*" >&2; exit 1 ;;
   esac
   exit 0
@@ -86,6 +94,7 @@ run_disable() {
   MOCK_LOG="$TMP/docker.log" \
   MOCK_BACKEND_STATE="$TMP/backend.state" \
   MOCK_SHA="$SHA" \
+  MOCK_FEATURE_ENV="$TMP/app/shared/event-clips-runtime.env" \
     sh "$SCRIPT" 2>&1
 }
 
@@ -141,6 +150,33 @@ output=$(MOCK_BACKEND_IMAGE_ID=sha256:unexpected run_disable); status=$?
 set -e
 assert_failure "$status"
 assert_contains "$output" 'running services do not use current compatible images'
+log=$(cat "$TMP/docker.log")
+assert_not_contains "$log" 'stop backend'
+assert_not_contains "$log" 'up -d --no-deps'
+
+# Once the false override is activated, its disappearance fails closed before
+# the backend can be stopped or restarted with the base enabled environment.
+rm -f "$TMP/app/shared/event-clips-runtime.env"
+printf '%s\n' running > "$TMP/backend.state"
+: > "$TMP/docker.log"
+set +e
+output=$(MOCK_REMOVE_FEATURE_AFTER_CONFIG=1 run_disable); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'feature override disappeared after activation'
+log=$(cat "$TMP/docker.log")
+assert_not_contains "$log" 'stop backend'
+assert_not_contains "$log" 'up -d --no-deps'
+
+# A false override changed after activation also fails closed before restart.
+rm -f "$TMP/app/shared/event-clips-runtime.env"
+printf '%s\n' running > "$TMP/backend.state"
+: > "$TMP/docker.log"
+set +e
+output=$(MOCK_REWRITE_FEATURE_AFTER_CONFIG=1 run_disable); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'feature override changed after activation'
 log=$(cat "$TMP/docker.log")
 assert_not_contains "$log" 'stop backend'
 assert_not_contains "$log" 'up -d --no-deps'
