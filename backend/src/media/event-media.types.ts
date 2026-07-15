@@ -68,12 +68,19 @@ export type ClipReceipt =
       readonly clip_id: string;
       readonly state: 'UNAVAILABLE';
       readonly state_version: number;
+    }
+  | {
+      readonly clip_id: string;
+      readonly state: 'EXPIRED';
+      readonly state_version: number;
     };
 
 export type PreparedReadyClip = {
   readonly id: string;
   readonly facilityId: string;
-  readonly state: 'PENDING' | 'READY';
+  readonly state: 'PENDING' | 'READY' | 'EXPIRED';
+  readonly stateVersion: number;
+  readonly stagingToken: string;
   readonly storageKey: string | null;
 };
 

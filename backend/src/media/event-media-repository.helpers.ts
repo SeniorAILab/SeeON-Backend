@@ -11,9 +11,11 @@ export function matchesReadyManifest(
   manifest: ReadyClipManifest,
 ): boolean {
   return (
-    (clip.status === 'PENDING' || clip.status === 'READY') &&
+    (clip.status === 'PENDING' ||
+      clip.status === 'READY' ||
+      clip.status === 'EXPIRED') &&
     clip.cameraId === manifest.cameraId &&
-    clip.stateVersion === manifest.stateVersion &&
+    matchesReadyStateVersion(clip, manifest.stateVersion) &&
     clip.contentType === 'video/mp4' &&
     clip.byteSize === BigInt(manifest.sizeBytes) &&
     clip.sha256 === manifest.sha256 &&
@@ -39,12 +41,17 @@ export function matchesPersistedClip(
   );
 }
 
-export function sameSet(
-  left: readonly string[],
-  right: readonly string[],
+export function sameOrderedBindings(
+  left: readonly { readonly eventId: string; readonly ordinal: number }[],
+  right: readonly { readonly eventId: string; readonly ordinal: number }[],
 ): boolean {
   return (
-    left.length === right.length && left.every((value) => right.includes(value))
+    left.length === right.length &&
+    left.every(
+      (binding, index) =>
+        binding.eventId === right[index]?.eventId &&
+        binding.ordinal === right[index]?.ordinal,
+    )
   );
 }
 
@@ -57,4 +64,13 @@ export function immutableConflict(): EventMediaError {
 
 function sameDate(left: Date | null, right: Date): boolean {
   return left?.getTime() === right.getTime();
+}
+
+function matchesReadyStateVersion(
+  clip: MediaClip,
+  readyStateVersion: number,
+): boolean {
+  const expected =
+    clip.status === 'EXPIRED' ? readyStateVersion + 1 : readyStateVersion;
+  return clip.stateVersion === expected;
 }

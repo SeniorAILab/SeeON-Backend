@@ -5,6 +5,7 @@ import {
   IsIn,
   IsInt,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 
@@ -32,6 +33,7 @@ export class ReportUnavailableClipRequestDto {
 
   @IsInt()
   @Min(1)
+  @Max(2_147_483_647)
   state_version!: number;
 
   @IsIn(EDGE_UNAVAILABLE_REASONS)

@@ -101,6 +101,7 @@ function toHttpError(error: unknown): Error {
         return new HttpException(error.message, HttpStatus.PAYLOAD_TOO_LARGE);
       case CLIP_STORAGE_ERROR_CODES.CHECKSUM_MISMATCH:
       case CLIP_STORAGE_ERROR_CODES.LENGTH_MISMATCH:
+      case CLIP_STORAGE_ERROR_CODES.DURATION_MISMATCH:
       case CLIP_STORAGE_ERROR_CODES.UNSUPPORTED_MEDIA:
         return new HttpException(
           error.message,

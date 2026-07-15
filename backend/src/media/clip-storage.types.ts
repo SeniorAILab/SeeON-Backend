@@ -3,6 +3,7 @@ import type { Readable } from 'node:stream';
 export const CLIP_STORAGE_ERROR_CODES = {
   CHECKSUM_MISMATCH: 'CHECKSUM_MISMATCH',
   LENGTH_MISMATCH: 'LENGTH_MISMATCH',
+  DURATION_MISMATCH: 'DURATION_MISMATCH',
   UNSUPPORTED_MEDIA: 'UNSUPPORTED_MEDIA',
   INSUFFICIENT_STORAGE: 'INSUFFICIENT_STORAGE',
   STORAGE_UNWRITABLE: 'STORAGE_UNWRITABLE',
@@ -40,6 +41,7 @@ export type ClipPersistRequest = {
   readonly clipId: string;
   readonly expectedSha256: string;
   readonly expectedSizeBytes: number;
+  readonly expectedDurationMs: number;
   readonly source: Readable;
 };
 

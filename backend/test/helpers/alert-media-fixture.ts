@@ -226,7 +226,7 @@ async function seedFacilityGraph(
     },
   });
   await direct.eventMediaBinding.create({
-    data: { eventId, facilityId, clipId },
+    data: { eventId, facilityId, clipId, ordinal: 0 },
   });
   if (suffix === 'a') {
     await direct.alert.create({

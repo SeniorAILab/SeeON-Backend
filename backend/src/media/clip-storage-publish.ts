@@ -14,6 +14,25 @@ export type PublishedClip = {
   readonly duplicate: boolean;
 };
 
+export async function hasPublishedClip(
+  dependencies: ClipStorageDependencies,
+  request: ClipPersistRequest,
+): Promise<boolean> {
+  const finalPath = path.join(
+    dependencies.config.rootDir,
+    request.facilityId,
+    request.clipId,
+    `${request.expectedSha256}.mp4`,
+  );
+  try {
+    const stat = await fs.lstat(finalPath);
+    return stat.isFile();
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT')) return false;
+    throw mapStorageFailure(error);
+  }
+}
+
 export async function publishStagedClip(
   dependencies: ClipStorageDependencies,
   request: ClipPersistRequest,

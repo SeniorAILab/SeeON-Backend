@@ -63,9 +63,8 @@ export function parseReadyClipUpload(
     durationMs: parseBoundedDuration(
       requiredHeader(headers, 'x-clip-duration-ms'),
     ),
-    stateVersion: parsePositiveInteger(
+    stateVersion: parsePostgresInteger(
       requiredHeader(headers, 'x-clip-state-version'),
-      'state_version',
     ),
     source,
   };
@@ -141,6 +140,14 @@ function parsePositiveInteger(value: string, field: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
     throw invalidInput(`${field} must be a positive safe integer`);
+  }
+  return parsed;
+}
+
+function parsePostgresInteger(value: string): number {
+  const parsed = parsePositiveInteger(value, 'state_version');
+  if (parsed > 2_147_483_647) {
+    throw invalidInput('state_version exceeds PostgreSQL INTEGER');
   }
   return parsed;
 }

@@ -307,6 +307,7 @@ model MediaClip {
   stateVersion   Int               @default(1) @map("state_version")
   reason         MediaClipReason?
   storageState   MediaStorageState @default(NONE) @map("storage_state")
+  stagingToken   String?           @map("staging_token") @db.Char(64)
   storageKey     String?           @unique @map("storage_key")
   contentType    String?           @map("content_type")
   byteSize       BigInt?           @map("byte_size")
@@ -341,12 +342,14 @@ model EventMediaBinding {
   eventId    String   @id @map("event_id")
   facilityId String   @map("facility_id")
   clipId     String   @map("clip_id")
+  ordinal    Int      @map("ordinal")
   createdAt  DateTime @default(now()) @map("created_at")
 
   event Event     @relation(fields: [facilityId, eventId], references: [facilityId, id])
   clip  MediaClip @relation(fields: [facilityId, clipId], references: [facilityId, id])
 
   @@unique([facilityId, eventId])
+  @@unique([facilityId, clipId, ordinal])
   @@index([facilityId, clipId])
   @@map("event_media_bindings")
 }

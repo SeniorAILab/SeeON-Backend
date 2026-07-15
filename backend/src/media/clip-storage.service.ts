@@ -7,16 +7,20 @@ import {
   type ClipStorageReference,
   type PersistedClip,
 } from './clip-storage.types.js';
-import type { ClipLock } from './clip-storage-write.js';
 import {
   acquireClipLock,
+  acquireStorageLock,
+  releaseClipLock,
+  type ClipLock,
+} from './clip-storage-lock.js';
+import {
   ensureStorageLayout,
   readAvailableBytes,
-  releaseClipLock,
   stageClip,
   validatePersistRequest,
 } from './clip-storage-write.js';
 import {
+  hasPublishedClip,
   mapStorageFailure,
   publishStagedClip,
   removeFileIfPresent,
@@ -24,7 +28,8 @@ import {
 import { reconcileClipStorage } from './clip-storage-reconcile.js';
 
 type CleanupContext = {
-  readonly lock: ClipLock | undefined;
+  readonly clipLock: ClipLock | undefined;
+  readonly storageLock: ClipLock | undefined;
   readonly temporaryPath: string | undefined;
   readonly primaryFailure: unknown;
 };
@@ -44,13 +49,17 @@ export class ClipStorageService {
 
   async persist(request: ClipPersistRequest): Promise<PersistedClip> {
     validatePersistRequest(request, this.dependencies.config.maximumBytes);
-    let lock: ClipLock | undefined;
+    let storageLock: ClipLock | undefined;
+    let clipLock: ClipLock | undefined;
     let temporaryPath: string | undefined;
     let primaryFailure: unknown;
     try {
       await ensureStorageLayout(this.dependencies.config.rootDir);
-      lock = await acquireClipLock(this.dependencies, request);
-      await this.assertCapacity(request.expectedSizeBytes);
+      storageLock = await acquireStorageLock(this.dependencies);
+      clipLock = await acquireClipLock(this.dependencies, request);
+      if (!(await hasPublishedClip(this.dependencies, request))) {
+        await this.assertCapacity(request.expectedSizeBytes);
+      }
       const staged = await stageClip(this.dependencies, request);
       temporaryPath = staged.temporaryPath;
       const published = await publishStagedClip(
@@ -70,7 +79,12 @@ export class ClipStorageService {
       primaryFailure = error;
       throw mapStorageFailure(error);
     } finally {
-      await cleanupPersist({ lock, temporaryPath, primaryFailure });
+      await cleanupPersist({
+        clipLock,
+        storageLock,
+        temporaryPath,
+        primaryFailure,
+      });
     }
   }
 
@@ -105,7 +119,16 @@ async function cleanupPersist(context: CleanupContext): Promise<void> {
     cleanupFailures.push(error);
   }
   try {
-    if (context.lock !== undefined) await releaseClipLock(context.lock);
+    if (context.clipLock !== undefined) {
+      await releaseClipLock(context.clipLock);
+    }
+  } catch (error) {
+    cleanupFailures.push(error);
+  }
+  try {
+    if (context.storageLock !== undefined) {
+      await releaseClipLock(context.storageLock);
+    }
   } catch (error) {
     cleanupFailures.push(error);
   }

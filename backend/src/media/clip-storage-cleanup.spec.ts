@@ -112,6 +112,7 @@ async function persistWithCleanupFaults(
       clipId: CLIP_ID,
       expectedSha256: createHash('sha256').update(bytes).digest('hex'),
       expectedSizeBytes: bytes.length,
+      expectedDurationMs: 1_000,
       source: Readable.from(bytes),
     });
   } catch (error) {

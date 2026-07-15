@@ -148,7 +148,7 @@ describe('edge event media ingest', () => {
     });
     expect(ready.body).not.toHaveProperty('storageKey');
     expect(ready.body).not.toHaveProperty('id');
-    expect(harness.persist).toHaveBeenCalledTimes(1);
+    expect(harness.persist).toHaveBeenCalledTimes(2);
     const clip = await harness.direct.mediaClip.findUniqueOrThrow({
       where: {
         facilityId_externalClipId: {

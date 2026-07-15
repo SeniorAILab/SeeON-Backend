@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import type { Event, MediaClip, Prisma } from '@prisma/client';
+import type { MediaClip } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  bindExactEvents,
+  lockClip,
+  requireOwnedEvents,
+} from './event-media-repository.bindings.js';
 import {
   EVENT_MEDIA_ERROR_CODES,
   EventMediaError,
@@ -13,10 +18,7 @@ import {
   immutableConflict,
   matchesPersistedClip,
   matchesReadyManifest,
-  sameSet,
 } from './event-media-repository.helpers.js';
-
-type EventIdentity = Pick<Event, 'id' | 'edgeEventId' | 'cameraId'>;
 
 @Injectable()
 export class EventMediaRepository {
@@ -59,12 +61,32 @@ export class EventMediaRepository {
         throw immutableConflict();
       }
       await bindExactEvents(tx, facilityId, current.id, events);
-      return {
-        id: current.id,
-        facilityId,
-        state: current.status === 'READY' ? 'READY' : 'PENDING',
-        storageKey: current.storageKey,
-      };
+      if (current.status === 'READY' || current.status === 'EXPIRED') {
+        return preparedReadyClip(current, manifest.sha256);
+      }
+      // STAGED survives a process crash. Boot reconciliation removes transient
+      // or unreferenced files; an exact SHA replay resumes this DB reservation.
+      if (current.storageState === 'STAGED') {
+        if (current.stagingToken !== manifest.sha256) {
+          throw immutableConflict();
+        }
+        return preparedReadyClip(current, manifest.sha256);
+      }
+      if (current.storageState !== 'NONE') {
+        throw new EventMediaError(
+          EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
+          'clip storage is not available for READY staging',
+        );
+      }
+      const staged = await tx.mediaClip.update({
+        where: { id: current.id },
+        data: {
+          storageState: 'STAGED',
+          stagingToken: manifest.sha256,
+          stagedAt: new Date(),
+        },
+      });
+      return preparedReadyClip(staged, manifest.sha256);
     });
   }
 
@@ -72,6 +94,7 @@ export class EventMediaRepository {
     facilityId: string,
     clipId: string,
     persisted: PersistedReadyClip,
+    stagingToken: string,
     expiresAt: Date,
   ): Promise<MediaClip> {
     return this.prisma.withFacilityContext(facilityId, async (tx) => {
@@ -79,11 +102,15 @@ export class EventMediaRepository {
       const clip = await tx.mediaClip.findUniqueOrThrow({
         where: { id: clipId },
       });
-      if (clip.status === 'READY') {
+      if (clip.status === 'READY' || clip.status === 'EXPIRED') {
         if (!matchesPersistedClip(clip, persisted)) throw immutableConflict();
         return clip;
       }
-      if (clip.status !== 'PENDING') {
+      if (
+        clip.status !== 'PENDING' ||
+        clip.storageState !== 'STAGED' ||
+        clip.stagingToken !== stagingToken
+      ) {
         throw new EventMediaError(
           EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
           'clip cannot transition to READY from its current state',
@@ -99,6 +126,7 @@ export class EventMediaRepository {
           reason: null,
           storageState: 'READY',
           storageKey: persisted.storageKey,
+          stagingToken: null,
           readyAt: new Date(),
           expiresAt,
         },
@@ -142,6 +170,12 @@ export class EventMediaRepository {
       ) {
         throw immutableConflict();
       }
+      if (current.status === 'PENDING' && current.storageState === 'STAGED') {
+        throw new EventMediaError(
+          EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
+          'READY staging owns the clip transition',
+        );
+      }
       await bindExactEvents(tx, facilityId, current.id, events);
       if (current.status === 'UNAVAILABLE') return current;
       return tx.mediaClip.update({
@@ -152,79 +186,26 @@ export class EventMediaRepository {
   }
 }
 
-async function requireOwnedEvents(
-  tx: Prisma.TransactionClient,
-  input: Pick<ReadyClipManifest, 'cameraId' | 'eventRefs'>,
-): Promise<readonly EventIdentity[]> {
-  const events = await tx.event.findMany({
-    where: { edgeEventId: { in: [...input.eventRefs] } },
-    select: { id: true, edgeEventId: true, cameraId: true },
-  });
+function preparedReadyClip(
+  clip: MediaClip,
+  stagingToken: string,
+): PreparedReadyClip {
   if (
-    events.length !== input.eventRefs.length ||
-    events.some(
-      (event) =>
-        event.edgeEventId === null || event.cameraId !== input.cameraId,
-    )
+    clip.status !== 'PENDING' &&
+    clip.status !== 'READY' &&
+    clip.status !== 'EXPIRED'
   ) {
     throw new EventMediaError(
-      EVENT_MEDIA_ERROR_CODES.EVENT_OWNERSHIP,
-      'event references do not belong to the resolved camera facility',
+      EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
+      'clip is not a READY lifecycle state',
     );
   }
-  return events;
-}
-
-async function bindExactEvents(
-  tx: Prisma.TransactionClient,
-  facilityId: string,
-  clipId: string,
-  events: readonly EventIdentity[],
-): Promise<void> {
-  const eventIds = events.map((event) => event.id);
-  const current = await tx.eventMediaBinding.findMany({
-    where: { clipId },
-    select: { eventId: true },
-  });
-  if (
-    current.length > 0 &&
-    !sameSet(
-      current.map((row) => row.eventId),
-      eventIds,
-    )
-  ) {
-    throw immutableConflict();
-  }
-  const occupied = await tx.eventMediaBinding.findMany({
-    where: { eventId: { in: eventIds } },
-    select: { eventId: true, clipId: true },
-  });
-  if (occupied.some((row) => row.clipId !== clipId)) throw immutableConflict();
-  await tx.eventMediaBinding.createMany({
-    data: events.map((event) => ({
-      eventId: event.id,
-      facilityId,
-      clipId,
-    })),
-    skipDuplicates: true,
-  });
-  const bound = await tx.eventMediaBinding.findMany({
-    where: { clipId },
-    select: { eventId: true },
-  });
-  if (
-    !sameSet(
-      bound.map((row) => row.eventId),
-      eventIds,
-    )
-  ) {
-    throw immutableConflict();
-  }
-}
-
-async function lockClip(
-  tx: Prisma.TransactionClient,
-  clipId: string,
-): Promise<void> {
-  await tx.$queryRaw`SELECT id FROM media_clips WHERE id = ${clipId} FOR UPDATE`;
+  return {
+    id: clip.id,
+    facilityId: clip.facilityId,
+    state: clip.status,
+    stateVersion: clip.stateVersion,
+    stagingToken,
+    storageKey: clip.storageKey,
+  };
 }

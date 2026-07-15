@@ -45,21 +45,24 @@ export class EventMediaService {
       camera.facilityId,
       input,
     );
-    if (prepared.state === 'READY') return readyReceipt(input);
-
     const persisted = await this.storage.persist({
       facilityId: camera.facilityId,
       clipId: prepared.id,
       expectedSha256: input.sha256,
       expectedSizeBytes: input.sizeBytes,
+      expectedDurationMs: input.durationMs,
       source: input.source,
     });
     const clip = await this.repository.finalizeReady(
       camera.facilityId,
       prepared.id,
       persisted,
+      prepared.stagingToken,
       retentionExpiry(input.finalizedAt, this.config.retentionDays),
     );
+    if (clip.status === 'EXPIRED') {
+      return expiredReceipt(input.externalClipId, clip.stateVersion);
+    }
     return {
       clip_id: input.externalClipId,
       state: 'READY',
@@ -119,12 +122,13 @@ export class EventMediaService {
   }
 }
 
-function readyReceipt(input: ReadyClipUpload): ClipReceipt {
+function expiredReceipt(
+  externalClipId: string,
+  stateVersion: number,
+): ClipReceipt {
   return {
-    clip_id: input.externalClipId,
-    state: 'READY',
-    state_version: input.stateVersion,
-    sha256: input.sha256,
-    size_bytes: input.sizeBytes,
+    clip_id: externalClipId,
+    state: 'EXPIRED',
+    state_version: stateVersion,
   };
 }

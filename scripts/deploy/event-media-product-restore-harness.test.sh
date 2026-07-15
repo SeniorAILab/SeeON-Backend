@@ -293,8 +293,8 @@ INSERT INTO media_clips (
   '2026-07-16T01:02:02Z', '2026-07-16T01:02:05Z', '2026-07-16T01:02:07Z',
   '2026-09-14T01:02:07Z', '2026-07-16T01:02:04Z', '2026-07-16T01:02:07Z'
 );
-INSERT INTO event_media_bindings (event_id, facility_id, clip_id, created_at)
-VALUES ('restore_event_a', 'restore_facility_a', 'restore_clip_a', '2026-07-16T01:02:07Z');
+INSERT INTO event_media_bindings (event_id, facility_id, clip_id, ordinal, created_at)
+VALUES ('restore_event_a', 'restore_facility_a', 'restore_clip_a', 0, '2026-07-16T01:02:07Z');
 SQL
 
 tenant_count=$(docker exec -e PGPASSWORD="$FIXTURE_APP_PASSWORD" "$source_container" \

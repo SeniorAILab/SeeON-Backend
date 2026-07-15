@@ -33,6 +33,7 @@ function request(
     clipId: CLIP_ID,
     expectedSha256: overrides.sha256 ?? digest(bytes),
     expectedSizeBytes: overrides.size ?? bytes.length,
+    expectedDurationMs: 1_000,
     source: Readable.from(bytes),
   };
 }
@@ -197,6 +198,7 @@ describe('ClipStorageService persist', () => {
       clipId: CLIP_ID,
       expectedSha256: '0'.repeat(64),
       expectedSizeBytes: 1,
+      expectedDurationMs: 1_000,
       source,
     });
 

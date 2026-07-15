@@ -47,7 +47,12 @@ export class EventMediaHarness {
     await this.direct.$disconnect();
   }
 
-  async start(): Promise<void> {
+  async start(
+    storageOverride?: Pick<
+      ClipStorageService,
+      'canAcceptMaximumClip' | 'persist' | 'reconcile'
+    >,
+  ): Promise<void> {
     process.env.SESSION_JWT_SECRET =
       'event-media-test-session-secret-32-characters';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
@@ -73,7 +78,7 @@ export class EventMediaHarness {
       imports: [AppModule],
     })
       .overrideProvider(ClipStorageService)
-      .useValue(storage)
+      .useValue(storageOverride ?? storage)
       .overrideProvider(EVENT_MEDIA_CONFIG)
       .useValue({ enabled: true, retentionDays: 60 })
       .compile();
@@ -161,6 +166,9 @@ export class EventMediaHarness {
     readonly eventRefs: readonly string[];
     readonly sha256: string;
     readonly body: Buffer;
+    readonly declaredSizeBytes?: number;
+    readonly durationMs?: number;
+    readonly stateVersion?: number;
   }) {
     return request(this.app.getHttpServer())
       .put(`/api/v1/events/clips/${input.clipId}`)
@@ -172,9 +180,12 @@ export class EventMediaHarness {
       .set('x-clip-end-at', '2026-07-16T00:00:01.000Z')
       .set('x-clip-finalized-at', '2026-07-16T00:00:02.000Z')
       .set('x-clip-sha256', input.sha256)
-      .set('x-clip-size-bytes', String(input.body.length))
-      .set('x-clip-duration-ms', '1000')
-      .set('x-clip-state-version', '1')
+      .set(
+        'x-clip-size-bytes',
+        String(input.declaredSizeBytes ?? input.body.length),
+      )
+      .set('x-clip-duration-ms', String(input.durationMs ?? 1_000))
+      .set('x-clip-state-version', String(input.stateVersion ?? 1))
       .send(input.body);
   }
 

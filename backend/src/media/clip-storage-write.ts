@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants, promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import * as path from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import {
   CLIP_STORAGE_ERROR_CODES,
   ClipStorageError,
@@ -10,7 +9,7 @@ import {
   type ClipPersistRequest,
   type ClipStorageDependencies,
 } from './clip-storage.types.js';
-import { mapStorageFailure, syncDirectory } from './clip-storage-publish.js';
+import { mapStorageFailure } from './clip-storage-publish.js';
 
 const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -19,11 +18,6 @@ export type StagedClip = ClipInspection & {
   readonly temporaryPath: string;
   readonly sha256: string;
   readonly sizeBytes: number;
-};
-
-export type ClipLock = {
-  readonly handle: FileHandle;
-  readonly lockPath: string;
 };
 
 export function validatePersistRequest(
@@ -35,7 +29,10 @@ export function validatePersistRequest(
     !isSafeStorageSegment(request.clipId) ||
     !SHA256_PATTERN.test(request.expectedSha256) ||
     !Number.isSafeInteger(request.expectedSizeBytes) ||
-    request.expectedSizeBytes <= 0
+    request.expectedSizeBytes <= 0 ||
+    !Number.isSafeInteger(request.expectedDurationMs) ||
+    request.expectedDurationMs <= 0 ||
+    request.expectedDurationMs > 120_000
   ) {
     throw new ClipStorageError(
       CLIP_STORAGE_ERROR_CODES.INVALID_INPUT,
@@ -77,60 +74,6 @@ export async function readAvailableBytes(rootDir: string): Promise<bigint> {
   return stats.bavail * stats.bsize;
 }
 
-export async function acquireClipLock(
-  dependencies: ClipStorageDependencies,
-  request: ClipPersistRequest,
-): Promise<ClipLock> {
-  const lockDir = path.join(
-    dependencies.config.rootDir,
-    '.locks',
-    request.facilityId,
-  );
-  await fs.mkdir(lockDir, { recursive: true, mode: 0o700 });
-  const lockPath = path.join(lockDir, `${request.clipId}.lock`);
-  for (
-    let attempt = 0;
-    attempt <= dependencies.config.lockRetryCount;
-    attempt += 1
-  ) {
-    try {
-      const handle = await fs.open(
-        lockPath,
-        constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_WRONLY |
-          constants.O_NOFOLLOW,
-        0o600,
-      );
-      await handle.writeFile(`${process.pid}\n`);
-      await handle.sync();
-      return { handle, lockPath };
-    } catch (error) {
-      if (!hasErrorCode(error, 'EEXIST')) {
-        throw mapStorageFailure(error);
-      }
-      if (attempt === dependencies.config.lockRetryCount) {
-        throw new ClipStorageError(
-          CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT,
-          'clip storage lock remained busy',
-          { cause: error },
-        );
-      }
-      await delay(dependencies.config.lockRetryDelayMs);
-    }
-  }
-  throw new ClipStorageError(
-    CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT,
-    'clip storage lock remained busy',
-  );
-}
-
-export async function releaseClipLock(lock: ClipLock): Promise<void> {
-  await lock.handle.close();
-  await fs.unlink(lock.lockPath);
-  await syncDirectory(path.dirname(lock.lockPath));
-}
-
 export async function stageClip(
   dependencies: ClipStorageDependencies,
   request: ClipPersistRequest,
@@ -153,21 +96,23 @@ export async function stageClip(
   );
   const hash = createHash('sha256');
   let sizeBytes = 0;
+  let overflow = false;
 
   try {
     try {
       for await (const chunk of request.source) {
         const value: unknown = chunk;
         const bytes = toBuffer(value);
-        sizeBytes += bytes.length;
-        if (sizeBytes > request.expectedSizeBytes) {
-          throw new ClipStorageError(
-            CLIP_STORAGE_ERROR_CODES.LENGTH_MISMATCH,
-            'clip stream exceeded declared length',
-          );
+        if (!overflow) {
+          const nextSize = sizeBytes + bytes.length;
+          if (nextSize > request.expectedSizeBytes) {
+            overflow = true;
+          } else {
+            sizeBytes = nextSize;
+            await writeAll(handle, bytes);
+            hash.update(bytes);
+          }
         }
-        await writeAll(handle, bytes);
-        hash.update(bytes);
       }
       await handle.sync();
     } catch (error) {
@@ -176,6 +121,12 @@ export async function stageClip(
       await handle.close();
     }
 
+    if (overflow) {
+      throw new ClipStorageError(
+        CLIP_STORAGE_ERROR_CODES.LENGTH_MISMATCH,
+        'clip stream exceeded declared length',
+      );
+    }
     if (sizeBytes !== request.expectedSizeBytes) {
       throw new ClipStorageError(
         CLIP_STORAGE_ERROR_CODES.LENGTH_MISMATCH,
@@ -190,6 +141,12 @@ export async function stageClip(
       );
     }
     const inspection = await dependencies.inspector.inspect(temporaryPath);
+    if (inspection.durationMs !== request.expectedDurationMs) {
+      throw new ClipStorageError(
+        CLIP_STORAGE_ERROR_CODES.DURATION_MISMATCH,
+        'clip duration does not match declared duration',
+      );
+    }
     return { temporaryPath, sha256, sizeBytes, ...inspection };
   } catch (error) {
     try {
