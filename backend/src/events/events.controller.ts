@@ -1,20 +1,23 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
-import * as fs from 'fs';
+import type { Response } from 'express';
 import * as path from 'path';
 import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
@@ -34,11 +37,13 @@ import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
 import { EventRecorderService } from './event-recorder.service.js';
 import {
+  IMMUTABLE_FILE_RESULT,
   MAX_SNAPSHOT_BYTES,
   SNAPSHOT_EXTENSIONS,
   readRequestBody,
   resolveSnapshotPath,
   snapshotRoot,
+  writeImmutableFile,
 } from '../common/snapshot-storage.js';
 
 @Controller({ path: 'events', version: '1' })
@@ -110,6 +115,7 @@ export class EventsController {
   async uploadSnapshot(
     @Req() req: RequestWithAuth,
     @Param('eventId') eventId: string,
+    @Res({ passthrough: true }) response?: Response,
   ) {
     rejectClientSuppliedSnapshotKey(req);
 
@@ -131,12 +137,22 @@ export class EventsController {
       `${event.id}.${extension}`,
     );
     const filePath = resolveSnapshotPath(snapshotRoot(), snapshotKey);
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, body);
+    const writeResult = await writeImmutableFile(filePath, body);
+    if (writeResult === IMMUTABLE_FILE_RESULT.CONFLICT) {
+      throw new ConflictException(
+        'Snapshot already exists with different bytes',
+      );
+    }
+
     await this.recorder.persistSnapshotKey(
       event.facilityId,
       event.id,
       snapshotKey,
+    );
+    response?.status(
+      writeResult === IMMUTABLE_FILE_RESULT.CREATED
+        ? HttpStatus.CREATED
+        : HttpStatus.OK,
     );
 
     return { snapshotKey };
@@ -170,7 +186,6 @@ function requireString(value: unknown, field: string): string {
   }
   return value;
 }
-
 
 function optionalTrimmedString(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
