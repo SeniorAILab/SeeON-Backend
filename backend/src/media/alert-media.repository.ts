@@ -21,6 +21,7 @@ export type AlertMediaClipRecord = {
   readonly clipStartAt: Date | null;
   readonly clipEndAt: Date | null;
   readonly readyAt: Date | null;
+  readonly expiresAt: Date | null;
   readonly expiredAt: Date | null;
   readonly deletedAt: Date | null;
 };
@@ -53,6 +54,7 @@ const clipSelect = {
   clipStartAt: true,
   clipEndAt: true,
   readyAt: true,
+  expiresAt: true,
   expiredAt: true,
   deletedAt: true,
 } satisfies Prisma.MediaClipSelect;
@@ -74,17 +76,44 @@ export class AlertMediaRepository {
           originEvent: {
             select: {
               mediaBinding: {
-                select: { clip: { select: clipSelect } },
+                select: { clip: { select: { id: true } } },
               },
             },
           },
         },
       });
       if (alert === null) return null;
+      const clipId = alert.originEvent?.mediaBinding?.clip.id;
+      if (clipId === undefined) {
+        return {
+          alertId: alert.id,
+          detectedAt: alert.detectedAt,
+          clip: null,
+        };
+      }
+      const now = new Date();
+      await tx.mediaClip.updateMany({
+        where: {
+          id: clipId,
+          facilityId,
+          status: 'READY',
+          expiresAt: { lte: now },
+        },
+        data: {
+          status: 'EXPIRED',
+          reason: 'RETENTION_EXPIRED',
+          expiredAt: now,
+          stateVersion: { increment: 1 },
+        },
+      });
+      const clip = await tx.mediaClip.findUnique({
+        where: { id: clipId },
+        select: clipSelect,
+      });
       return {
         alertId: alert.id,
         detectedAt: alert.detectedAt,
-        clip: alert.originEvent?.mediaBinding?.clip ?? null,
+        clip,
       };
     });
   }

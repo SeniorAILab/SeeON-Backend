@@ -11,6 +11,7 @@ import {
 
 const contentPath = (alertId: string): string =>
   `/api/v1/alerts/${encodeURIComponent(alertId)}/media/content`;
+const HUGE_RANGE_VALUE = '9'.repeat(200);
 
 describe('alert media byte serving (e2e)', () => {
   let fixture: AlertMediaFixture;
@@ -64,11 +65,29 @@ describe('alert media byte serving (e2e)', () => {
   );
 
   it.each([
+    ['huge end', `bytes=0-${HUGE_RANGE_VALUE}`],
+    ['huge suffix', `bytes=-${HUGE_RANGE_VALUE}`],
+  ])('clamps a %s to the known resource size', async (_name, range) => {
+    const response = await request(fixture.app.getHttpServer())
+      .get(contentPath(mediaFixtureIds.alertA))
+      .set('cookie', fixture.adminCookie)
+      .set('range', range)
+      .expect(206);
+
+    expect(responseBytes(response)).toEqual(mediaBytes);
+    expectMediaHeaders(response, mediaBytes.length);
+    expect(response.headers['content-range']).toBe(
+      `bytes 0-${mediaBytes.length - 1}/${mediaBytes.length}`,
+    );
+  });
+
+  it.each([
     'items=0-1',
     'bytes=',
     'bytes=abc',
     'bytes=0-1,3-4',
     'bytes=999-',
+    `bytes=${HUGE_RANGE_VALUE}-`,
     'bytes=-0',
     'bytes=5-3',
   ])(
@@ -121,6 +140,9 @@ describe('alert media byte serving (e2e)', () => {
     ['mismatched ETag', '"sha256-mismatch"', 200],
     ['weak ETag', `W/${mediaEtag}`, 200],
     ['stale date', new Date(mediaReadyAt.getTime() - 1_000).toUTCString(), 200],
+    ['ISO-8601 non-HTTP-date', '2027-01-01T00:00:00.000Z', 200],
+    ['obsolete RFC 850 date', 'Thursday, 16-Jul-26 00:00:11 GMT', 200],
+    ['obsolete asctime date', 'Thu Jul 16 00:00:11 2026', 200],
     ['invalid date', 'not-a-date', 200],
   ])('applies If-Range semantics for %s', async (_name, ifRange, status) => {
     const response = await request(fixture.app.getHttpServer())

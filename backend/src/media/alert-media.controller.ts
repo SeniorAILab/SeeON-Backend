@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Head,
+  Header,
   Param,
   Post,
   Req,
@@ -36,11 +37,13 @@ export class AlertMediaController {
   constructor(private readonly service: AlertMediaService) {}
 
   @Get(':alertId/media')
+  @Header('Cache-Control', CACHE_CONTROL)
   metadata(@Req() request: RequestWithAuth, @Param('alertId') alertId: string) {
     return this.service.metadata(requireFacilityId(request), alertId);
   }
 
   @Post(':alertId/media/access')
+  @Header('Cache-Control', CACHE_CONTROL)
   recordAccess(
     @Req() request: RequestWithAuth,
     @Param('alertId') alertId: string,

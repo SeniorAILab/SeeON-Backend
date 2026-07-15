@@ -47,6 +47,9 @@ describe('alert media authorization and metadata (e2e)', () => {
     expect(serialized).not.toContain('storageKey');
     expect(serialized).not.toContain('externalClipId');
     expect(serialized).not.toContain('edge_url');
+    expect(response.headers['cache-control']).toBe(
+      'private, no-store, no-transform',
+    );
   });
 
   it('returns typed PENDING metadata before a clip binding exists', async () => {
@@ -63,12 +66,15 @@ describe('alert media authorization and metadata (e2e)', () => {
 
   it('records only an allowed explicit interaction action', async () => {
     const interactionId = 'interaction-t15-play-started';
-    await request(fixture.app.getHttpServer())
+    const accessResponse = await request(fixture.app.getHttpServer())
       .post(accessPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.adminCookie)
       .send({ action: 'PLAY_STARTED', interactionId })
       .expect(201)
       .expect({ accepted: true });
+    expect(accessResponse.headers['cache-control']).toBe(
+      'private, no-store, no-transform',
+    );
 
     const stored = await fixture.direct.mediaAccessLog.findFirstOrThrow({
       where: { actorUserId: mediaFixtureIds.adminA, interactionId },
@@ -86,6 +92,77 @@ describe('alert media authorization and metadata (e2e)', () => {
       .set('cookie', fixture.adminCookie)
       .send({ action: 'SEEKED', interactionId: 'interaction-t15-invalid' })
       .expect(400);
+  });
+
+  it('atomically expires due READY media on request while preserving bytes and a future clip', async () => {
+    await fixture.direct.mediaRetentionHold.create({
+      data: {
+        facilityId: mediaFixtureIds.facilityA,
+        clipId: mediaFixtureIds.dueClipA,
+        kind: 'LEGAL',
+        reason: 'request-path expiry must preserve held bytes',
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      request(fixture.app.getHttpServer())
+        .get(metadataPath(mediaFixtureIds.dueAlertA))
+        .set('cookie', fixture.adminCookie)
+        .expect(200),
+      request(fixture.app.getHttpServer())
+        .get(metadataPath(mediaFixtureIds.dueAlertA))
+        .set('cookie', fixture.adminCookie)
+        .expect(200),
+    ]);
+    expect(first.body).toMatchObject({
+      status: 'EXPIRED',
+      alertId: mediaFixtureIds.dueAlertA,
+    });
+    expect(second.body).toMatchObject({
+      status: 'EXPIRED',
+      alertId: mediaFixtureIds.dueAlertA,
+    });
+
+    const expired = await fixture.direct.mediaClip.findUniqueOrThrow({
+      where: { id: mediaFixtureIds.dueClipA },
+      select: {
+        status: true,
+        reason: true,
+        stateVersion: true,
+        expiredAt: true,
+        storageState: true,
+        storageKey: true,
+      },
+    });
+    expect(expired).toMatchObject({
+      status: 'EXPIRED',
+      reason: 'RETENTION_EXPIRED',
+      stateVersion: 2,
+      storageState: 'READY',
+    });
+    expect(expired.expiredAt).toBeInstanceOf(Date);
+    expect(expired.storageKey).not.toBeNull();
+
+    await request(fixture.app.getHttpServer())
+      .get(contentPath(mediaFixtureIds.dueAlertA))
+      .set('cookie', fixture.adminCookie)
+      .expect(404)
+      .expect((response) => expectNoMediaHeaders(response));
+
+    const futureMetadata = await request(fixture.app.getHttpServer())
+      .get(metadataPath(mediaFixtureIds.futureAlertA))
+      .set('cookie', fixture.adminCookie)
+      .expect(200);
+    expect(futureMetadata.body).toMatchObject({ status: 'READY' });
+    await request(fixture.app.getHttpServer())
+      .get(contentPath(mediaFixtureIds.futureAlertA))
+      .set('cookie', fixture.adminCookie)
+      .expect(200);
+    const future = await fixture.direct.mediaClip.findUniqueOrThrow({
+      where: { id: mediaFixtureIds.futureClipA },
+      select: { status: true, stateVersion: true },
+    });
+    expect(future).toEqual({ status: 'READY', stateVersion: 1 });
   });
 
   it.each([

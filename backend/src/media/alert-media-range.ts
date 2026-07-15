@@ -9,6 +9,9 @@ export type RangeResource = {
   readonly lastModified: Date;
 };
 
+const IMF_FIXDATE =
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), (?:0[1-9]|[12]\d|3[01]) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d GMT$/;
+
 export function selectByteRange(
   rangeHeader: string | readonly string[] | undefined,
   ifRangeHeader: string | readonly string[] | undefined,
@@ -36,32 +39,37 @@ function parseRequestedRange(
   const first = match[1];
   const second = match[2];
   if (first === '' && second === '') return { kind: 'unsatisfiable' };
+  const resourceSize = BigInt(sizeBytes);
 
   if (first === '') {
-    const suffix = parseSafeInteger(second);
-    if (suffix === null || suffix === 0) return { kind: 'unsatisfiable' };
+    const suffix = parseDecimalInteger(second);
+    if (suffix === null || suffix === 0n) return { kind: 'unsatisfiable' };
+    const selectedStart = suffix >= resourceSize ? 0n : resourceSize - suffix;
     return {
       kind: 'range',
-      start: Math.max(sizeBytes - suffix, 0),
+      start: Number(selectedStart),
       end: sizeBytes - 1,
     };
   }
 
-  const start = parseSafeInteger(first);
-  if (start === null || start >= sizeBytes) {
+  const requestedStart = parseDecimalInteger(first);
+  if (requestedStart === null || requestedStart >= resourceSize) {
     return { kind: 'unsatisfiable' };
   }
+  const start = Number(requestedStart);
   if (second === '') {
     return { kind: 'range', start, end: sizeBytes - 1 };
   }
-  const requestedEnd = parseSafeInteger(second);
-  if (requestedEnd === null || requestedEnd < start) {
+  const requestedEnd = parseDecimalInteger(second);
+  if (requestedEnd === null || requestedEnd < requestedStart) {
     return { kind: 'unsatisfiable' };
   }
   return {
     kind: 'range',
     start,
-    end: Math.min(requestedEnd, sizeBytes - 1),
+    end: Number(
+      requestedEnd >= resourceSize ? resourceSize - 1n : requestedEnd,
+    ),
   };
 }
 
@@ -73,15 +81,21 @@ function isIfRangeEligible(
   if (typeof header !== 'string' || header.startsWith('W/')) return false;
   if (header === resource.etag) return true;
   if (header.startsWith('"')) return false;
-  const timestamp = Date.parse(header);
-  if (!Number.isFinite(timestamp)) return false;
+  const timestamp = parseImfFixdate(header);
+  if (timestamp === null) return false;
   return httpSecond(resource.lastModified.getTime()) <= httpSecond(timestamp);
 }
 
-function parseSafeInteger(value: string): number | null {
+function parseDecimalInteger(value: string): bigint | null {
   if (!/^\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : null;
+  return BigInt(value);
+}
+
+function parseImfFixdate(value: string): number | null {
+  if (!IMF_FIXDATE.test(value)) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toUTCString() === value ? timestamp : null;
 }
 
 function full(sizeBytes: number): ByteSelection {

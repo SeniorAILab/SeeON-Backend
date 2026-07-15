@@ -24,8 +24,12 @@ export const mediaFixtureIds = {
   alertA: `${FIXTURE_PREFIX}-alert-a`,
   alertB: `${FIXTURE_PREFIX}-alert-b`,
   pendingAlertA: `${FIXTURE_PREFIX}-alert-pending-a`,
+  dueAlertA: `${FIXTURE_PREFIX}-alert-due-a`,
+  futureAlertA: `${FIXTURE_PREFIX}-alert-future-a`,
   clipA: `${FIXTURE_PREFIX}-clip-a`,
   clipB: `${FIXTURE_PREFIX}-clip-b`,
+  dueClipA: `${FIXTURE_PREFIX}-clip-due-a`,
+  futureClipA: `${FIXTURE_PREFIX}-clip-future-a`,
 } as const;
 
 export const mediaBytes = Buffer.from([
@@ -149,6 +153,15 @@ async function seedFixture(
     await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
     await fs.writeFile(filePath, mediaBytes, { mode: 0o600 });
   }
+  for (const clipId of [
+    mediaFixtureIds.dueClipA,
+    mediaFixtureIds.futureClipA,
+  ]) {
+    const storageKey = `${mediaFixtureIds.facilityA}/${clipId}/${mediaSha256}.mp4`;
+    const filePath = path.join(rootDir, storageKey);
+    await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+    await fs.writeFile(filePath, mediaBytes, { mode: 0o600 });
+  }
 }
 
 async function seedFacilityGraph(
@@ -241,7 +254,96 @@ async function seedFacilityGraph(
         idempotencyKey: mediaFixtureIds.pendingAlertA,
       },
     });
+    await seedExpiryGraph(direct, {
+      facilityId,
+      cameraId,
+      spaceId,
+      key: 'due',
+      alertId: mediaFixtureIds.dueAlertA,
+      clipId: mediaFixtureIds.dueClipA,
+      expiresAt: new Date('2026-07-15T00:00:00.000Z'),
+    });
+    await seedExpiryGraph(direct, {
+      facilityId,
+      cameraId,
+      spaceId,
+      key: 'future',
+      alertId: mediaFixtureIds.futureAlertA,
+      clipId: mediaFixtureIds.futureClipA,
+      expiresAt: new Date('2099-07-16T00:00:00.000Z'),
+    });
   }
+}
+
+async function seedExpiryGraph(
+  direct: PrismaClient,
+  input: {
+    readonly facilityId: string;
+    readonly cameraId: string;
+    readonly spaceId: string;
+    readonly key: 'due' | 'future';
+    readonly alertId: string;
+    readonly clipId: string;
+    readonly expiresAt: Date;
+  },
+): Promise<void> {
+  const eventId = `${FIXTURE_PREFIX}-event-${input.key}-a`;
+  const detectedAt = new Date('2026-07-16T00:02:00.000Z');
+  await direct.event.create({
+    data: {
+      id: eventId,
+      facilityId: input.facilityId,
+      cameraId: input.cameraId,
+      spaceId: input.spaceId,
+      type: 'fall',
+      confidence: 0.93,
+      detectedAt,
+      dedupKey: eventId,
+    },
+  });
+  await direct.alert.create({
+    data: {
+      id: input.alertId,
+      facilityId: input.facilityId,
+      cameraId: input.cameraId,
+      spaceId: input.spaceId,
+      type: 'fall',
+      probability: 0.93,
+      detectedAt,
+      idempotencyKey: input.alertId,
+      originEventId: eventId,
+    },
+  });
+  const storageKey = `${input.facilityId}/${input.clipId}/${mediaSha256}.mp4`;
+  await direct.mediaClip.create({
+    data: {
+      id: input.clipId,
+      facilityId: input.facilityId,
+      cameraId: input.cameraId,
+      externalClipId: `edge-${input.clipId}`,
+      status: 'READY',
+      storageState: 'READY',
+      storageKey,
+      contentType: 'video/mp4',
+      byteSize: BigInt(mediaBytes.length),
+      sha256: mediaSha256,
+      codec: 'h264',
+      durationMs: 20_000,
+      finalizedAt: mediaReadyAt,
+      clipStartAt: new Date('2026-07-15T23:59:50.000Z'),
+      clipEndAt: new Date('2026-07-16T00:00:10.000Z'),
+      readyAt: mediaReadyAt,
+      expiresAt: input.expiresAt,
+    },
+  });
+  await direct.eventMediaBinding.create({
+    data: {
+      eventId,
+      facilityId: input.facilityId,
+      clipId: input.clipId,
+      ordinal: 0,
+    },
+  });
 }
 
 function user(
@@ -276,6 +378,9 @@ async function cleanupFixtureRows(direct: PrismaClient): Promise<void> {
     where: { facilityId: { in: facilityIds } },
   });
   await direct.eventMediaBinding.deleteMany({
+    where: { facilityId: { in: facilityIds } },
+  });
+  await direct.mediaRetentionHold.deleteMany({
     where: { facilityId: { in: facilityIds } },
   });
   await direct.mediaClip.deleteMany({

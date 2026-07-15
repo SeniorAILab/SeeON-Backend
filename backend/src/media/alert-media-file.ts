@@ -46,6 +46,7 @@ export async function openAlertMediaFile(input: {
   ) {
     throw new AlertMediaFileError('INVALID_REFERENCE');
   }
+  const expectedRealPath = path.join(rootRealPath, input.storageKey);
 
   let handle: FileHandle;
   try {
@@ -57,6 +58,10 @@ export async function openAlertMediaFile(input: {
     throw new AlertMediaFileError('MISSING', { cause: error });
   }
   try {
+    const openedRealPath = await openedDescriptorRealPath(handle);
+    if (openedRealPath !== expectedRealPath) {
+      throw new AlertMediaFileError('INVALID_REFERENCE');
+    }
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size !== input.expectedSizeBytes) {
       throw new AlertMediaFileError('CORRUPT');
@@ -64,7 +69,16 @@ export async function openAlertMediaFile(input: {
     return { handle, sizeBytes: stat.size };
   } catch (error) {
     await handle.close();
-    throw error;
+    if (error instanceof AlertMediaFileError) throw error;
+    throw new AlertMediaFileError('MISSING', { cause: error });
+  }
+}
+
+async function openedDescriptorRealPath(handle: FileHandle): Promise<string> {
+  try {
+    return await fs.realpath(`/proc/self/fd/${handle.fd}`);
+  } catch (error) {
+    throw new AlertMediaFileError('INVALID_REFERENCE', { cause: error });
   }
 }
 
