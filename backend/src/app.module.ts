@@ -17,6 +17,7 @@ import { backendEnvFilePaths } from './config/env-files.js';
 import { MlConfigModule } from './ml-config/ml-config.module.js';
 import { validateBackendEnv } from './config/env-validation.js';
 import { EventMediaModule } from './media/event-media.module.js';
+import { AlertMediaModule } from './media/alert-media.module.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
@@ -46,6 +47,7 @@ import { EventMediaModule } from './media/event-media.module.js';
     MlConfigModule,
     UsersModule,
     EventMediaModule,
+    AlertMediaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
