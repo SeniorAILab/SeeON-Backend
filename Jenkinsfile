@@ -122,7 +122,7 @@ pipeline {
           if printf '%s\n' "$builders" | awk -v builder="$BUILDX_BUILDER" 'NR > 1 { name=$1; sub(/[*]$/, "", name); if (name == builder) found=1 } END { exit found ? 0 : 1 }'; then
             docker buildx rm "$BUILDX_BUILDER"
           fi
-          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --buildkitd-config "$config" --use
+          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --buildkitd-config "$config" --use --driver-opt memory=2560m,memory-swap=4096m
           docker buildx inspect --bootstrap
         '''
       }
@@ -136,6 +136,7 @@ pipeline {
         sh '''#!/usr/bin/env sh
           set -eu
           docker buildx build --builder "$BUILDX_BUILDER" --load \
+            --resource memory=2g --resource memory-swap=3g \
             --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
             --tag "eldercare-backend:$RELEASE_SHA" --file backend/Dockerfile .
@@ -153,6 +154,7 @@ pipeline {
           VITE_EVENT_CLIPS_ENABLED=$(sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env" --print-front-flag)
           export VITE_EVENT_CLIPS_ENABLED
           docker buildx build --builder "$BUILDX_BUILDER" --load \
+            --resource memory=2g --resource memory-swap=3g \
             --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
             --build-arg VITE_EVENT_CLIPS_ENABLED="$VITE_EVENT_CLIPS_ENABLED" \
