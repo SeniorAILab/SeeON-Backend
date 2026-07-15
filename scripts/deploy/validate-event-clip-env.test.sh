@@ -82,6 +82,19 @@ set -e
 assert_failure "$status"
 assert_contains "$output" 'MEDIA_CLIP_MAX_BYTES must appear exactly once'
 
+# Given a backend limit above the route-scoped nginx ceiling, when validated,
+# then production configuration is rejected before an oversized upload ships.
+oversized_env=$TMP/oversized.env
+write_valid_env "$oversized_env"
+sed 's/MEDIA_CLIP_MAX_BYTES=268435456/MEDIA_CLIP_MAX_BYTES=268435457/' "$oversized_env" > "$oversized_env.next"
+mv "$oversized_env.next" "$oversized_env"
+chmod 600 "$oversized_env"
+set +e
+output=$(sh "$SCRIPT" "$oversized_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'MEDIA_CLIP_MAX_BYTES must not exceed 268435456'
+
 # Given group-readable permissions, when validated, then the env is rejected.
 permission_env=$TMP/permission.env
 write_valid_env "$permission_env"

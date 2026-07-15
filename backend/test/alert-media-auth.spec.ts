@@ -1,5 +1,6 @@
 import request from 'supertest';
 import type { Response } from 'supertest';
+import { AlertMediaService } from '../src/media/alert-media.service';
 import {
   type AlertMediaFixture,
   createAlertMediaFixture,
@@ -163,6 +164,29 @@ describe('alert media authorization and metadata (e2e)', () => {
       select: { status: true, stateVersion: true },
     });
     expect(future).toEqual({ status: 'READY', stateVersion: 1 });
+  });
+
+  it('returns a private generic 500 when the content route fails unexpectedly', async () => {
+    const sensitiveDetail = 'unexpected-media-storage-secret';
+    const media = fixture.app.get(AlertMediaService);
+    jest
+      .spyOn(media, 'openContent')
+      .mockRejectedValueOnce(new Error(sensitiveDetail));
+
+    const response = await request(fixture.app.getHttpServer())
+      .get(contentPath(mediaFixtureIds.alertA))
+      .set('cookie', fixture.adminCookie)
+      .expect(500);
+
+    expect(response.headers['cache-control']).toBe(
+      'private, no-store, no-transform',
+    );
+    expect(response.body).toEqual({
+      statusCode: 500,
+      message: 'Internal server error',
+    });
+    expect(JSON.stringify(response.body)).not.toContain(sensitiveDetail);
+    expectNoMediaHeaders(response);
   });
 
   it.each([

@@ -3,6 +3,8 @@ import {
   Catch,
   type ExceptionFilter,
   HttpException,
+  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
 
@@ -14,16 +16,26 @@ const FORBIDDEN_DENIAL_HEADERS = [
   'etag',
 ] as const;
 
-@Catch(HttpException)
+@Catch()
 export class AlertMediaExceptionFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost): void {
+  private readonly logger = new Logger(AlertMediaExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
-    const status = exception.getStatus();
-    const exceptionResponse = exception.getResponse();
+    const isHttpException = exception instanceof HttpException;
+    const status = isHttpException
+      ? exception.getStatus()
+      : HttpStatus.INTERNAL_SERVER_ERROR;
+    const exceptionResponse = isHttpException
+      ? exception.getResponse()
+      : { statusCode: status, message: 'Internal server error' };
     const body =
-      typeof exceptionResponse === 'string'
+      isHttpException && typeof exceptionResponse === 'string'
         ? { statusCode: status, message: exceptionResponse }
         : exceptionResponse;
+    if (!isHttpException) {
+      this.logger.error({ event: 'alert_media.unhandled' });
+    }
     const payload = Buffer.from(JSON.stringify(body));
 
     response.status(status);

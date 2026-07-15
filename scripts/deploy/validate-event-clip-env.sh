@@ -68,6 +68,9 @@ positive_integer MEDIA_RETENTION_DAYS "$retention_days"
 [ "$retention_days" -ge 60 ] || fail 'MEDIA_RETENTION_DAYS must be an integer of at least 60'
 positive_integer MEDIA_MIN_FREE_BYTES "$minimum_free_bytes"
 positive_integer MEDIA_CLIP_MAX_BYTES "$maximum_clip_bytes"
+[ "$maximum_clip_bytes" -le 268435456 ] || {
+  fail 'MEDIA_CLIP_MAX_BYTES must not exceed 268435456'
+}
 [ "$minimum_free_bytes" -ge "$maximum_clip_bytes" ] || {
   fail 'MEDIA_MIN_FREE_BYTES must cover at least one maximum-sized clip'
 }
