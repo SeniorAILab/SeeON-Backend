@@ -32,6 +32,16 @@ type CleanupContext = {
 export class ClipStorageService {
   constructor(private readonly dependencies: ClipStorageDependencies) {}
 
+  async canAcceptMaximumClip(): Promise<boolean> {
+    const availableBytes = this.dependencies.availableBytes
+      ? await this.dependencies.availableBytes()
+      : await readAvailableBytes(this.dependencies.config.rootDir);
+    const requiredBytes =
+      this.dependencies.config.minimumFreeBytes +
+      BigInt(this.dependencies.config.maximumBytes);
+    return availableBytes >= requiredBytes;
+  }
+
   async persist(request: ClipPersistRequest): Promise<PersistedClip> {
     validatePersistRequest(request, this.dependencies.config.maximumBytes);
     let lock: ClipLock | undefined;

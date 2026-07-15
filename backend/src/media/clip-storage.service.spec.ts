@@ -37,6 +37,37 @@ function request(
   };
 }
 
+describe('ClipStorageService capacity', () => {
+  const config: ClipStorageConfig = {
+    rootDir: '/unused',
+    maximumBytes: 100,
+    minimumFreeBytes: 1_000n,
+    lockRetryCount: 1,
+    lockRetryDelayMs: 1,
+  };
+
+  it('advertises acceptance only above the low-water reserve plus maximum clip size', async () => {
+    // Given: capacity exactly at, then one byte below, the safe admission floor.
+    const availableBytes = jest
+      .fn<Promise<bigint>, []>()
+      .mockResolvedValueOnce(1_100n)
+      .mockResolvedValueOnce(1_099n);
+    const service = new ClipStorageService({
+      config,
+      inspector: new AcceptingInspector(),
+      availableBytes,
+    });
+
+    // When: the capability path probes storage without opening an upload.
+    const accepted = await service.canAcceptMaximumClip();
+    const denied = await service.canAcceptMaximumClip();
+
+    // Then: the advertised capability preserves the configured low-water mark.
+    expect(accepted).toBe(true);
+    expect(denied).toBe(false);
+  });
+});
+
 describe('ClipStorageService persist', () => {
   let rootDir: string;
   let config: ClipStorageConfig;

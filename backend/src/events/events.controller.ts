@@ -19,7 +19,6 @@ import {
 import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import * as path from 'path';
-import type { Event } from '@prisma/client';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
@@ -35,7 +34,10 @@ import {
 } from './dto/event.dto.js';
 import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
-import { EventRecorderService } from './event-recorder.service.js';
+import {
+  EventRecorderService,
+  type ListedEventsResult,
+} from './event-recorder.service.js';
 import {
   IMMUTABLE_FILE_RESULT,
   MAX_SNAPSHOT_BYTES,
@@ -80,7 +82,16 @@ export class EventsController {
       snapshotKey: body.snapshot_key,
       clockSource: body.clock_source,
       clipId: optionalTrimmedString(body.clip_id),
+      edgeEventId: body.edge_event_id,
     });
+    if (result.event.edgeEventId) {
+      return {
+        id: result.event.id,
+        event_id: result.event.id,
+        edge_event_id: result.event.edgeEventId,
+        status: 'accepted',
+      };
+    }
     return {
       id: result.event.id,
       status: result.duplicate ? 'duplicate' : 'created',
@@ -98,7 +109,7 @@ export class EventsController {
   async heartbeat(
     @Body() body: RecordHeartbeatRequestDto,
   ): Promise<RecordHeartbeatResponseDto> {
-    const cameraId = requireString(body?.camera_id, 'camera_id');
+    const cameraId = requireString(body.camera_id, 'camera_id');
     const camera = await this.cameras.resolveForEventIngest(cameraId);
     await this.cameras.recordHeartbeat(camera.facilityId, camera.id);
     return { ok: true };
@@ -232,7 +243,9 @@ function requireFacilityId(req: RequestWithAuth): string {
   return facilityId;
 }
 
-function toEventResponseDto(event: Event): EventResponseDto {
+function toEventResponseDto(
+  event: ListedEventsResult['items'][number],
+): EventResponseDto {
   return {
     id: event.id,
     facilityId: event.facilityId,
@@ -241,7 +254,6 @@ function toEventResponseDto(event: Event): EventResponseDto {
     type: event.type,
     confidence: event.confidence,
     detectedAt: event.detectedAt,
-    clipId: event.clipId,
     createdAt: event.createdAt,
     modifiedAt: event.modifiedAt,
     configVersion: event.configVersion,
