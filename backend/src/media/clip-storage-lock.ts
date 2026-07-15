@@ -1,8 +1,14 @@
-import { constants, promises as fs } from 'node:fs';
-import type { FileHandle } from 'node:fs/promises';
-import * as path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { mapStorageFailure, syncDirectory } from './clip-storage-publish.js';
+import {
+  assertContainedFile,
+  closeVerifiedDirectory,
+  createContainedFile,
+  openVerifiedDirectory,
+  type ContainedFile,
+  type VerifiedDirectory,
+} from './clip-storage-containment.js';
+import { mapStorageFailure } from './clip-storage-publish.js';
 import {
   CLIP_STORAGE_ERROR_CODES,
   ClipStorageError,
@@ -11,78 +17,150 @@ import {
 } from './clip-storage.types.js';
 
 export type ClipLock = {
-  readonly handle: FileHandle;
-  readonly lockPath: string;
+  readonly file: ContainedFile;
 };
 
 export async function acquireStorageLock(
   dependencies: ClipStorageDependencies,
 ): Promise<ClipLock> {
-  return acquireLock(
-    dependencies,
-    path.join(dependencies.config.rootDir, '.locks', '.store.lock'),
-  );
+  const directory = await openVerifiedDirectory(dependencies.config.rootDir, [
+    '.locks',
+  ]);
+  return acquireLock(dependencies, directory, '.store.lock');
 }
 
 export async function acquireClipLock(
   dependencies: ClipStorageDependencies,
   request: ClipPersistRequest,
 ): Promise<ClipLock> {
-  const lockDir = path.join(
-    dependencies.config.rootDir,
+  const directory = await openVerifiedDirectory(dependencies.config.rootDir, [
     '.locks',
     request.facilityId,
-  );
-  await fs.mkdir(lockDir, { recursive: true, mode: 0o700 });
-  return acquireLock(
-    dependencies,
-    path.join(lockDir, `${request.clipId}.lock`),
-  );
+  ]);
+  return acquireLock(dependencies, directory, `${request.clipId}.lock`);
 }
 
 export async function releaseClipLock(lock: ClipLock): Promise<void> {
-  await lock.handle.close();
-  await fs.unlink(lock.lockPath);
-  await syncDirectory(path.dirname(lock.lockPath));
+  await removeOwnedLockFile(lock.file, true);
 }
 
 async function acquireLock(
   dependencies: ClipStorageDependencies,
-  lockPath: string,
+  directory: VerifiedDirectory,
+  lockName: string,
 ): Promise<ClipLock> {
-  for (
-    let attempt = 0;
-    attempt <= dependencies.config.lockRetryCount;
-    attempt += 1
-  ) {
-    try {
-      const handle = await fs.open(
-        lockPath,
-        constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_WRONLY |
-          constants.O_NOFOLLOW,
-        0o600,
-      );
-      await handle.writeFile(`${process.pid}\n`);
-      await handle.sync();
-      return { handle, lockPath };
-    } catch (error) {
-      if (!hasErrorCode(error, 'EEXIST')) throw mapStorageFailure(error);
-      if (attempt === dependencies.config.lockRetryCount) {
-        throw new ClipStorageError(
-          CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT,
-          'storage lock remained busy',
-          { cause: error },
-        );
+  try {
+    for (
+      let attempt = 0;
+      attempt <= dependencies.config.lockRetryCount;
+      attempt += 1
+    ) {
+      try {
+        const file = await createContainedFile(directory, lockName);
+        try {
+          await file.handle.writeFile(`${process.pid}\n`);
+          await file.handle.sync();
+          await assertContainedFile(file);
+          return { file };
+        } catch (error) {
+          await discardCreatedLock(file, error);
+          throw error;
+        }
+      } catch (error) {
+        if (!hasErrorCode(error, 'EEXIST')) throw error;
+        if (attempt === dependencies.config.lockRetryCount) {
+          throw new ClipStorageError(
+            CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT,
+            'storage lock remained busy',
+            { cause: error },
+          );
+        }
+        await delay(dependencies.config.lockRetryDelayMs);
       }
-      await delay(dependencies.config.lockRetryDelayMs);
     }
+  } catch (error) {
+    await closeDirectoryAfterFailure(directory, error);
+    throw mapStorageFailure(error);
   }
   throw new ClipStorageError(
     CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT,
     'storage lock remained busy',
   );
+}
+
+async function discardCreatedLock(
+  file: ContainedFile,
+  primaryFailure: unknown,
+): Promise<void> {
+  try {
+    await removeOwnedLockFile(file, false);
+  } catch (cleanupFailure) {
+    throw new ClipStorageError(
+      CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
+      'failed to remove an unacquired storage lock',
+      { cause: new AggregateError([primaryFailure, cleanupFailure]) },
+    );
+  }
+}
+
+async function removeOwnedLockFile(
+  file: ContainedFile,
+  closeDirectory: boolean,
+): Promise<void> {
+  const failures: unknown[] = [];
+  let ownsDirectoryEntry = false;
+  try {
+    await assertContainedFile(file);
+    ownsDirectoryEntry = true;
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await file.handle.close();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (ownsDirectoryEntry) {
+    try {
+      await fs.unlink(file.path);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await file.directory.handle.sync();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (closeDirectory) {
+    try {
+      await closeVerifiedDirectory(file.directory);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  throwFailures(failures);
+}
+
+async function closeDirectoryAfterFailure(
+  directory: VerifiedDirectory,
+  primaryFailure: unknown,
+): Promise<void> {
+  try {
+    await closeVerifiedDirectory(directory);
+  } catch (cleanupFailure) {
+    throw new ClipStorageError(
+      CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
+      'failed to close a storage lock directory',
+      { cause: new AggregateError([primaryFailure, cleanupFailure]) },
+    );
+  }
+}
+
+function throwFailures(failures: readonly unknown[]): void {
+  if (failures.length === 0) return;
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(failures, 'storage lock cleanup failures');
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {

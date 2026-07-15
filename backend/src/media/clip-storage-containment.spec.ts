@@ -42,6 +42,48 @@ describe('ClipStorageService write containment', () => {
     await fs.rm(sandbox, { recursive: true, force: true });
   });
 
+  it('rejects a lock parent swapped immediately before file creation without writing outside', async () => {
+    // Given: an attacker replaces the verified lock directory at the create seam.
+    const lockDir = path.join(rootDir, '.locks');
+    const parkedLockDir = path.join(sandbox, 'parked-locks');
+    const outsideStoreLock = path.join(outsideDir, '.store.lock');
+    const originalOpen = fs.open.bind(fs);
+    let replaced = false;
+    let escapedBytes: Buffer | undefined;
+    jest.spyOn(fs, 'open').mockImplementation(async (filePath, flags, mode) => {
+      if (
+        !replaced &&
+        typeof filePath === 'string' &&
+        filePath.endsWith('.store.lock')
+      ) {
+        replaced = true;
+        await fs.rename(lockDir, parkedLockDir);
+        await fs.symlink(outsideDir, lockDir, 'dir');
+      } else if (
+        replaced &&
+        typeof filePath === 'string' &&
+        filePath.endsWith(`${CLIP_ID}.lock`)
+      ) {
+        escapedBytes = await fs
+          .readFile(outsideStoreLock)
+          .catch(() => undefined);
+        const denied = new Error('forced lock acquisition failure');
+        Object.assign(denied, { code: 'EACCES' });
+        throw denied;
+      }
+      return originalOpen(filePath, flags, mode);
+    });
+
+    // When: persistence acquires the global lock after the directory swap.
+    const action = service(config).persist(request());
+
+    // Then: containment fails before any lock bytes reach the outside target.
+    await expectContainmentRejection(action);
+    expect(escapedBytes).toBeUndefined();
+    await expect(listFiles(outsideDir)).resolves.toEqual([]);
+    await expect(listFiles(parkedLockDir)).resolves.toEqual([]);
+  });
+
   it('rejects an intermediate staging symlink before writing media', async () => {
     // Given: the facility staging segment redirects outside the configured root.
     const stagingRoot = path.join(rootDir, '.staging');
