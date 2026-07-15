@@ -129,12 +129,17 @@ describe('EventRecorderService', () => {
     ).resolves.toEqual({ event: created, duplicate: false });
 
     // Then: the backend stores the edge identity and derives deduplication from it.
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        edgeEventId,
-        dedupKey:
-          '7b7c6d41ca592336c550e5ff38554707a1791797734195fe8a595dac42b82dfd',
-      }),
+    const createCalls = tx.event.create.mock.calls as unknown as Array<
+      [
+        {
+          data: { edgeEventId: string; dedupKey: string };
+        },
+      ]
+    >;
+    expect(createCalls[0]?.[0].data).toMatchObject({
+      edgeEventId,
+      dedupKey:
+        '7b7c6d41ca592336c550e5ff38554707a1791797734195fe8a595dac42b82dfd',
     });
   });
 
