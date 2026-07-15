@@ -64,6 +64,9 @@ maximum_clip_bytes=$(env_value MEDIA_CLIP_MAX_BYTES)
 
 boolean_value EVENT_CLIPS_ENABLED "$event_clips_enabled"
 boolean_value VITE_EVENT_CLIPS_ENABLED "$front_event_clips_enabled"
+[ "$event_clips_enabled" = "$front_event_clips_enabled" ] || {
+  fail 'EVENT_CLIPS_ENABLED and VITE_EVENT_CLIPS_ENABLED must match'
+}
 positive_integer MEDIA_RETENTION_DAYS "$retention_days"
 [ "$retention_days" -ge 60 ] || fail 'MEDIA_RETENTION_DAYS must be an integer of at least 60'
 positive_integer MEDIA_MIN_FREE_BYTES "$minimum_free_bytes"
