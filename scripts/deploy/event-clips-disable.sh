@@ -11,6 +11,7 @@ LOCK_DIR=$APP_ROOT/shared/deploy.lock
 COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
 LOCK_HELD=0
 TEMP_FILE=''
+FEATURE_OVERRIDE_REQUIRED=0
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -55,8 +56,19 @@ valid_sha() {
 }
 
 compose() {
-  # shellcheck disable=SC2086 # Fixed Compose file pair.
-  docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+  if [ "$FEATURE_OVERRIDE_REQUIRED" -eq 1 ]; then
+    [ -f "$FEATURE_ENV" ] || fail 'feature override disappeared after activation'
+    owner_only_file "$FEATURE_ENV" 'feature override'
+    printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail 'feature override changed after activation'
+    # shellcheck disable=SC2086 # Fixed Compose file pair.
+    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+  elif [ -f "$FEATURE_ENV" ]; then
+    # shellcheck disable=SC2086 # Fixed Compose file pair.
+    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+  else
+    # shellcheck disable=SC2086 # Fixed Compose file pair.
+    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
+  fi
 }
 
 container_mount() {
@@ -145,6 +157,7 @@ printf '%s\n' 'EVENT_CLIPS_ENABLED=false' > "$TEMP_FILE"
 mv "$TEMP_FILE" "$FEATURE_ENV"
 TEMP_FILE=''
 chmod 600 "$FEATURE_ENV"
+FEATURE_OVERRIDE_REQUIRED=1
 
 feature_config=$(compose config) || fail 'unable to render disabled feature configuration'
 printf '%s\n' "$feature_config" | grep -E 'EVENT_CLIPS_ENABLED:[[:space:]]*"?false"?' >/dev/null || {
