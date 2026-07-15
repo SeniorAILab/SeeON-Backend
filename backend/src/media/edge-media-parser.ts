@@ -11,6 +11,7 @@ const SAFE_CLIP_ID = /^[A-Za-z0-9._-]{1,200}$/;
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const MAX_TRANSITIONABLE_STATE_VERSION = 2_147_483_646;
 
 export function parseReadyClipUpload(
   externalClipId: string,
@@ -146,8 +147,8 @@ function parsePositiveInteger(value: string, field: string): number {
 
 function parsePostgresInteger(value: string): number {
   const parsed = parsePositiveInteger(value, 'state_version');
-  if (parsed > 2_147_483_647) {
-    throw invalidInput('state_version exceeds PostgreSQL INTEGER');
+  if (parsed > MAX_TRANSITIONABLE_STATE_VERSION) {
+    throw invalidInput('state_version cannot expire within PostgreSQL INTEGER');
   }
   return parsed;
 }

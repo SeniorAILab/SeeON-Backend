@@ -61,7 +61,11 @@ export class EventMediaRepository {
         throw immutableConflict();
       }
       await bindExactEvents(tx, facilityId, current.id, events);
-      if (current.status === 'READY' || current.status === 'EXPIRED') {
+      if (
+        current.status === 'READY' ||
+        current.status === 'EXPIRED' ||
+        (current.status === 'UNAVAILABLE' && current.reason === 'CORRUPT')
+      ) {
         return preparedReadyClip(current, manifest.sha256);
       }
       // STAGED survives a process crash. Boot reconciliation removes transient
@@ -106,11 +110,18 @@ export class EventMediaRepository {
         if (!matchesPersistedClip(clip, persisted)) throw immutableConflict();
         return clip;
       }
-      if (
-        clip.status !== 'PENDING' ||
-        clip.storageState !== 'STAGED' ||
-        clip.stagingToken !== stagingToken
-      ) {
+      const ownsStaging =
+        clip.status === 'PENDING' &&
+        clip.storageState === 'STAGED' &&
+        clip.stagingToken === stagingToken;
+      const recoversContractRace =
+        clip.status === 'UNAVAILABLE' &&
+        clip.reason === 'CORRUPT' &&
+        clip.storageState === 'NONE' &&
+        clip.storageKey === null &&
+        clip.stagingToken === null &&
+        stagingToken === persisted.sha256;
+      if (!ownsStaging && !recoversContractRace) {
         throw new EventMediaError(
           EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
           'clip cannot transition to READY from its current state',
@@ -129,6 +140,49 @@ export class EventMediaRepository {
           stagingToken: null,
           readyAt: new Date(),
           expiresAt,
+        },
+      });
+    });
+  }
+
+  async rejectReadyContract(
+    facilityId: string,
+    clipId: string,
+    stagingToken: string,
+  ): Promise<MediaClip> {
+    return this.prisma.withFacilityContext(facilityId, async (tx) => {
+      await lockClip(tx, clipId);
+      const clip = await tx.mediaClip.findUniqueOrThrow({
+        where: { id: clipId },
+      });
+      if (clip.status === 'READY' || clip.status === 'EXPIRED') return clip;
+      if (
+        clip.status === 'UNAVAILABLE' &&
+        clip.reason === 'CORRUPT' &&
+        clip.storageState === 'NONE' &&
+        clip.storageKey === null &&
+        clip.stagingToken === null
+      ) {
+        return clip;
+      }
+      if (
+        clip.status !== 'PENDING' ||
+        clip.storageState !== 'STAGED' ||
+        clip.stagingToken !== stagingToken
+      ) {
+        throw new EventMediaError(
+          EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,
+          'clip cannot reject READY from its current state',
+        );
+      }
+      return tx.mediaClip.update({
+        where: { id: clip.id },
+        data: {
+          status: 'UNAVAILABLE',
+          reason: 'CORRUPT',
+          storageState: 'NONE',
+          stagingToken: null,
+          stagedAt: null,
         },
       });
     });
@@ -193,7 +247,12 @@ function preparedReadyClip(
   if (
     clip.status !== 'PENDING' &&
     clip.status !== 'READY' &&
-    clip.status !== 'EXPIRED'
+    clip.status !== 'EXPIRED' &&
+    (clip.status !== 'UNAVAILABLE' ||
+      clip.reason !== 'CORRUPT' ||
+      clip.storageState !== 'NONE' ||
+      clip.storageKey !== null ||
+      clip.stagingToken !== null)
   ) {
     throw new EventMediaError(
       EVENT_MEDIA_ERROR_CODES.INVALID_TRANSITION,

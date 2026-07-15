@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { MediaClipReason, MediaHoldKind } from '@prisma/client';
 import { CamerasService } from '../cameras/cameras.service.js';
+import {
+  CLIP_STORAGE_ERROR_CODES,
+  ClipStorageError,
+} from './clip-storage.types.js';
 import { ClipStorageService } from './clip-storage.service.js';
 import { retentionExpiry } from './event-media.config.js';
 import { EventMediaLifecycleRepository } from './event-media-lifecycle.repository.js';
@@ -45,14 +49,30 @@ export class EventMediaService {
       camera.facilityId,
       input,
     );
-    const persisted = await this.storage.persist({
-      facilityId: camera.facilityId,
-      clipId: prepared.id,
-      expectedSha256: input.sha256,
-      expectedSizeBytes: input.sizeBytes,
-      expectedDurationMs: input.durationMs,
-      source: input.source,
-    });
+    if (prepared.state === 'UNAVAILABLE') {
+      await drain(input.source);
+      return unavailableReceipt(input.externalClipId, prepared.stateVersion);
+    }
+    let persisted;
+    try {
+      persisted = await this.storage.persist({
+        facilityId: camera.facilityId,
+        clipId: prepared.id,
+        expectedSha256: input.sha256,
+        expectedSizeBytes: input.sizeBytes,
+        expectedDurationMs: input.durationMs,
+        source: input.source,
+      });
+    } catch (error) {
+      if (isPermanentReadyContractError(error)) {
+        await this.repository.rejectReadyContract(
+          camera.facilityId,
+          prepared.id,
+          prepared.stagingToken,
+        );
+      }
+      throw error;
+    }
     const clip = await this.repository.finalizeReady(
       camera.facilityId,
       prepared.id,
@@ -83,11 +103,7 @@ export class EventMediaService {
       camera.facilityId,
       input,
     );
-    return {
-      clip_id: input.externalClipId,
-      state: 'UNAVAILABLE',
-      state_version: clip.stateVersion,
-    };
+    return unavailableReceipt(input.externalClipId, clip.stateVersion);
   }
 
   expireReady(facilityId: string, externalClipId: string, now: Date) {
@@ -131,4 +147,39 @@ function expiredReceipt(
     state: 'EXPIRED',
     state_version: stateVersion,
   };
+}
+
+function unavailableReceipt(
+  externalClipId: string,
+  stateVersion: number,
+): ClipReceipt {
+  return {
+    clip_id: externalClipId,
+    state: 'UNAVAILABLE',
+    state_version: stateVersion,
+  };
+}
+
+async function drain(source: ReadyClipUpload['source']): Promise<void> {
+  for await (const chunk of source) {
+    void chunk;
+  }
+}
+
+function isPermanentReadyContractError(error: unknown): boolean {
+  if (!(error instanceof ClipStorageError)) return false;
+  switch (error.code) {
+    case CLIP_STORAGE_ERROR_CODES.CHECKSUM_MISMATCH:
+    case CLIP_STORAGE_ERROR_CODES.LENGTH_MISMATCH:
+    case CLIP_STORAGE_ERROR_CODES.DURATION_MISMATCH:
+    case CLIP_STORAGE_ERROR_CODES.UNSUPPORTED_MEDIA:
+      return true;
+    case CLIP_STORAGE_ERROR_CODES.INSUFFICIENT_STORAGE:
+    case CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE:
+    case CLIP_STORAGE_ERROR_CODES.IMMUTABLE_CONFLICT:
+    case CLIP_STORAGE_ERROR_CODES.SIZE_LIMIT_EXCEEDED:
+    case CLIP_STORAGE_ERROR_CODES.LOCK_TIMEOUT:
+    case CLIP_STORAGE_ERROR_CODES.INVALID_INPUT:
+      return false;
+  }
 }

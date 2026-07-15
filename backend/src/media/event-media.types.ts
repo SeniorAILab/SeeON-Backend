@@ -78,7 +78,7 @@ export type ClipReceipt =
 export type PreparedReadyClip = {
   readonly id: string;
   readonly facilityId: string;
-  readonly state: 'PENDING' | 'READY' | 'EXPIRED';
+  readonly state: 'PENDING' | 'READY' | 'UNAVAILABLE' | 'EXPIRED';
   readonly stateVersion: number;
   readonly stagingToken: string;
   readonly storageKey: string | null;

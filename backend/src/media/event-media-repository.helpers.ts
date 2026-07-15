@@ -11,7 +11,12 @@ export function matchesReadyManifest(
   manifest: ReadyClipManifest,
 ): boolean {
   return (
-    (clip.status === 'PENDING' ||
+    ((clip.status === 'UNAVAILABLE' &&
+      clip.reason === 'CORRUPT' &&
+      clip.storageState === 'NONE' &&
+      clip.storageKey === null &&
+      clip.stagingToken === null) ||
+      clip.status === 'PENDING' ||
       clip.status === 'READY' ||
       clip.status === 'EXPIRED') &&
     clip.cameraId === manifest.cameraId &&
