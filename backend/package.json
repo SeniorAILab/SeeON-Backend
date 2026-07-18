@@ -20,7 +20,7 @@
     "db:seed:prod": "node dist-tools/prisma/seed.js",
     "lint": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test,prisma}/**/*.ts\" --fix",
-    "dto:check": "node ../scripts/backend-guard/check-dto-contracts.mjs",
+    "dto:check": "eslint --config eslint.dto.config.mjs \"src/**/*.dto.ts\" \"src/**/*.controller.ts\"",
     "smoke:no-db": "NODE_ENV=test DATABASE_URL='postgresql://fall_app:fall_app@127.0.0.1:65432/fall_dev?schema=public' DIRECT_URL='postgresql://fall:fall@127.0.0.1:65432/fall_dev?schema=public' SESSION_JWT_SECRET='dev-only-session-secret-change-me-32chars-min' jest test/route-versioning.spec.ts --runInBand",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
