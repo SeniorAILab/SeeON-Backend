@@ -6,13 +6,13 @@
 // Here we idempotently guarantee that one email/password SUPER_ADMIN exists so a
 // freshly migrated production database is operable. It runs after `prisma migrate
 // deploy` in the safe deploy path (ADR) and is driven entirely by runtime env —
-// no credentials are committed. If SUPER_ADMIN_PASSWORD is unset the bootstrap is a
-// no-op, so deploys without a configured super admin are never blocked.
+// no credentials or account identities are committed. If SUPER_ADMIN_PASSWORD or
+// SUPER_ADMIN_EMAIL is unset the bootstrap is a no-op, so deploys without a
+// configured super admin are never blocked.
 import { PrismaClient } from '@prisma/client';
 
 import { hashPassword, verifyPassword } from '../src/auth/password';
 
-const DEFAULT_EMAIL = 'admin@example.com';
 const DEFAULT_NICKNAME = 'Senior AI Lab';
 
 type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
@@ -34,7 +34,10 @@ export function readSuperAdminConfig(
   if (password.length === 0) {
     return { skip: true, reason: 'SUPER_ADMIN_PASSWORD is not set' };
   }
-  const email = (env.SUPER_ADMIN_EMAIL ?? '').trim() || DEFAULT_EMAIL;
+  const email = (env.SUPER_ADMIN_EMAIL ?? '').trim();
+  if (email.length === 0) {
+    return { skip: true, reason: 'SUPER_ADMIN_EMAIL is not set' };
+  }
   const nickname = (env.SUPER_ADMIN_NICKNAME ?? '').trim() || DEFAULT_NICKNAME;
   const facilityId = (env.SUPER_ADMIN_FACILITY_ID ?? '').trim() || null;
   return { skip: false, email, password, nickname, facilityId };

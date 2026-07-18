@@ -21,8 +21,29 @@ describe('super-admin bootstrap config', () => {
     });
   });
 
-  it('defaults email/nickname to the canonical super admin when only the password is set', () => {
+  it('skips when SUPER_ADMIN_EMAIL is unset or blank', () => {
     expect(readSuperAdminConfig({ SUPER_ADMIN_PASSWORD: 'pw' })).toEqual({
+      skip: true,
+      reason: 'SUPER_ADMIN_EMAIL is not set',
+    });
+    expect(
+      readSuperAdminConfig({
+        SUPER_ADMIN_PASSWORD: 'pw',
+        SUPER_ADMIN_EMAIL: '   ',
+      }),
+    ).toEqual({
+      skip: true,
+      reason: 'SUPER_ADMIN_EMAIL is not set',
+    });
+  });
+
+  it('defaults nickname when only password and email are set', () => {
+    expect(
+      readSuperAdminConfig({
+        SUPER_ADMIN_PASSWORD: 'pw',
+        SUPER_ADMIN_EMAIL: 'admin@example.com',
+      }),
+    ).toEqual({
       skip: false,
       email: 'admin@example.com',
       password: 'pw',

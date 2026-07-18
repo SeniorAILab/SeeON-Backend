@@ -51,7 +51,7 @@ describe('auth cookie utilities', () => {
 
   it('keeps cookies secure for HTTP production origins unless explicitly overridden', () => {
     process.env.NODE_ENV = 'production';
-    process.env.FRONT_ORIGIN = 'http://<retired-host>';
+    process.env.FRONT_ORIGIN = 'http://192.0.2.10';
     delete process.env.AUTH_COOKIE_SECURE;
     const response = makeResponse();
 
