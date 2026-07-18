@@ -41,13 +41,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
     steps:
-      - name: Validate deployment webhook token
+      - name: Validate deployment webhook configuration
         run: |
           set -eu
           set +x
           if [[ -z "$WEBHOOK_TOKEN" ]]; then
             echo "::error::WEBHOOK_TOKEN is required when deployment is enabled"
+            exit 1
+          fi
+          if [[ -z "$DEPLOY_WEBHOOK_URL" ]]; then
+            echo "::error::DEPLOY_WEBHOOK_URL is required when deployment is enabled"
             exit 1
           fi
       - name: Trigger Jenkins deployment
@@ -59,4 +64,4 @@ jobs:
             --header "Authorization: Bearer $WEBHOOK_TOKEN" \
             --header "Content-Type: application/json" \
             --data '{}' \
-            http://<iwinv-host>/generic-webhook-trigger/invoke
+            "$DEPLOY_WEBHOOK_URL"

@@ -18,9 +18,12 @@ const requiredTriggerPredicates = [
 const requiredDeliveryFragments = [
   'if [[ -z "$WEBHOOK_TOKEN" ]]',
   'WEBHOOK_TOKEN is required when deployment is enabled',
+  'if [[ -z "$DEPLOY_WEBHOOK_URL" ]]',
+  'DEPLOY_WEBHOOK_URL is required when deployment is enabled',
+  'DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}',
   '--header "Authorization: Bearer $WEBHOOK_TOKEN"',
   '--data \'{}\'',
-  'http://<iwinv-host>/generic-webhook-trigger/invoke',
+  '"$DEPLOY_WEBHOOK_URL"',
   '--connect-timeout 10',
   '--max-time 30',
   '--retry 0',
@@ -62,6 +65,11 @@ function assertWorkflowContract(source) {
     'only release publication may trigger deployment',
   );
   assert.doesNotMatch(source, /workflow_run/, 'workflow_run must not trigger deployment');
+  assert.doesNotMatch(
+    source,
+    /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/,
+    'workflow must not embed literal host addresses (deployment endpoint lives in the DEPLOY_WEBHOOK_URL secret)',
+  );
 
   const classifyJob = extractJob(source, 'classify', 'trigger');
   requireFragment(
@@ -108,11 +116,11 @@ function assertWorkflowContract(source) {
   assert.doesNotMatch(triggerJob, /\b(?:SHA|REF)\b|head_sha|refs\/heads|\bjq\b/, 'trigger payload must not contain SHA or ref data');
 
   const validationStep = triggerJob.match(
-    /- name: Validate deployment webhook token\n([\s\S]*?)\n      - name: Trigger Jenkins deployment/,
+    /- name: Validate deployment webhook configuration\n([\s\S]*?)\n      - name: Trigger Jenkins deployment/,
   )?.[1];
-  assert.ok(validationStep, 'unconditional webhook token validation step is required');
-  assert.ok(!/^\s*if:/m.test(validationStep), 'webhook token validation must be unconditional');
-  assert.match(validationStep, /set \+x/, 'webhook token validation must disable shell tracing');
+  assert.ok(validationStep, 'unconditional webhook configuration validation step is required');
+  assert.ok(!/^\s*if:/m.test(validationStep), 'webhook configuration validation must be unconditional');
+  assert.match(validationStep, /set \+x/, 'webhook configuration validation must disable shell tracing');
 
   const triggerStep = triggerJob.match(/- name: Trigger Jenkins deployment\n([\s\S]*)$/)?.[1];
   assert.ok(triggerStep, 'Jenkins trigger step is required');
