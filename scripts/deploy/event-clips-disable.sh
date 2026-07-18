@@ -27,7 +27,7 @@ owner_only_file() {
   label=$2
   [ ! -L "$file" ] || fail "$label must not be a symbolic link"
   [ -f "$file" ] || fail "$label must be a regular file"
-  mode=$(stat -c '%a' "$file") || fail "unable to inspect $label permissions"
+  mode=$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file") || fail "unable to inspect $label permissions"
   case "$mode" in 400|600) ;; *) fail "$label permissions must be 400 or 600" ;; esac
 }
 

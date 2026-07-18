@@ -31,7 +31,7 @@ case "$origin_authority" in
 esac
 
 regular_proof "$PRODUCTION_ENV_FILE" 'production environment proof'
-env_mode=$(stat -c '%a' "$PRODUCTION_ENV_FILE") || fail 'unable to inspect production environment proof'
+env_mode=$(stat -c '%a' "$PRODUCTION_ENV_FILE" 2>/dev/null || stat -f '%Lp' "$PRODUCTION_ENV_FILE") || fail 'unable to inspect production environment proof'
 case "$env_mode" in 400|600) ;; *) fail 'production environment proof permissions must be 400 or 600' ;; esac
 secure_count=$(grep -Ec '^AUTH_COOKIE_SECURE=' "$PRODUCTION_ENV_FILE" || :)
 [ "$secure_count" -eq 1 ] && grep -Fx 'AUTH_COOKIE_SECURE=true' "$PRODUCTION_ENV_FILE" >/dev/null || {

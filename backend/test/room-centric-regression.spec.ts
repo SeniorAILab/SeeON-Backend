@@ -35,6 +35,9 @@ describe('room-centric cross-slice regression invariants', () => {
     httpApp = moduleRef.createNestApplication();
     configureVersionedTestApp(httpApp);
     await httpApp.init();
+    // dashboard_receipt_history is append-only (no cascade); receipts must go
+    // before the alerts they reference.
+    await direct.dashboardReceipt.deleteMany();
     await direct.alert.deleteMany();
     await direct.event.deleteMany();
     await direct.camera.deleteMany();

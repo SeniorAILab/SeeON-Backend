@@ -23,6 +23,7 @@
     "dto:check": "node ../scripts/backend-guard/check-dto-contracts.mjs",
     "smoke:no-db": "NODE_ENV=test DATABASE_URL='postgresql://fall_app:fall_app@127.0.0.1:65432/fall_dev?schema=public' DIRECT_URL='postgresql://fall:fall@127.0.0.1:65432/fall_dev?schema=public' SESSION_JWT_SECRET='dev-only-session-secret-change-me-32chars-min' jest test/route-versioning.spec.ts --runInBand",
     "test": "jest --runInBand",
+    "test:local": "dotenv -e ../.env.local -- jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -87,7 +88,8 @@
     "rootDir": ".",
     "testMatch": [
       "<rootDir>/src/**/*.spec.ts",
-      "<rootDir>/test/**/*.spec.ts"
+      "<rootDir>/test/**/*.spec.ts",
+      "<rootDir>/test/**/*.e2e-spec.ts"
     ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"

@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+# event-media-backup.sh targets the Linux prod VM; this harness needs /dev/shm
+# and findmnt, so non-Linux hosts skip while CI (ubuntu) enforces.
+if [ "$(uname -s)" != Linux ]; then
+  printf '%s\n' 'skipping event media product restore harness (Linux-only: /dev/shm, findmnt)'
+  exit 0
+fi
+
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 BACKUP_SCRIPT=$REPO_ROOT/scripts/deploy/event-media-backup.sh
 VALIDATE_SCRIPT=$REPO_ROOT/scripts/deploy/validate-event-media-backup.sh

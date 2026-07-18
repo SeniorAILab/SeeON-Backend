@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # pre-push: assert not on a protected branch; block push if behind upstream;
-#           deny irreversible asset uploads in outgoing commits; run lint+typecheck
-#           on changed packages (client-side substitute for unavailable required checks).
+#           deny irreversible asset uploads in outgoing commits; reject out-of-order
+#           Prisma migrations; run lint+typecheck+tests on changed packages
+#           (client-side substitute for unavailable required checks).
 # Zero inline logic — all enforcement lives in scripts/git-guard/.
 # Note: check-freshness.sh does not read stdin, so deny-assets.sh receives
 #       the git-provided stdin (local_ref local_sha remote_ref remote_sha lines) intact.
@@ -10,5 +11,6 @@ root=$(git rev-parse --show-toplevel)
 "$root/scripts/git-guard/assert-not-main.sh"
 "$root/scripts/git-guard/check-freshness.sh" block
 "$root/scripts/git-guard/deny-assets.sh" push
-# deny-assets.sh consumed stdin above; check-lint.sh does not read stdin (diffs origin/main).
+# deny-assets.sh consumed stdin above; the remaining guards do not read stdin.
+"$root/scripts/git-guard/check-migrations.sh"
 "$root/scripts/git-guard/check-lint.sh"

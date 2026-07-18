@@ -22,7 +22,8 @@ scripts/
 | --- | --- | --- |
 | Protected-branch guard | `git-guard/assert-not-main.sh` | Refuses commit/push on `main` (the one hard invariant). |
 | Local dev orchestration | `dev/`, `db/` | Guarded local env checks, DB reset, and native dev command sequencing. |
-| Local lint gate | `git-guard/check-lint.sh` | Mirrors changed-package lint/type checks. |
+| Local lint gate | `git-guard/check-lint.sh` | Mirrors changed-package lint/type checks; runs backend tests when the local DB is up. |
+| Migration order guard | `git-guard/check-migrations.sh` | Rejects out-of-order/misnamed Prisma migrations (pre-push + CI); `--fix` renumbers. |
 | Freshness guard | `git-guard/check-freshness.sh` | Protects stale protected-branch work. |
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL. |
 | DTO guard | `backend-guard/check-dto-contracts.mjs` | Hard gate for backend DTO names and body types. |

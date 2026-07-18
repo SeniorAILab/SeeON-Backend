@@ -14,7 +14,7 @@ fail() {
 BUNDLE=$1
 [ ! -L "$BUNDLE" ] || fail 'backup bundle must not be a symbolic link'
 [ -d "$BUNDLE" ] || fail 'backup bundle must be a directory'
-[ "$(stat -c '%a' "$BUNDLE")" = 700 ] || fail 'backup bundle permissions must be 700'
+[ "$(stat -c '%a' "$BUNDLE" 2>/dev/null || stat -f '%Lp' "$BUNDLE")" = 700 ] || fail 'backup bundle permissions must be 700'
 
 manifest=$BUNDLE/MANIFEST
 database_archive=$BUNDLE/database.dump
@@ -22,7 +22,7 @@ clip_archive=$BUNDLE/clips.tar
 for file in "$manifest" "$database_archive" "$clip_archive"; do
   [ ! -L "$file" ] || fail 'backup artifacts must not be symbolic links'
   [ -f "$file" ] || fail 'backup bundle is missing a required artifact'
-  [ "$(stat -c '%a' "$file")" = 600 ] || fail 'backup artifact permissions must be 600'
+  [ "$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file")" = 600 ] || fail 'backup artifact permissions must be 600'
 done
 
 entry_count=$(find "$BUNDLE" -mindepth 1 -maxdepth 1 -print | wc -l)
