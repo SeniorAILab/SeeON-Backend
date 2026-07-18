@@ -181,7 +181,9 @@ pipeline {
   post {
     failure {
       emailext(
-        to: 'admin@example.com',
+        // Recipient comes from controller-level env (casc.yaml), not the repo,
+        // so the public tree carries no personal address. Empty -> no mail.
+        to: env.DEPLOY_ALERT_EMAIL ?: '',
         subject: "[eldercare-fall-ai] Jenkins deploy failed: ${env.RELEASE_SHA ?: 'unresolved'}",
         body: "Deployment failed for release SHA ${env.RELEASE_SHA ?: 'unresolved'}. Build: ${env.BUILD_URL}"
       )
