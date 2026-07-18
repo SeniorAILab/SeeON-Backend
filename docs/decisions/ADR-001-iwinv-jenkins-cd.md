@@ -20,7 +20,7 @@ Superseded by [ADR-002: Release-based CD](ADR-002-release-based-cd.md).
 ## Context
 
 - 기존 CD(`deploy-ncloud.yml`)는 GitHub Actions에서 4개 이미지를 빌드해 ghcr에 push하고 ncloud VM에 SSH 배포하는 구조였다. ncloud VM은 2026-07-10 폐기되어 이 워크플로는 orphan 상태다.
-- 새 배포 대상은 iwinv VM(<iwinv-host>, Ubuntu 26.04, 6 vCPU / 6 GB RAM / 50 GB SSD). 현재 키 전용 SSH만 열려 있고 미프로비저닝 상태다.
+- 새 배포 대상은 iwinv VM(`<iwinv-host>`, Ubuntu 26.04, 6 vCPU / 6 GB RAM / 50 GB SSD). 현재 키 전용 SSH만 열려 있고 미프로비저닝 상태다.
 - 도메인이 없어 TLS 인증서를 발급할 수 없다 (IP만 존재).
 - `ci.yml`의 path-filtered `ci-gate`가 이미 단일 required check로 동작한다.
 - ML(ml-api/ml-worker)은 엣지 노드(happy-nursing-home)에서 구동하며 이번 결정 범위 밖이다 — 기존 `edge-images.yml` release 플로우 유지.
@@ -35,7 +35,7 @@ GitHub Actions는 검사만, 빌드와 배포는 iwinv의 Jenkins가 수행하�
 3. **빌드**: Jenkins가 해당 SHA를 checkout해 backend/front 이미지를 iwinv 로컬에서 빌드한다. 레지스트리 왕복 없음 (ghcr push 제거). compose.prod의 `pull_policy: always`는 로컬 이미지에 맞게 조정 필요.
 4. **DB**: 배포마다 pg_dump 백업(`pg_restore --list` 검증, 최근 5개 rotate) 후 `prisma migrate deploy` 자동 실행. 기존 `ncloud-deploy.sh`의 backup/lock/assert-prisma-managed 로직을 재사용·개작한다.
 5. **성공 기준**: `compose up -d --wait` 후 backend health + front HTTP 200이 타임아웃 내 확인되면 성공. 실패 시 빌드 red + 이전 SHA 이미지 보존으로 원커맨드 수동 롤백 (auto-rollback 없음). 기존 스크립트의 prune은 직전 SHA 이미지를 보존하도록 조정한다.
-6. **알림**: 실패 시에만 `<REDACTED_NOTIFICATION_EMAIL>`(Gmail 앱 비밀번호, 2FA 필요) 발신으로 `admin@example.com` 수신 메일. GitHub commit status 연동 없음.
+6. **알림**: 실패 시에만 운영용 Gmail 발신 계정(앱 비밀번호, 2FA 필요)에서 운영자 수신 주소(`DEPLOY_ALERT_EMAIL`)로 메일. GitHub commit status 연동 없음.
 7. **실행 계정**: 전용 Linux 계정 `seniorsailab` (엣지 서버 convention 일치), SSH 키 전용, docker 그룹. Jenkins/compose 모두 이 계정으로 구동.
 
 ## Alternatives considered

@@ -33,7 +33,6 @@ Eldercare fall-prevention host repository: NestJS/PostgreSQL backend and Vite Re
 | Frontend | `front/AGENTS.md`, `front/src/AGENTS.md` | API seam, mock mode boundary, UI state. |
 | Scripts / guards | `scripts/AGENTS.md`, `scripts/backend-guard/README.md` | Hard gates and deploy/release automation. |
 | CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | Size/base checks and package CI. |
-| Product PRD | `<prd-path>` | Obsidian <vault> vault path; access the Markdown file directly. |
 
 ## Code Map
 
