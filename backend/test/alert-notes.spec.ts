@@ -15,6 +15,7 @@ type FixtureSuffix = 'a' | 'b';
 const SUFFIXES: readonly FixtureSuffix[] = ['a', 'b'];
 const fixtureSlug = (s: FixtureSuffix) => `alert-note-${s}`;
 const alertId = (s: FixtureSuffix) => `note-alert-${s}`;
+const eventId = (s: FixtureSuffix) => `note-event-${s}`;
 const cameraId = (s: FixtureSuffix) => `note-camera-${s}`;
 const spaceId = (s: FixtureSuffix) => `note-space-${s}`;
 const floorId = (s: FixtureSuffix) => `note-floor-${s}`;
@@ -195,6 +196,17 @@ describe('alert action notes (e2e)', () => {
         label: `Note Camera ${suffix}`,
       },
     });
+    await direct.event.create({
+      data: {
+        id: eventId(suffix),
+        facilityId,
+        cameraId: cameraId(suffix),
+        spaceId: spaceId(suffix),
+        type: 'fall',
+        detectedAt: new Date('2026-07-03T00:00:00.000Z'),
+        dedupKey: eventId(suffix),
+      },
+    });
     await direct.alert.create({
       data: {
         id: alertId(suffix),
@@ -205,6 +217,7 @@ describe('alert action notes (e2e)', () => {
         probability: 0.91,
         detectedAt: new Date('2026-07-03T00:00:00.000Z'),
         idempotencyKey: alertId(suffix),
+        originEventId: eventId(suffix),
       },
     });
   }

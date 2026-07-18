@@ -327,7 +327,7 @@ describe('Events API (e2e)', () => {
         .set('cookie', cookie)
         .expect(200);
       retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
-      cursor = page.body.nextCursor;
+      cursor = page.body.nextCursor as string | null;
     } while (cursor);
 
     expect(retrievedIds).toHaveLength(seededCount);
@@ -393,7 +393,7 @@ describe('Events API (e2e)', () => {
         .set('cookie', cookie)
         .expect(200);
       retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
-      cursor = page.body.nextCursor;
+      cursor = page.body.nextCursor as string | null;
     } while (cursor);
 
     expect(retrievedIds).toEqual(expected.map((event) => event.id));

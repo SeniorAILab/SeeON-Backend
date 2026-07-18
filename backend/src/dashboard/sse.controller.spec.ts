@@ -26,8 +26,10 @@ describe('formatAlertEvent', () => {
     expect(Object.keys(payload).sort()).toEqual(
       [
         'alertSeq',
+        'backendEventId',
         'cameraId',
         'detectedAt',
+        'facilityId',
         'id',
         'probability',
         'spaceId',
@@ -37,7 +39,9 @@ describe('formatAlertEvent', () => {
     );
     expect(payload).toMatchObject({
       id: 'alert-1',
+      backendEventId: 'event-alert-1',
       alertSeq: '42',
+      facilityId: 'facility-1',
       spaceId: 'sp_201',
       cameraId: 'cam_sp_201',
       type: 'bed-exit',
@@ -191,6 +195,7 @@ function alertEvent(alertSeq: bigint, id: string) {
   return {
     alertSeq,
     id,
+    originEventId: `event-${id}`,
     facilityId: 'facility-1',
     cameraId: 'cam_sp_201',
     spaceId: 'sp_201',

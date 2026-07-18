@@ -42,6 +42,7 @@ function input(probability: number) {
     snapshotKey: null,
     detectedAt: new Date(),
     idempotencyKey: `k-${probability}`,
+    originEventId: `evt-${probability}`,
   };
 }
 

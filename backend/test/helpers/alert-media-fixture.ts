@@ -242,6 +242,19 @@ async function seedFacilityGraph(
     data: { eventId, facilityId, clipId, ordinal: 0 },
   });
   if (suffix === 'a') {
+    const pendingEventId = `${FIXTURE_PREFIX}-event-pending-a`;
+    await direct.event.create({
+      data: {
+        id: pendingEventId,
+        facilityId,
+        cameraId,
+        spaceId,
+        type: 'fall',
+        confidence: 0.8,
+        detectedAt: new Date('2026-07-16T00:01:00.000Z'),
+        dedupKey: pendingEventId,
+      },
+    });
     await direct.alert.create({
       data: {
         id: mediaFixtureIds.pendingAlertA,
@@ -252,6 +265,7 @@ async function seedFacilityGraph(
         probability: 0.8,
         detectedAt: new Date('2026-07-16T00:01:00.000Z'),
         idempotencyKey: mediaFixtureIds.pendingAlertA,
+        originEventId: pendingEventId,
       },
     });
     await seedExpiryGraph(direct, {
