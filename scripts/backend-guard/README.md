@@ -11,17 +11,18 @@
 
 ## 무엇을 어디서 검사하나 (경계)
 
-| 검사 대상                                                          | 도구                                | 어디서 도나                                                   | 차단?            |
-| ------------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------- | ---------------- |
-| 계층 import 경계(controller→service→repository, service→port)      | **ESLint**(`no-restricted-imports`) | 에디터 + CI `lint`                                            | warn (비차단)    |
-| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제)                        | **ESLint**(`no-restricted-syntax`)  | 에디터 + CI `lint`                                            | warn (비차단)    |
-| DTO suffix + controller `@Body()` request DTO 강제                 | **check-dto-contracts.mjs**         | `pnpm --filter backend run dto:check` + CI/local backend gate | block (exit 1)   |
-| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint**                          | 에디터 + CI `lint`                                            | warn (비차단)    |
-| **스키마↔마이그레이션 결합**                                       | **이 스크립트**                     | `.githooks/pre-commit` + CI                                   | **차단**(exit 1) |
+| 검사 대상                                                          | 도구                                     | 어디서 도나                                                   | 차단?            |
+| ------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------- | ---------------- |
+| 계층 import 경계(controller→service→repository, service→port)      | **ESLint**(`no-restricted-imports`)      | 에디터 + CI `lint`                                            | warn (비차단)    |
+| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제)                        | **ESLint**(`no-restricted-syntax`)       | 에디터 + CI `lint`                                            | warn (비차단)    |
+| DTO suffix + controller `@Body()` request DTO 강제                 | **ESLint**(`backend/eslint.dto.config.mjs`) | `pnpm --filter backend run dto:check` + CI/local backend gate | block (exit 1)   |
+| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint**                               | 에디터 + CI `lint`                                            | warn (비차단)    |
+| **스키마↔마이그레이션 결합 + 스키마 컨벤션**                       | **check-schema-migration.sh**            | `.githooks/pre-commit` + CI                                   | **차단**(exit 1) |
 
 ESLint로 잡는 계층/타입 규칙은 warn-first로 두고, **차단해야 하는 기계적 계약**은
-이 디렉터리의 스크립트로 둡니다. 현재 block 대상은 스키마↔마이그레이션 결합과
-DTO suffix/controller body boundary입니다.
+block 으로 둡니다. 현재 block 대상은 스키마↔마이그레이션 결합, 스키마 컨벤션
+(append-only `*_history` 명명, nullable `*Id` 문서 주석), DTO suffix/controller
+body boundary입니다.
 
 ## tenant(시설) 격리는 여기서 검사하지 않습니다
 
@@ -39,9 +40,19 @@ DTO suffix/controller body boundary입니다.
 
 ## check-schema-migration.sh
 
-`backend/prisma/schema.prisma` 가 변경됐는데 동반 마이그레이션
-(`backend/prisma/migrations/*/migration.sql`)이 없으면 거부합니다.
-마이그레이션만 단독 변경(데이터 보정·수기 RLS 등)은 허용합니다.
+세 가지를 검사합니다(모두 차단):
+
+1. **스키마↔마이그레이션 결합**: `backend/prisma/schema.prisma` 가 변경됐는데 동반
+   마이그레이션(`backend/prisma/migrations/*/migration.sql`)이 없으면 거부합니다.
+   마이그레이션만 단독 변경(데이터 보정·수기 RLS 등)은 허용하고, 스키마 diff 가
+   주석(`///`·`//`)/공백뿐이면 SQL 에 영향이 없으므로 마이그레이션 없이 통과합니다.
+2. **append-only `*_history` 명명**: 변경된 migration.sql 에서 한 테이블의 UPDATE·DELETE
+   권한을 PUBLIC 이외 role 에서 모두 REVOKE 하면(= append-only) 테이블 이름이
+   `*_history` 로 끝나야 합니다. 규약 이전 테이블(`events`, `media_access_logs`)은
+   grandfather 예외입니다. `REVOKE ALL … FROM PUBLIC` 보일러플레이트와 DELETE 단독
+   REVOKE 는 append-only 로 세지 않습니다.
+3. **nullable `*Id` 문서 주석**: 스키마가 변경될 때, nullable `*Id` 필드는 바로 위
+   (또는 같은 줄)에 null 사유를 설명하는 `///` 주석이 있어야 합니다(전체 파일 검사).
 
 ```sh
 # 스테이지된 변경 검사 (.githooks/pre-commit 가 사용)
@@ -54,18 +65,22 @@ sh scripts/backend-guard/check-schema-migration.sh base "origin/${GITHUB_BASE_RE
 sh scripts/backend-guard/check-schema-migration.sh auto
 ```
 
-종료코드: `0` 통과, `1` 위반(스키마 변경 + 마이그레이션 누락) 또는 도구 오류.
+종료코드: `0` 통과, `1` 위반 또는 도구 오류.
 
-## check-dto-contracts.mjs
+## dto:check (backend/eslint.dto.config.mjs)
 
-`backend/src/**/dto/*.dto.ts`의 exported `*Dto` 이름과 컨트롤러 `@Body()` 경계를 검사합니다.
+exported `*Dto` 이름 suffix 와 컨트롤러 `@Body()`/`@Query()`/`@Param()` 경계를
+ESLint AST 선택자로 검사합니다(구 `check-dto-contracts.mjs` 정규식 스캐너 대체).
+타입정보 없이 파싱만 하므로 수 초 안에 끝나며, 스크립트 이름과 차단 동작은 동일합니다.
 
 ```sh
 pnpm --filter backend run dto:check
-pnpm --filter backend run dto:check -- --fixture scripts/backend-guard/fixtures/invalid-dto-contracts
 ```
 
-종료코드: `0` 통과, `1` DTO suffix 또는 controller body boundary 위반.
+종료코드: `0` 통과, `1` DTO suffix 또는 controller boundary 위반.
+`no-restricted-syntax` 는 같은 파일 세트에 같은 규칙이 다시 오면 병합이 아니라
+교체되므로, 메인 `eslint.config.mjs`(warn-first)와 합치지 말고 이 별도 config 로
+유지해야 합니다.
 
 ## 호출 지점 (단일소스 — 로직 재구현 금지)
 

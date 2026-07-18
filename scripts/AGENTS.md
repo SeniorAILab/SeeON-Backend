@@ -8,7 +8,7 @@ and production deploy scripts.
 ## Structure
 ```text
 scripts/
-├── backend-guard/  # backend schema/migration and DTO contract checks
+├── backend-guard/  # backend schema/migration coupling and schema convention checks
 ├── db/             # local DB reset / Prisma orchestration helpers
 ├── dev/            # native local dev command orchestration and env guards
 ├── deploy/         # iwinv host bootstrap and VM-side deploy execution
@@ -25,8 +25,8 @@ scripts/
 | Local lint gate | `git-guard/check-lint.sh` | Mirrors changed-package lint/type checks; runs backend tests when the local DB is up. |
 | Migration order guard | `git-guard/check-migrations.sh` | Rejects out-of-order/misnamed Prisma migrations (pre-push + CI); `--fix` renumbers. |
 | Freshness guard | `git-guard/check-freshness.sh` | Protects stale protected-branch work. |
-| Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL. |
-| DTO guard | `backend-guard/check-dto-contracts.mjs` | Hard gate for backend DTO names and body types. |
+| Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL, append-only tables not named `*_history`, and undocumented nullable `*Id` fields. |
+| DTO guard | `backend/eslint.dto.config.mjs` (via `pnpm --filter backend run dto:check`) | Hard gate for backend DTO names and body types. |
 | Env contract | `env/verify-compose-env-contract.mjs` | Checks compose env usage against examples. |
 | Release | `release/create-production-release.mjs` | Publishing a production release starts deployment. |
 | VM deploy | `deploy/` | See `deploy/AGENTS.md` before editing. |
@@ -39,8 +39,8 @@ scripts/
   helpers there rather than copying functions.
 - `backend-guard/check-schema-migration.sh` is a blocking schema/migration
   contract. It runs from pre-commit and CI.
-- `backend-guard/check-dto-contracts.mjs` is the hard DTO contract gate. ESLint
-  layering checks remain warn-first.
+- `backend/eslint.dto.config.mjs` (run as `dto:check`) is the hard DTO contract
+  gate. ESLint layering checks in the main backend config remain warn-first.
 - Production release issuance is the deployment trigger. Release and deploy
   scripts must use explicit refs or image tags.
 - Production DB deploy runs `prisma migrate deploy` through `scripts/deploy/iwinv-deploy.sh`; there is no `DEPLOY_DB_MODE`, `baseline-existing`, or `reset-demo` mode.

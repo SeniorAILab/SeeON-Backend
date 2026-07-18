@@ -150,6 +150,7 @@ model MlFacilityConfig {
 /// tenant-domain data queries. No tenant data list/detail route may query User.
 model User {
   id         String  @id @default(cuid())
+  /// Null until onboarding binds the user to a facility (see model doc).
   facilityId String? @map("facility_id")
   email      String? @unique
 
@@ -222,8 +223,10 @@ model Alert {
   /// Required: every alert originates from a persisted event (Event API ingress).
   originEventId  String      @map("origin_event_id")
   createdAt      DateTime    @default(now()) @map("created_at")
+  /// Null until acked; SetNull when the acking user is deleted (audit actor).
   ackedById      String?     @map("acked_by_id")
   ackedAt        DateTime?   @map("acked_at")
+  /// Null until resolved; SetNull when the resolving user is deleted (audit actor).
   resolvedById   String?     @map("resolved_by_id")
   resolvedAt     DateTime?   @map("resolved_at")
 
@@ -256,6 +259,7 @@ model AlertNote {
   facilityId  String   @map("facility_id")
   alertId     String   @map("alert_id")
   note        String
+  /// SetNull when the authoring user is deleted; authorRole keeps the audit trail readable.
   createdById String?  @map("created_by_id")
   authorRole  Role     @map("author_role")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -288,7 +292,9 @@ model Event {
   operatingThreshold Float?   @map("operating_threshold")
   snapshotKey        String?  @map("snapshot_key")
   clockSource        String?  @map("clock_source")
+  /// Edge-reported clip reference (not an FK); the authoritative binding is EventMediaBinding.
   clipId             String?  @map("clip_id")
+  /// Edge-generated event UUID for ingest dedup; null when the edge did not supply one.
   edgeEventId        String?  @map("edge_event_id") @db.Uuid
 
   facility          Facility           @relation(fields: [facilityId], references: [id])
@@ -392,7 +398,9 @@ model MediaRetentionHold {
   clipId           String        @map("clip_id")
   kind             MediaHoldKind
   reason           String        @db.VarChar(500)
+  /// Creating actor user id (no FK — audit value survives user deletion); null for system-created holds.
   createdByUserId  String?       @map("created_by_user_id")
+  /// Releasing actor user id (no FK); null while the hold is active or when released by automation.
   releasedByUserId String?       @map("released_by_user_id")
   createdAt        DateTime      @default(now()) @map("created_at")
   releasedAt       DateTime?     @map("released_at")
@@ -409,13 +417,16 @@ model MediaAccessLog {
   facilityId      String             @map("facility_id")
   actorUserId     String             @map("actor_user_id")
   actorRole       Role               @map("actor_role")
+  /// Snapshot reference (no FK, append-only audit); null when access targeted no specific clip.
   clipId          String?            @map("clip_id")
+  /// Snapshot reference (no FK); null when the access was not alert-scoped.
   alertId         String?            @map("alert_id")
   targetAlertHash String             @map("target_alert_hash") @db.Char(64)
   action          MediaAccessAction
   outcome         MediaAccessOutcome
   httpStatus      Int                @map("http_status")
   requestId       String             @map("request_id") @db.VarChar(64)
+  /// Client idempotency token (unique per actor); null when the client sent none.
   interactionId   String?            @map("interaction_id") @db.VarChar(64)
   rangeStart      BigInt?            @map("range_start")
   rangeEnd        BigInt?            @map("range_end")
@@ -541,6 +552,7 @@ model DeliveryAttempt {
   id                String                @id @default(cuid())
   alertEventId      String                @map("alert_event_id")
   alertEvent        AlertEvent            @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+  /// SetNull when the recipient user is deleted; the delivery record is kept for audit.
   recipientUserId   String?               @map("recipient_user_id")
   recipientUser     User?                 @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
   channel           DeliveryChannel
