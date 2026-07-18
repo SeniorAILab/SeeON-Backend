@@ -15,6 +15,7 @@ const TENANT_MODELS = new Set([
   'Camera',
   'Alert',
   'AlertNote',
+  'DashboardReceipt',
   'Event',
   'MediaClip',
   'EventMediaBinding',

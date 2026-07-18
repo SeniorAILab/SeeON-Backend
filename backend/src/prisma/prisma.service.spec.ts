@@ -30,6 +30,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
     await direct.$connect();
     await prisma.onModuleInit();
 
+    await direct.dashboardReceipt.deleteMany();
     await direct.alertNote.deleteMany();
     await direct.alert.deleteMany();
     await direct.event.deleteMany();

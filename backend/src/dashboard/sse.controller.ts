@@ -221,6 +221,8 @@ type SseAlertLike = Pick<
   AlertEvent,
   | 'alertSeq'
   | 'id'
+  | 'originEventId'
+  | 'facilityId'
   | 'cameraId'
   | 'spaceId'
   | 'type'
@@ -232,7 +234,9 @@ type SseAlertLike = Pick<
 export function formatAlertEvent(event: SseAlertLike): string {
   return formatSseEvent(event.alertSeq, {
     id: event.id,
+    backendEventId: event.originEventId,
     alertSeq: event.alertSeq.toString(),
+    facilityId: event.facilityId,
     spaceId: event.spaceId,
     cameraId: event.cameraId,
     type: event.type,

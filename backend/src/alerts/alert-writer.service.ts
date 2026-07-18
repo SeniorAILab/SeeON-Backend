@@ -30,6 +30,7 @@ import {
 export interface AlertEvent {
   alertSeq: bigint;
   id: string;
+  originEventId: string | null;
   facilityId: string;
   cameraId: string | null;
   spaceId: string | null;
@@ -355,6 +356,7 @@ export class AlertWriterService {
 function toAlertEvent(alert: {
   alertSeq: bigint;
   id: string;
+  originEventId: string | null;
   facilityId: string;
   cameraId: string | null;
   spaceId: string;
@@ -368,6 +370,7 @@ function toAlertEvent(alert: {
   return {
     alertSeq: alert.alertSeq,
     id: alert.id,
+    originEventId: alert.originEventId,
     facilityId: alert.facilityId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,

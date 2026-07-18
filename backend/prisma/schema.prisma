@@ -28,6 +28,11 @@ enum AlertStatus {
   RESOLVED
 }
 
+enum DashboardReceiptKind {
+  DELIVERY
+  PRESENTATION
+}
+
 enum SpaceType {
   ROOM
   HALLWAY
@@ -107,9 +112,10 @@ model Facility {
 
   users User[]
 
-  cameras    Camera[]
-  alerts     Alert[]
-  alertNotes AlertNote[]
+  cameras           Camera[]
+  alerts            Alert[]
+  alertNotes        AlertNote[]
+  dashboardReceipts DashboardReceipt[]
 
   floors Floor[]
   spaces Space[]
@@ -224,15 +230,17 @@ model Alert {
 
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
-  camera      Camera?     @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space       Space       @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originEvent Event?      @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
+  camera            Camera?            @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originEvent       Event?             @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
   /// Lifecycle audit actors. Simple nullable FK → users(id); same-facility is an
   /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
-  ackedBy     User?       @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  resolvedBy  User?       @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  notes       AlertNote[]
+  ackedBy           User?              @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resolvedBy        User?              @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  notes             AlertNote[]
+  dashboardReceipts DashboardReceipt[]
 
+  @@unique([facilityId, id])
   @@unique([facilityId, idempotencyKey])
   @@index([facilityId, alertSeq])
   @@index([facilityId, spaceId, alertSeq])
@@ -282,10 +290,11 @@ model Event {
   clipId             String?  @map("clip_id")
   edgeEventId        String?  @map("edge_event_id") @db.Uuid
 
-  facility     Facility @relation(fields: [facilityId], references: [id])
-  camera       Camera   @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space        Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originAlerts Alert[]  @relation("AlertOriginEvent")
+  facility          Facility           @relation(fields: [facilityId], references: [id])
+  camera            Camera             @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originAlerts      Alert[]            @relation("AlertOriginEvent")
+  dashboardReceipts DashboardReceipt[]
 
   mediaBinding EventMediaBinding?
 
@@ -295,6 +304,28 @@ model Event {
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
   @@map("events")
+}
+
+model DashboardReceipt {
+  id                String               @id @default(cuid())
+  facilityId        String               @map("facility_id")
+  dashboardClientId String               @map("dashboard_client_id") @db.VarChar(128)
+  kind              DashboardReceiptKind
+  backendEventId    String               @map("backend_event_id")
+  alertId           String               @map("alert_id")
+  alertSeq          BigInt               @map("alert_seq")
+  surface           String               @db.VarChar(64)
+  observedAt        DateTime             @map("observed_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  facility     Facility @relation(fields: [facilityId], references: [id])
+  backendEvent Event    @relation(fields: [facilityId, backendEventId], references: [facilityId, id])
+  alert        Alert    @relation(fields: [facilityId, alertId], references: [facilityId, id])
+
+  @@unique([facilityId, dashboardClientId, kind, alertId, alertSeq, surface], name: "dashboard_receipts_facility_client_kind_alert_seq_surface_key")
+  @@index([facilityId, backendEventId, createdAt])
+  @@index([facilityId, alertId, createdAt])
+  @@map("dashboard_receipts")
 }
 
 /// Backend-owned clip aggregate. Lifecycle tombstones remain in this row.

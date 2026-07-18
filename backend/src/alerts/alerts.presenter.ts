@@ -37,6 +37,7 @@ export function presentAlert(alert: AlertWithContext) {
   return {
     alertSeq: alert.alertSeq.toString(),
     id: alert.id,
+    backendEventId: alert.originEventId,
     facilityId: alert.facilityId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,
