@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+# Git hooks export repo-scoping vars (GIT_DIR etc.) to child processes; with
+# GIT_DIR set, the fixture `git init --bare` below re-initializes the caller's
+# repository as bare instead of creating a scratch remote. Clear them so the
+# fixtures stay confined to $TMP when this test runs under a hook (pre-push
+# env:verify gate).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR GIT_PREFIX
+
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-resolve-release.sh
 TMP=$(mktemp -d)
