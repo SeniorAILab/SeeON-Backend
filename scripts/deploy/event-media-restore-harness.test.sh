@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+# event-media-backup.sh targets the Linux prod VM; this harness needs /dev/shm
+# and findmnt, so non-Linux hosts skip while CI (ubuntu) enforces.
+if [ "$(uname -s)" != Linux ]; then
+  printf '%s\n' 'skipping event media restore harness (Linux-only: /dev/shm, findmnt)'
+  exit 0
+fi
+
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 BACKUP_SCRIPT=$REPO_ROOT/scripts/deploy/event-media-backup.sh
 VALIDATE_SCRIPT=$REPO_ROOT/scripts/deploy/validate-event-media-backup.sh
@@ -149,9 +156,9 @@ bundle=$(find "$OFF_HOST_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'event-medi
   exit 1
 }
 sh "$VALIDATE_SCRIPT" "$bundle"
-[ "$(stat -c '%a' "$bundle")" = 700 ] || { printf '%s\n' 'backup bundle permissions are not 700' >&2; exit 1; }
+[ "$(stat -c '%a' "$bundle" 2>/dev/null || stat -f '%Lp' "$bundle")" = 700 ] || { printf '%s\n' 'backup bundle permissions are not 700' >&2; exit 1; }
 for file in MANIFEST database.dump clips.tar; do
-  [ "$(stat -c '%a' "$bundle/$file")" = 600 ] || {
+  [ "$(stat -c '%a' "$bundle/$file" 2>/dev/null || stat -f '%Lp' "$bundle/$file")" = 600 ] || {
     printf 'backup artifact permissions are not 600: %s\n' "$file" >&2
     exit 1
   }

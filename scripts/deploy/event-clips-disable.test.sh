@@ -118,7 +118,7 @@ output=$(run_disable)
 assert_contains "$output" 'event clip feature disabled on current compatible images'
 assert_not_contains "$output" "$SHA"
 [ "$(cat "$TMP/app/shared/event-clips-runtime.env")" = 'EVENT_CLIPS_ENABLED=false' ]
-[ "$(stat -c '%a' "$TMP/app/shared/event-clips-runtime.env")" = 600 ]
+[ "$(stat -c '%a' "$TMP/app/shared/event-clips-runtime.env" 2>/dev/null || stat -f '%Lp' "$TMP/app/shared/event-clips-runtime.env")" = 600 ]
 [ "$env_before" = "$(sha256sum "$TMP/app/shared/.env")" ]
 [ "$release_before" = "$(sha256sum "$TMP/app/shared/release-images.env")" ]
 [ "$manifest_before" = "$(sha256sum "$TMP/app/releases/current.json")" ]

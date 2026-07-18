@@ -32,6 +32,16 @@ migration SQL, seed data, and Postgres role initialization.
 - `alerts.origin_event_id` is NOT NULL: every alert must reference its origin
   `events` row. Test fixtures that insert alerts directly must seed an origin
   event first.
+- Migration directories are `<14-digit-timestamp>_<snake_case_description>` and
+  new timestamps must sort after the latest migration on `origin/main`.
+  `scripts/git-guard/check-migrations.sh` enforces both at pre-push and CI;
+  on an ordering violation run it with `--fix` to renumber, then commit and
+  `pnpm backend:db:reset`.
+- One migration per branch: during development reset/regenerate freely, but
+  before opening a PR squash the branch's migrations into a single migration
+  (delete the intermediate dirs, `pnpm backend:db:reset`, regenerate once).
+  Keep separate migrations only when the split is intentional (e.g. backfill
+  step + constraint step).
 
 ## Anti-patterns
 - No hand-edited production database changes outside migrations.

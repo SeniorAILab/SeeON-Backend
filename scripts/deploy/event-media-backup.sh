@@ -34,7 +34,7 @@ owner_only_file() {
   label=$2
   [ ! -L "$file" ] || fail "$label must not be a symbolic link"
   [ -f "$file" ] || fail "$label must be a regular file"
-  mode=$(stat -c '%a' "$file") || fail "unable to inspect $label permissions"
+  mode=$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file") || fail "unable to inspect $label permissions"
   case "$mode" in
     400|600) ;;
     *) fail "$label permissions must be 400 or 600" ;;
@@ -57,7 +57,7 @@ validate_inputs() {
   [ -d "$BACKUP_DESTINATION" ] || fail 'backup destination must be an existing directory'
   canonical_destination=$(readlink -f "$BACKUP_DESTINATION") || fail 'unable to resolve backup destination'
   [ "$canonical_destination" = "$BACKUP_DESTINATION" ] || fail 'backup destination must use its canonical path'
-  destination_mode=$(stat -c '%a' "$BACKUP_DESTINATION") || fail 'unable to inspect backup destination permissions'
+  destination_mode=$(stat -c '%a' "$BACKUP_DESTINATION" 2>/dev/null || stat -f '%Lp' "$BACKUP_DESTINATION") || fail 'unable to inspect backup destination permissions'
   [ "$destination_mode" = 700 ] || fail 'backup destination permissions must be 700'
 
   marker=$BACKUP_DESTINATION/$MARKER
@@ -71,8 +71,8 @@ validate_inputs() {
   [ -d "$APP_ROOT" ] || fail 'application root must be an existing directory'
   destination_mount=$(findmnt -n -o TARGET -T "$BACKUP_DESTINATION") || fail 'unable to inspect backup destination mount'
   application_mount=$(findmnt -n -o TARGET -T "$APP_ROOT") || fail 'unable to inspect application mount'
-  destination_device=$(stat -c '%d' "$BACKUP_DESTINATION") || fail 'unable to inspect backup destination filesystem'
-  application_device=$(stat -c '%d' "$APP_ROOT") || fail 'unable to inspect application filesystem'
+  destination_device=$(stat -c '%d' "$BACKUP_DESTINATION" 2>/dev/null || stat -f '%d' "$BACKUP_DESTINATION") || fail 'unable to inspect backup destination filesystem'
+  application_device=$(stat -c '%d' "$APP_ROOT" 2>/dev/null || stat -f '%d' "$APP_ROOT") || fail 'unable to inspect application filesystem'
   [ -n "$destination_mount" ] && [ "$destination_mount" != "$application_mount" ] &&
     [ "$destination_device" != "$application_device" ] || {
     fail 'backup destination must be on a separate mounted filesystem'

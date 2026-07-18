@@ -9,6 +9,11 @@
 # Mirrors `ci.yml` semantics exactly so local == CI:
 #   frontend (front/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint` (BLOCK)
 #   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR)
+#            + `test:local` (BLOCK when the local dev DB container and .env.local
+#            are present; skipped otherwise — the jest suite includes e2e specs
+#            that need Postgres and env from .env.local). Non-Linux hosts skip
+#            the media storage suites, which need /proc/self/fd; CI covers them.
+#            This is the only place stale tests can block before main on this plan.
 #
 # Scoped to changed packages so a frontend-only push never needs backend tooling.
 # When a changed package's toolchain is missing, it warns and skips (cannot verify) —
@@ -69,6 +74,20 @@ if [ "$be" = 1 ]; then
   pnpm --filter backend run dto:check || fail=1
   pnpm --filter backend exec tsc --noEmit || fail=1
   pnpm --filter backend run lint || gg_warn "backend lint reported issues (warn-first per ADR — not blocking)"
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^eldercare-fall-db'; then
+    gg_warn "backend changed but no local DB container (eldercare-fall-db*) — skipping backend tests; run 'pnpm backend:db:up' to enable this gate"
+  elif [ ! -f .env.local ]; then
+    gg_warn "backend changed but .env.local missing — skipping backend tests; 'cp .env.local.example .env.local' to enable this gate"
+  elif [ "$(uname -s)" = Linux ]; then
+    gg_warn "backend changed -> backend test suite (local DB detected; block)"
+    pnpm --filter backend run test:local || fail=1
+  else
+    # clip-storage containment resolves handles via /proc/self/fd (Linux-only),
+    # so the media storage suites cannot run on this host; CI (ubuntu) runs them.
+    gg_warn "backend changed -> backend test suite minus Linux-only media storage suites (local DB detected; block)"
+    pnpm --filter backend exec dotenv -e ../.env.local -- jest --runInBand \
+      --testPathIgnorePatterns '/node_modules/' 'src/media/' 'test/alert-media-' 'test/event-media-' || fail=1
+  fi
 fi
 
 if [ "$envc" = 1 ]; then

@@ -148,8 +148,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify production env contract
-        run: node scripts/env/verify-compose-env-contract.mjs
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # Single source: run the same `env:verify` chain developers and the
+      # pre-push gate run (package.json), instead of re-listing scripts here.
+      # The chain is dependency-free (node builtins + sh), so no install step.
+      - name: Verify env & deploy contracts
+        run: pnpm env:verify
 
   repo-residue:
     name: Host repository residue

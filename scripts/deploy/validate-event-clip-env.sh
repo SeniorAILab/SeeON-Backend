@@ -17,7 +17,7 @@ MODE=${2:-}
 [ -z "$MODE" ] || [ "$MODE" = --print-front-flag ] || usage
 [ -f "$ENV_FILE" ] || fail 'production environment file must be a regular file'
 
-permissions=$(stat -c '%a' "$ENV_FILE") || fail 'unable to inspect production environment file permissions'
+permissions=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE") || fail 'unable to inspect production environment file permissions'
 case "$permissions" in
   400|600) ;;
   *) fail 'production environment file permissions must be 400 or 600' ;;

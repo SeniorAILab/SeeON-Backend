@@ -172,16 +172,23 @@ describe('Events API (e2e)', () => {
         existingSnapshot,
       );
 
-      const uploaded = await putSnapshot(
-        eventId,
-        Buffer.from('authorized-snapshot'),
-      ).expect(201);
-      expect(uploaded.body).toEqual({ snapshotKey });
+      // Snapshots are immutable: an authorized rewrite with different bytes is
+      // rejected (409) and the stored bytes stay intact; a byte-identical
+      // replay is idempotent (200).
+      await putSnapshot(eventId, Buffer.from('authorized-snapshot')).expect(
+        409,
+      );
       await expect(
         direct.event.findUniqueOrThrow({ where: { id: eventId } }),
       ).resolves.toMatchObject({ snapshotKey });
       await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
-        Buffer.from('authorized-snapshot'),
+        existingSnapshot,
+      );
+
+      const replayed = await putSnapshot(eventId, existingSnapshot).expect(200);
+      expect(replayed.body).toEqual({ snapshotKey });
+      await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
+        existingSnapshot,
       );
     } finally {
       if (previousSnapshotDir === undefined) {

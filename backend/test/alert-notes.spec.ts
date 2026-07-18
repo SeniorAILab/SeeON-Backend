@@ -43,6 +43,11 @@ describe('alert action notes (e2e)', () => {
     await direct.alert.deleteMany({
       where: { id: { in: SUFFIXES.map(alertId) } },
     });
+    // Fixture events must go after the alerts that reference them and before
+    // the cameras they reference, or a rerun trips the events->cameras FK.
+    await direct.event.deleteMany({
+      where: { id: { in: SUFFIXES.map(eventId) } },
+    });
     await direct.camera.deleteMany({
       where: { id: { in: SUFFIXES.map(cameraId) } },
     });
