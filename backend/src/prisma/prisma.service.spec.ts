@@ -117,6 +117,34 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
       ],
     });
 
+    await direct.event.createMany({
+      data: [
+        'event-a',
+        'event-c',
+        // spare origin for raw INSERTs expected to be rejected by RLS
+        'event-raw-a',
+      ].map((id) => ({
+        id,
+        facilityId: 'facility-a',
+        cameraId: 'cam-a',
+        spaceId: 'space-a',
+        type: 'fall',
+        detectedAt: new Date('2026-06-13T00:00:00.000Z'),
+        dedupKey: id,
+      })),
+    });
+    await direct.event.createMany({
+      data: ['event-b', 'event-raw-b'].map((id) => ({
+        id,
+        facilityId: 'facility-b',
+        cameraId: 'cam-b',
+        spaceId: 'space-b',
+        type: 'fall',
+        detectedAt: new Date('2026-06-13T00:01:00.000Z'),
+        dedupKey: id,
+      })),
+    });
+
     await direct.alert.createMany({
       data: [
         {
@@ -128,6 +156,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           probability: 0.91,
           detectedAt: new Date('2026-06-13T00:00:00.000Z'),
           idempotencyKey: 'idem-a',
+          originEventId: 'event-a',
         },
         {
           id: 'alert-c',
@@ -138,6 +167,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           probability: 0.93,
           detectedAt: new Date('2026-06-13T00:00:30.000Z'),
           idempotencyKey: 'idem-c',
+          originEventId: 'event-c',
         },
         {
           id: 'alert-b',
@@ -148,6 +178,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           probability: 0.92,
           detectedAt: new Date('2026-06-13T00:01:00.000Z'),
           idempotencyKey: 'idem-b',
+          originEventId: 'event-b',
         },
       ],
     });
@@ -229,8 +260,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
 
     await expect(
       prisma.db.$executeRaw`
-        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-        VALUES ('raw-unscoped', 'facility-a', 'cam-a', 'space-a', 'fall', 0.5, now(), 'raw-unscoped-key')
+        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+        VALUES ('raw-unscoped', 'facility-a', 'cam-a', 'space-a', 'fall', 0.5, now(), 'raw-unscoped-key', 'event-raw-a')
       `,
     ).rejects.toThrow();
   });
@@ -306,8 +337,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         'facility-a',
         async (tx) =>
           tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('raw-wrong-facility', 'facility-b', 'cam-b', 'space-b', 'fall', 0.5, now(), 'raw-wrong-facility-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('raw-wrong-facility', 'facility-b', 'cam-b', 'space-b', 'fall', 0.5, now(), 'raw-wrong-facility-key', 'event-raw-b')
         `,
       ),
     ).rejects.toThrow();
@@ -360,6 +391,8 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
           probability: 0.99,
           detectedAt: new Date('2026-06-13T00:02:00.000Z'),
           idempotencyKey: 'bad-alert',
+          // valid facility-b origin so the composite camera FK stays the failure
+          originEventId: 'event-raw-b',
         },
       }),
       'P2003',

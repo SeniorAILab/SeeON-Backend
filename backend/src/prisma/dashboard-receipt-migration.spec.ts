@@ -4,7 +4,7 @@ import { join } from 'node:path';
 const migration = readFileSync(
   join(
     __dirname,
-    '../../prisma/migrations/20260717030000_dashboard_receipts/migration.sql',
+    '../../prisma/migrations/20260717030000_dashboard_receipt_history/migration.sql',
   ),
   'utf8',
 );
@@ -24,7 +24,7 @@ describe('dashboard receipt migration', () => {
       '@@unique([facilityId, dashboardClientId, kind, alertId, alertSeq, surface]',
     );
     expect(migration).toContain(
-      '"dashboard_receipts_facility_client_kind_alert_seq_surface_key"',
+      '"dashboard_receipt_history_client_kind_alert_seq_surface_key"',
     );
     expect(migration).toContain(
       'FOREIGN KEY ("facility_id", "backend_event_id") REFERENCES "events"("facility_id", "id")',
@@ -37,16 +37,16 @@ describe('dashboard receipt migration', () => {
   it('forces tenant RLS and permits append-only runtime access', () => {
     expect(prismaService).toContain("'DashboardReceipt'");
     expect(migration).toContain(
-      'ALTER TABLE "dashboard_receipts" ENABLE ROW LEVEL SECURITY;',
+      'ALTER TABLE "dashboard_receipt_history" ENABLE ROW LEVEL SECURITY;',
     );
     expect(migration).toContain(
-      'ALTER TABLE "dashboard_receipts" FORCE ROW LEVEL SECURITY;',
+      'ALTER TABLE "dashboard_receipt_history" FORCE ROW LEVEL SECURITY;',
     );
     expect(migration).toContain(
-      'GRANT SELECT, INSERT ON "dashboard_receipts" TO fall_app;',
+      'GRANT SELECT, INSERT ON "dashboard_receipt_history" TO fall_app;',
     );
     expect(migration).toContain(
-      'REVOKE UPDATE, DELETE ON "dashboard_receipts" FROM fall_app;',
+      'REVOKE UPDATE, DELETE ON "dashboard_receipt_history" FROM fall_app;',
     );
   });
 });

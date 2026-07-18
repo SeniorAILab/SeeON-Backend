@@ -25,6 +25,13 @@ migration SQL, seed data, and Postgres role initialization.
   `prisma migrate deploy` / `prisma migrate resolve` commands.
 - Keep the fixed runtime role contract aligned with `APP_DB_USER=fall_app`
   unless a backend decision changes it.
+- Append-only record/audit tables carry a `_history` suffix (e.g.
+  `dashboard_receipt_history`). Pre-existing tables (`media_access_logs`,
+  `alert_events`, `delivery_attempts`) predate this rule; rename them only
+  with a dedicated migration, not opportunistically.
+- `alerts.origin_event_id` is NOT NULL: every alert must reference its origin
+  `events` row. Test fixtures that insert alerts directly must seed an origin
+  event first.
 
 ## Anti-patterns
 - No hand-edited production database changes outside migrations.

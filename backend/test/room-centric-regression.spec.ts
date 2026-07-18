@@ -101,6 +101,20 @@ describe('room-centric cross-slice regression invariants', () => {
         },
       ],
     });
+    // origin events for alert inserts (alerts.origin_event_id is NOT NULL);
+    // committed alerts and rejected inserts use distinct events so the
+    // partial unique (facility_id, origin_event_id) never masks the intent.
+    await direct.event.createMany({
+      data: ['regression-event-a', 'regression-event-a2'].map((id) => ({
+        id,
+        facilityId: 'regression-a',
+        cameraId: 'regression-camera-a',
+        spaceId: 'regression-space-a',
+        type: 'fall',
+        detectedAt: new Date('2026-07-03T00:00:00.000Z'),
+        dedupKey: id,
+      })),
+    });
   });
 
   afterAll(async () => {
@@ -166,8 +180,8 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-alert-cross-space', 'regression-a', 'regression-camera-a', 'regression-space-b', 'fall', 0.9, now(), 'regression-alert-cross-space-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('regression-alert-cross-space', 'regression-a', 'regression-camera-a', 'regression-space-b', 'fall', 0.9, now(), 'regression-alert-cross-space-key', 'regression-event-a2')
         `;
       }),
     ).rejects.toThrow();
@@ -176,8 +190,8 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-alert-cross-camera', 'regression-a', 'regression-camera-b', 'regression-space-a', 'fall', 0.9, now(), 'regression-alert-cross-camera-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('regression-alert-cross-camera', 'regression-a', 'regression-camera-b', 'regression-space-a', 'fall', 0.9, now(), 'regression-alert-cross-camera-key', 'regression-event-a2')
         `;
       }),
     ).rejects.toThrow();
@@ -187,8 +201,8 @@ describe('room-centric cross-slice regression invariants', () => {
     await app.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
       await tx.$executeRaw`
-        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-        VALUES ('regression-room-alert', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key')
+        INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+        VALUES ('regression-room-alert', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key', 'regression-event-a')
       `;
     });
 
@@ -201,8 +215,8 @@ describe('room-centric cross-slice regression invariants', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('regression-room-alert-duplicate', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('regression-room-alert-duplicate', 'regression-a', 'regression-camera-a', 'regression-space-a', 'fall', 0.9, now(), 'regression-room-key', 'regression-event-a2')
         `;
       }),
     ).rejects.toThrow();

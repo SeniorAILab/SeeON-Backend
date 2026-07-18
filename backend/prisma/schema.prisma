@@ -219,7 +219,8 @@ model Alert {
   status         AlertStatus @default(NEW)
   /// Server-derived: hash(cameraId + detectedAt + type). Sender-supplied keys ignored.
   idempotencyKey String      @map("idempotency_key")
-  originEventId  String?     @map("origin_event_id")
+  /// Required: every alert originates from a persisted event (Event API ingress).
+  originEventId  String      @map("origin_event_id")
   createdAt      DateTime    @default(now()) @map("created_at")
   ackedById      String?     @map("acked_by_id")
   ackedAt        DateTime?   @map("acked_at")
@@ -232,7 +233,7 @@ model Alert {
   /// an alert from referencing a camera in a different facility (F9).
   camera            Camera?            @relation(fields: [facilityId, cameraId], references: [facilityId, id])
   space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originEvent       Event?             @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
+  originEvent       Event              @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
   /// Lifecycle audit actors. Simple nullable FK → users(id); same-facility is an
   /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
   ackedBy           User?              @relation("AlertAckedBy", fields: [ackedById], references: [id], onDelete: SetNull, onUpdate: Cascade)
@@ -322,10 +323,10 @@ model DashboardReceipt {
   backendEvent Event    @relation(fields: [facilityId, backendEventId], references: [facilityId, id])
   alert        Alert    @relation(fields: [facilityId, alertId], references: [facilityId, id])
 
-  @@unique([facilityId, dashboardClientId, kind, alertId, alertSeq, surface], name: "dashboard_receipts_facility_client_kind_alert_seq_surface_key")
-  @@index([facilityId, backendEventId, createdAt])
-  @@index([facilityId, alertId, createdAt])
-  @@map("dashboard_receipts")
+  @@unique([facilityId, dashboardClientId, kind, alertId, alertSeq, surface], name: "dashboard_receipt_history_client_kind_alert_seq_surface_key", map: "dashboard_receipt_history_client_kind_alert_seq_surface_key")
+  @@index([facilityId, backendEventId, createdAt], map: "dashboard_receipt_history_facility_event_created_idx")
+  @@index([facilityId, alertId, createdAt], map: "dashboard_receipt_history_facility_alert_created_idx")
+  @@map("dashboard_receipt_history")
 }
 
 /// Backend-owned clip aggregate. Lifecycle tombstones remain in this row.

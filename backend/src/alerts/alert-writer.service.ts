@@ -30,7 +30,7 @@ import {
 export interface AlertEvent {
   alertSeq: bigint;
   id: string;
-  originEventId: string | null;
+  originEventId: string;
   facilityId: string;
   cameraId: string | null;
   spaceId: string | null;
@@ -68,7 +68,7 @@ export interface WriteAlertInput {
   snapshotKey: string | null;
   detectedAt: Date;
   idempotencyKey: string;
-  originEventId?: string | null;
+  originEventId: string;
 }
 
 type Listener = (event: AlertEvent) => void;
@@ -137,7 +137,7 @@ export class AlertWriterService {
             snapshotKey,
             detectedAt,
             idempotencyKey,
-            originEventId: originEventId ?? undefined,
+            originEventId,
           },
           include: {
             space: { select: { name: true } },
@@ -182,7 +182,7 @@ export class AlertWriterService {
   private async findExistingAlert(
     facilityId: string,
     idempotencyKey: string,
-    originEventId: string | null | undefined,
+    originEventId: string,
   ) {
     return this.prisma.withFacilityContext(
       facilityId,
@@ -190,10 +190,7 @@ export class AlertWriterService {
         tx.alert.findFirst({
           where: {
             facilityId,
-            OR: [
-              { idempotencyKey },
-              ...(originEventId ? [{ originEventId }] : []),
-            ],
+            OR: [{ idempotencyKey }, { originEventId }],
           },
           include: {
             space: { select: { name: true } },
@@ -356,7 +353,7 @@ export class AlertWriterService {
 function toAlertEvent(alert: {
   alertSeq: bigint;
   id: string;
-  originEventId: string | null;
+  originEventId: string;
   facilityId: string;
   cameraId: string | null;
   spaceId: string;

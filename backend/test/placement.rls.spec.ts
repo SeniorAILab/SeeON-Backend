@@ -77,6 +77,18 @@ describe('placement RLS tenant isolation', () => {
         },
       ],
     });
+    // origin event for alert inserts (alerts.origin_event_id is NOT NULL)
+    await direct.event.create({
+      data: {
+        id: 'placement-event-a',
+        facilityId: 'rls-a',
+        cameraId: 'camera-a',
+        spaceId: 'space-a',
+        type: 'fall',
+        detectedAt: new Date('2026-07-03T00:00:00.000Z'),
+        dedupKey: 'placement-event-a',
+      },
+    });
   });
 
   afterAll(async () => {
@@ -141,8 +153,8 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('alert-cross-space', 'rls-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('alert-cross-space', 'rls-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key', 'placement-event-a')
         `;
       }),
     ).rejects.toThrow();
@@ -151,8 +163,8 @@ describe('placement RLS tenant isolation', () => {
       app.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
-          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key)
-          VALUES ('alert-cross-camera', 'rls-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key')
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('alert-cross-camera', 'rls-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key', 'placement-event-a')
         `;
       }),
     ).rejects.toThrow();
