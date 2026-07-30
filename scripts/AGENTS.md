@@ -14,7 +14,8 @@ scripts/
 ├── deploy/         # iwinv host bootstrap and VM-side deploy execution
 ├── env/            # compose/env example contract verification
 ├── git-guard/      # worktree, freshness, lint/type, migration, asset guards
-└── release/        # production release creation
+├── release/        # production release creation
+└── repo-residue-check.mjs  # host/ML residue gate (CI job `repo-residue`)
 ```
 
 ## Where to look
@@ -28,6 +29,10 @@ scripts/
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL, append-only tables not named `*_history`, and undocumented nullable `*Id` fields. |
 | DTO guard | `backend/eslint.dto.config.mjs` (via `pnpm --filter backend run dto:check`) | Hard gate for backend DTO names and body types. |
 | Env contract | `env/verify-compose-env-contract.mjs` | Checks compose env usage against examples. |
+| Event-clip contracts | `env/verify-event-clip-compose.mjs`, `deploy/validate-event-clip-env.sh` | Reject unsafe clip defaults, retention, capacity, and file permissions. |
+| ML residue gate | `repo-residue-check.mjs` | Blocks `ml/`, `compose.edge.yaml`, and ML image/CD logic in this host repo. |
+| Local DB safety | `dev/assert-local-db-env.mjs`, `dev/local-env.mjs` | Refuse production/remote DB targets and non-`fall_dev` databases. |
+| Asset guard | `git-guard/deny-assets.sh` | Blocks model weights, media files, and blobs over 5 MB. |
 | Release | `release/create-production-release.mjs` | Publishing a production release starts deployment. |
 | VM deploy | `deploy/` | See `deploy/AGENTS.md` before editing. |
 
