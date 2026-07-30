@@ -92,6 +92,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # media clip-inspector specs encode real H.264 fixtures with ffmpeg. This
+      # step was dropped in 58e3ee9 when the ML job (its previous owner) was
+      # split out; the backend media suite still needs it. Restores #575.
+      - name: Install ffmpeg (clip recorder H.264 encoder)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Prisma generate
