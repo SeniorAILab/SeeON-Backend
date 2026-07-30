@@ -12,6 +12,7 @@ with a single source module.
 | Cross-module behavior | `*.spec.ts` | Tests spanning multiple backend domains. |
 | Unit specs | `../src/**/*.spec.ts` | Prefer colocated tests for one module/class. |
 | DB contract | `../prisma/AGENTS.md` | Read before adding migration/schema tests. |
+| Real-Postgres harnesses | `helpers/event-media-harness.ts`, `helpers/alert-media-fixture.ts` | Dual-role (`DATABASE_URL` app + `DIRECT_URL` privileged) seeding, JWT cookies, temp media root, deterministic teardown. Reuse instead of hand-rolling setup. |
 
 ## Conventions
 

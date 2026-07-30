@@ -10,10 +10,13 @@ repositories, DTOs, guards, adapters, and read-side APIs.
 | --- | --- | --- |
 | Bootstrap composition | `app.module.ts`, `main.ts` | Process wiring and global Nest setup. |
 | Event ingestion | `events/` | Versioned Event API intake. |
-| Alert policy | `alerts/` | Policy, repositories, ports, email fan-out. |
-| Auth/session | `auth/` | Email/password session auth. |
+| Alert policy | `alerts/` | Policy, repositories, ports, email fan-out. Read `alerts/AGENTS.md` first. |
+| Media clips | `media/` | Clip ingest/playback/audit. Read `media/AGENTS.md` first. |
+| Auth/session | `auth/` | Email/password session auth. Read `auth/AGENTS.md` first. |
 | Facility topology | `facilities/`, `floors/`, `spaces/`, `cameras/` | Room-centric placement APIs. |
-| Shared Nest pieces | `common/`, `config/`, `prisma/` | Filters, config, PrismaService wrapper. |
+| Read-side / SSE | `dashboard/` | Dashboard read model and `GET /api/v1/dashboard/stream`. |
+| Edge + admin config | `ml-config/`, `users/`, `demo-seed/` | Edge runtime config, user administration, demo fixtures. |
+| Shared Nest pieces | `common/`, `config/`, `prisma/` | Filters, domain errors, env validation, PrismaService wrapper. |
 
 ## Conventions
 

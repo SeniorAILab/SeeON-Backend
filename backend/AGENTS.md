@@ -6,15 +6,19 @@
 backend/src/
 ├── events/                       # ML event intake: POST /api/v1/events
 ├── alerts/                       # alert policy + email fan-out (event/alarm split: issue #388)
+├── media/                        # event/alert clip storage + authenticated playback (largest module)
 ├── facilities/ floors/ spaces/ cameras/ # facility topology
 ├── auth/                         # authentication
-├── dashboard/ status/            # read-side APIs
+├── dashboard/                    # read-side APIs + SSE
+├── ml-config/ users/ demo-seed/  # edge config, user admin, demo fixtures
 ├── prisma/                       # PrismaService (schema: backend/prisma/schema.prisma)
-└── common/                       # shared guards, filters, decorators
+└── common/ config/               # shared guards, filters, domain errors, env validation
 ```
 
-See `src/AGENTS.md` before changing Nest application code. See
-`test/AGENTS.md` before changing backend integration or e2e tests.
+See `src/AGENTS.md` before changing Nest application code, `src/alerts/AGENTS.md`
+for the alert write/read split, `src/media/AGENTS.md` for clips, and
+`test/AGENTS.md` before changing backend integration or e2e tests. There is no
+`src/status/` module.
 
 ## Guards
 - `prisma/schema.prisma` is the data SSOT — change via migration, never hand-edit the DB.

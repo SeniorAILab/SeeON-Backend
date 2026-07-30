@@ -10,9 +10,10 @@ iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/fronte
 - `workflows/deploy-iwinv.yml` — published-release signal to Jenkins.
 
 ## Invariants
-- The deployment workflow handles only a published production release. Its
-  classifier accepts the canonical repository, a non-draft non-prerelease
-  release, and a strict `vMAJOR.MINOR.PATCH` tag.
+- The deployment workflow handles only a published production release. The
+  `classify` job accepts a non-draft non-prerelease release with a strict
+  `vMAJOR.MINOR.PATCH` tag; canonical repository identity and webhook secrets
+  are gated by the downstream `trigger` job, not by the classifier.
 - After classification, GitHub Actions sends Jenkins an intentionally empty
   signal. Jenkins resolves the release tag and commit exactly once with the
   existing deploy-key authenticated `git ls-remote` lookup; Actions does not
