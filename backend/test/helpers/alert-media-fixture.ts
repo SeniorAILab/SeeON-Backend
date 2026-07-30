@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import type { TestingModule } from '@nestjs/testing';
@@ -81,7 +82,9 @@ export async function createAlertMediaFixture(): Promise<AlertMediaFixture> {
   await app.init();
   await seedFixture(direct, rootDir);
 
-  const jwt = new JwtService({ secret: TEST_SECRET });
+  const jwt = new JwtService({
+    secret: app.get(ConfigService).getOrThrow<string>('SESSION_JWT_SECRET'),
+  });
   const adminCookie = sessionCookie(jwt, {
     id: mediaFixtureIds.adminA,
     facilityId: mediaFixtureIds.facilityA,
