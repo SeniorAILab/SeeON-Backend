@@ -83,7 +83,7 @@ export class AlertMediaRepository {
         },
       });
       if (alert === null) return null;
-      const clipId = alert.originEvent?.mediaBinding?.clip.id;
+      const clipId = alert.originEvent.mediaBinding?.clip.id;
       if (clipId === undefined) {
         return {
           alertId: alert.id,

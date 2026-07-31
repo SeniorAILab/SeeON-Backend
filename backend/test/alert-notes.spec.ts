@@ -5,6 +5,11 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import {
+  readObject,
+  readObjectField,
+  readStringField,
+} from './helpers/json-response';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -100,30 +105,36 @@ describe('alert action notes (e2e)', () => {
       .set('cookie', facilityA.sessionCookie)
       .send({ note: '  checked with floor nurse  ' })
       .expect(201);
+    const createdBody = readObject(created.body, 'created note response');
+    const createdNoteId = readStringField(createdBody, 'id');
+    const createdAt = readStringField(createdBody, 'createdAt');
 
-    expect(created.body).toEqual({
-      id: expect.any(String),
+    expect(createdBody).toEqual({
+      id: createdNoteId,
       note: 'checked with floor nurse',
       createdBy: facilityA.userId,
       authorRole: 'ADMIN',
-      createdAt: expect.any(String),
+      createdAt,
     });
+    expect(createdNoteId.length).toBeGreaterThan(0);
+    expect(createdAt.length).toBeGreaterThan(0);
 
     const detail = await request(app.getHttpServer())
       .get(`/api/v1/alerts/${alertId('a')}`)
       .set('cookie', facilityA.sessionCookie)
       .expect(200);
+    const detailBody = readObject(detail.body, 'alert detail response');
 
-    expect(detail.body).toMatchObject({
+    expect(detailBody).toMatchObject({
       id: alertId('a'),
       facilityId: facilityA.facilityId,
       notes: [
         {
-          id: created.body.id,
+          id: createdNoteId,
           note: 'checked with floor nurse',
           createdBy: facilityA.userId,
           authorRole: 'ADMIN',
-          createdAt: created.body.createdAt,
+          createdAt,
         },
       ],
     });
@@ -142,7 +153,7 @@ describe('alert action notes (e2e)', () => {
       data: { role: 'STAFF', sessionVersion: { increment: 1 } },
     });
     const stored = await direct.alertNote.findUniqueOrThrow({
-      where: { id: created.body.id },
+      where: { id: createdNoteId },
       select: { facilityId: true, authorRole: true },
     });
     expect(stored).toEqual({
@@ -167,10 +178,12 @@ describe('alert action notes (e2e)', () => {
       })
       .expect(201);
     const sessionCookie = extractSessionCookie(response.headers['set-cookie']);
+    const responseBody = readObject(response.body, 'registration response');
+    const user = readObjectField(responseBody, 'user');
     return {
       sessionCookie,
-      userId: response.body.user.id as string,
-      facilityId: response.body.user.facilityId as string,
+      userId: readStringField(user, 'id'),
+      facilityId: readStringField(user, 'facilityId'),
     };
   }
 

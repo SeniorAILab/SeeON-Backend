@@ -14,11 +14,50 @@ import { AlertWriterService } from '../src/alerts/alert-writer.service';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import {
+  type JsonObject,
+  readArrayField,
+  readNullableStringField,
+  readObject,
+  readStringField,
+} from './helpers/json-response';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
 const PREFIX = 'events-pr3-e2e';
 const EDGE_TOKEN = 'events-pr3-e2e-edge-token';
+
+type EventResponse = {
+  readonly id: string;
+  readonly status: string;
+};
+
+type EventPage = {
+  readonly items: readonly JsonObject[];
+  readonly nextCursor: string | null;
+};
+
+function readEventResponse(value: unknown): EventResponse {
+  const body = readObject(value, 'event response');
+  return {
+    id: readStringField(body, 'id'),
+    status: readStringField(body, 'status'),
+  };
+}
+
+function readEventPage(value: unknown): EventPage {
+  const body = readObject(value, 'event list response');
+  return {
+    items: readArrayField(body, 'items').map((item) =>
+      readObject(item, 'event list item'),
+    ),
+    nextCursor: readNullableStringField(body, 'nextCursor'),
+  };
+}
+
+function readEventId(value: JsonObject): string {
+  return readStringField(value, 'id');
+}
 
 describe('Events API (e2e)', () => {
   let app: INestApplication<App>;
@@ -129,7 +168,7 @@ describe('Events API (e2e)', () => {
       detected_at: '2026-06-26T04:00:02.000Z',
       confidence: 0.9,
     }).expect(201);
-    const eventId = created.body.id as string;
+    const eventId = readEventResponse(created.body).id;
     const snapshotKey = `${seeded.facilityId}/${eventId}.jpg`;
     const previousSnapshotDir = process.env.SNAPSHOT_DIR;
     const snapshotDir = await fs.promises.mkdtemp(
@@ -186,7 +225,9 @@ describe('Events API (e2e)', () => {
       );
 
       const replayed = await putSnapshot(eventId, existingSnapshot).expect(200);
-      expect(replayed.body).toEqual({ snapshotKey });
+      expect(readObject(replayed.body, 'snapshot replay response')).toEqual({
+        snapshotKey,
+      });
       await expect(fs.promises.readFile(snapshotPath)).resolves.toEqual(
         existingSnapshot,
       );
@@ -213,11 +254,12 @@ describe('Events API (e2e)', () => {
     };
 
     const created = await postEvent(body).expect(201);
-    expect(created.body).toMatchObject({ status: 'created' });
+    const createdEvent = readEventResponse(created.body);
+    expect(createdEvent.status).toBe('created');
 
     const duplicate = await postEvent({ ...body, type: 'fall' }).expect(201);
-    expect(duplicate.body).toEqual({
-      id: created.body.id,
+    expect(readEventResponse(duplicate.body)).toEqual({
+      id: createdEvent.id,
       status: 'duplicate',
     });
 
@@ -234,7 +276,7 @@ describe('Events API (e2e)', () => {
     }).expect(404);
 
     const rows = await direct.event.findMany({
-      where: { id: created.body.id },
+      where: { id: createdEvent.id },
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -249,18 +291,18 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', firstCookie)
       .expect(200);
-    expect(
-      firstList.body.items.map((event: { id: string }) => event.id),
-    ).toEqual([created.body.id]);
-    expect(firstList.body.nextCursor).toBeNull();
+    const firstListPage = readEventPage(firstList.body);
+    expect(firstListPage.items.map(readEventId)).toEqual([createdEvent.id]);
+    expect(firstListPage.nextCursor).toBeNull();
 
     const secondList = await request(app.getHttpServer())
       .get('/api/v1/events')
       .set('cookie', secondCookie)
       .expect(200);
-    expect(secondList.body.items).toHaveLength(1);
-    expect(secondList.body.items[0].id).not.toBe(created.body.id);
-    expect(secondList.body.nextCursor).toBeNull();
+    const secondListPage = readEventPage(secondList.body);
+    expect(secondListPage.items).toHaveLength(1);
+    expect(readEventId(secondListPage.items[0])).not.toBe(createdEvent.id);
+    expect(secondListPage.nextCursor).toBeNull();
 
     await expect(app.get(PrismaService).db.event.findMany()).rejects.toThrow(
       'without a facility context',
@@ -269,14 +311,14 @@ describe('Events API (e2e)', () => {
     await expect(
       appRole.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', ${first.facilityId}, true)`;
-        await tx.$executeRaw`UPDATE events SET type = 'tampered' WHERE id = ${created.body.id}`;
+        await tx.$executeRaw`UPDATE events SET type = 'tampered' WHERE id = ${createdEvent.id}`;
       }),
     ).rejects.toThrow(/permission denied|privilege/i);
 
     await expect(
       appRole.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', ${first.facilityId}, true)`;
-        await tx.$executeRaw`DELETE FROM events WHERE id = ${created.body.id}`;
+        await tx.$executeRaw`DELETE FROM events WHERE id = ${createdEvent.id}`;
       }),
     ).rejects.toThrow(/permission denied|privilege/i);
   });
@@ -301,19 +343,24 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', cookie)
       .expect(200);
-    expect(firstPage.body.items).toHaveLength(50);
-    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+    const firstEventPage = readEventPage(firstPage.body);
+    expect(firstEventPage.items).toHaveLength(50);
+    expect(firstEventPage.nextCursor).toEqual(expect.any(String));
+    if (firstEventPage.nextCursor === null) {
+      throw new Error('first event page did not provide a cursor');
+    }
 
     const secondPage = await request(app.getHttpServer())
       .get('/api/v1/events')
-      .query({ cursor: firstPage.body.nextCursor })
+      .query({ cursor: firstEventPage.nextCursor })
       .set('cookie', cookie)
       .expect(200);
-    expect(secondPage.body.items).toHaveLength(50);
+    const secondEventPage = readEventPage(secondPage.body);
+    expect(secondEventPage.items).toHaveLength(50);
     expect(
-      secondPage.body.items.some((event: { id: string }) =>
-        firstPage.body.items.some(
-          (firstEvent: { id: string }) => firstEvent.id === event.id,
+      secondEventPage.items.some((event) =>
+        firstEventPage.items.some(
+          (firstEvent) => readEventId(firstEvent) === readEventId(event),
         ),
       ),
     ).toBe(false);
@@ -323,7 +370,7 @@ describe('Events API (e2e)', () => {
       .query({ limit: 500 })
       .set('cookie', cookie)
       .expect(200);
-    expect(cappedPage.body.items).toHaveLength(200);
+    expect(readEventPage(cappedPage.body).items).toHaveLength(200);
 
     const retrievedIds: string[] = [];
     let cursor: string | null = null;
@@ -333,10 +380,9 @@ describe('Events API (e2e)', () => {
         .query(cursor ? { cursor } : {})
         .set('cookie', cookie)
         .expect(200);
-      retrievedIds.push(
-        ...page.body.items.map((event: { id: string }) => event.id),
-      );
-      cursor = page.body.nextCursor as string | null;
+      const eventPage = readEventPage(page.body);
+      retrievedIds.push(...eventPage.items.map(readEventId));
+      cursor = eventPage.nextCursor;
     } while (cursor);
 
     expect(retrievedIds).toHaveLength(seededCount);
@@ -389,9 +435,9 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', cookie)
       .expect(200);
-    expect(
-      firstPage.body.items.map((event: { id: string }) => event.id),
-    ).toEqual(expected.slice(0, 50).map((event) => event.id));
+    expect(readEventPage(firstPage.body).items.map(readEventId)).toEqual(
+      expected.slice(0, 50).map((event) => event.id),
+    );
 
     const retrievedIds: string[] = [];
     let cursor: string | null = null;
@@ -401,10 +447,9 @@ describe('Events API (e2e)', () => {
         .query(cursor ? { cursor } : {})
         .set('cookie', cookie)
         .expect(200);
-      retrievedIds.push(
-        ...page.body.items.map((event: { id: string }) => event.id),
-      );
-      cursor = page.body.nextCursor as string | null;
+      const eventPage = readEventPage(page.body);
+      retrievedIds.push(...eventPage.items.map(readEventId));
+      cursor = eventPage.nextCursor;
     } while (cursor);
 
     expect(retrievedIds).toEqual(expected.map((event) => event.id));
@@ -476,7 +521,7 @@ describe('Events API (e2e)', () => {
       detected_at: '2026-06-26T02:01:00.000Z',
     }).expect(201);
 
-    expect(created.body).toMatchObject({ status: 'created' });
+    expect(readEventResponse(created.body).status).toBe('created');
     await expect(
       direct.event.count({
         where: { facilityId: seeded.facilityId, type: 'detection-lost' },
@@ -500,16 +545,19 @@ describe('Events API (e2e)', () => {
       postEvent(body).expect(201),
       postEvent(body).expect(201),
     ]);
-    const statuses = responses.map((response) => response.body.status).sort();
+    const eventResponses = responses.map((response) =>
+      readEventResponse(response.body),
+    );
+    const statuses = eventResponses.map((response) => response.status).sort();
     expect(statuses).toEqual(['created', 'duplicate']);
-    const eventId = responses[0].body.id;
+    const eventId = eventResponses[0].id;
 
     const alerts = await direct.alert.findMany({
       where: { facilityId: seeded.facilityId },
     });
     expect(alerts).toHaveLength(1);
     expect(alerts[0].originEventId).toBe(eventId);
-    expect(responses.map((response) => response.body.id)).toEqual([
+    expect(eventResponses.map((response) => response.id)).toEqual([
       eventId,
       eventId,
     ]);

@@ -98,14 +98,14 @@ describe('AlertWriterService', () => {
 
     await service.writeAlert({ ...input(0.1), type: AlertEventTypes.fall });
 
-    expect(tx.alert.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          type: AlertEventTypes.fall,
-          probability: 0.1,
-        }),
-      }),
-    );
+    const createArgs = tx.alert.create.mock.calls.at(0);
+    if (createArgs === undefined) {
+      throw new Error('alert create was not called');
+    }
+    expect(createArgs[0].data).toMatchObject({
+      type: AlertEventTypes.fall,
+      probability: 0.1,
+    });
   });
 
   it('stops delivering after unsubscribe', async () => {
@@ -186,9 +186,11 @@ describe('AlertWriterService lifecycle (ack/resolve)', () => {
 
     const result = await service.ackAlert(lifecycleInput);
 
-    const [[updateArg]] = tx.alert.update.mock.calls as [
-      [{ data: Record<string, unknown> }],
-    ];
+    const updateArgs = tx.alert.update.mock.calls.at(0);
+    if (updateArgs === undefined) {
+      throw new Error('alert update was not called');
+    }
+    const [updateArg] = updateArgs;
     expect(updateArg.data.status).toBe(AlertStatus.ACKED);
     expect(updateArg.data.ackedById).toBe('user-1');
     expect(updateArg.data.ackedAt).toBeInstanceOf(Date);
@@ -207,9 +209,11 @@ describe('AlertWriterService lifecycle (ack/resolve)', () => {
       actorUserId: 'user-2',
     });
 
-    const [[updateArg]] = tx.alert.update.mock.calls as [
-      [{ data: Record<string, unknown> }],
-    ];
+    const updateArgs = tx.alert.update.mock.calls.at(0);
+    if (updateArgs === undefined) {
+      throw new Error('alert update was not called');
+    }
+    const [updateArg] = updateArgs;
     expect(updateArg.data.status).toBe(AlertStatus.RESOLVED);
     expect(updateArg.data.resolvedById).toBe('user-2');
     expect(result.status).toBe(AlertStatus.RESOLVED);
@@ -249,15 +253,15 @@ describe('AlertWriterService lifecycle (ack/resolve)', () => {
 
     const result = await service.resolveAlert(lifecycleInput);
 
-    expect(tx.alert.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: AlertStatus.RESOLVED,
-          resolvedById: 'user-1',
-          resolvedAt: expect.any(Date),
-        }),
-      }),
-    );
+    const updateArgs = tx.alert.update.mock.calls.at(0);
+    if (updateArgs === undefined) {
+      throw new Error('alert update was not called');
+    }
+    expect(updateArgs[0].data).toMatchObject({
+      status: AlertStatus.RESOLVED,
+      resolvedById: 'user-1',
+    });
+    expect(updateArgs[0].data.resolvedAt).toEqual(expect.any(Date));
     expect(result.status).toBe(AlertStatus.RESOLVED);
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatchObject({

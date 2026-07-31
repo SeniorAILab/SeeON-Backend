@@ -5,7 +5,7 @@
 `scripts/git-guard/lib.sh` 헬퍼(`gg_warn`/`gg_die`)를 재사용합니다.
 
 > 결정 근거: backend layering rule, DTO hard gate, single-source guard invocation,
-> and the warn-tier boundary for reversible convention checks. If this becomes an
+> and the blocking boundary for convention checks. If this becomes an
 > explicit decision-record task, file it through `docs/decisions/README.md`;
 > otherwise this README is the operational source for the guard behavior.
 
@@ -13,16 +13,15 @@
 
 | 검사 대상                                                          | 도구                                     | 어디서 도나                                                   | 차단?            |
 | ------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------- | ---------------- |
-| 계층 import 경계(controller→service→repository, service→port)      | **ESLint**(`no-restricted-imports`)      | 에디터 + CI `lint`                                            | warn (비차단)    |
-| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제)                        | **ESLint**(`no-restricted-syntax`)       | 에디터 + CI `lint`                                            | warn (비차단)    |
+| 계층 import 경계(controller→service→repository, service→port)      | **ESLint**(`no-restricted-imports`)      | 에디터 + local guard + CI `lint`                              | block (exit 1)   |
+| 인라인 DTO 금지(도메인 `dto/*.dto.ts` 강제)                        | **ESLint**(`no-restricted-syntax`)       | 에디터 + local guard + CI `lint`                              | block (exit 1)   |
 | DTO suffix + controller `@Body()` request DTO 강제                 | **ESLint**(`backend/eslint.dto.config.mjs`) | `pnpm --filter backend run dto:check` + CI/local backend gate | block (exit 1)   |
-| 신규 typed 규칙(consistent-type-imports, no-unnecessary-condition) | **ESLint**                               | 에디터 + CI `lint`                                            | warn (비차단)    |
+| typed 규칙(consistent-type-imports, no-unnecessary-condition)      | **ESLint**                               | 에디터 + local guard + CI `lint`                              | block (exit 1)   |
 | **스키마↔마이그레이션 결합 + 스키마 컨벤션**                       | **check-schema-migration.sh**            | `.githooks/pre-commit` + CI                                   | **차단**(exit 1) |
 
-ESLint로 잡는 계층/타입 규칙은 warn-first로 두고, **차단해야 하는 기계적 계약**은
-block 으로 둡니다. 현재 block 대상은 스키마↔마이그레이션 결합, 스키마 컨벤션
-(append-only `*_history` 명명, nullable `*Id` 문서 주석), DTO suffix/controller
-body boundary입니다.
+ESLint 계층/타입/포맷 규칙과 DTO 경계는 local guard와 CI에서 모두 차단합니다.
+`backend/package.json`의 `--max-warnings=0`이 warning severity도 exit 1로 만들며,
+스키마↔마이그레이션 결합과 스키마 컨벤션은 별도 shell guard가 차단합니다.
 
 ## tenant(시설) 격리는 여기서 검사하지 않습니다
 
@@ -79,17 +78,16 @@ pnpm --filter backend run dto:check
 
 종료코드: `0` 통과, `1` DTO suffix 또는 controller boundary 위반.
 `no-restricted-syntax` 는 같은 파일 세트에 같은 규칙이 다시 오면 병합이 아니라
-교체되므로, 메인 `eslint.config.mjs`(warn-first)와 합치지 말고 이 별도 config 로
+교체되므로, 메인 `eslint.config.mjs`와 합치지 말고 이 별도 config 로
 유지해야 합니다.
 
 ## 호출 지점 (단일소스 — 로직 재구현 금지)
 
 - `.githooks/pre-commit` → `check-schema-migration.sh staged` (벤더 무관 1차 게이트 — Claude/Codex/GJC/사람 모두 커밋 시 동일 적용)
-- `.github/workflows/ci.yml` (backend job) → `check-schema-migration.sh auto` + `pnpm --filter backend run lint`(non-blocking warn-first)
+- `.github/workflows/ci.yml` (backend job) → `check-schema-migration.sh auto` + blocking `pnpm --filter backend run lint`
 - 실행권한 부여: `scripts/git-guard/setup-hooks.sh` 가 `chmod +x` 처리
 
 > 벤더 무관 보증은 git-native `.githooks/pre-commit` + CI 입니다. 스키마 가드는 에이전트
 > pre-edit 훅(`.claude`/`.codex`)에 넣지 않습니다 — 스키마만 스테이지된 동안 모든 셸/편집을
-> 막아 데드락을 유발할 수 있고, pre-commit 이 이미 전 벤더를 커밋 시점에 커버하기 때문입니다.
-> ADR 에 따라 되돌릴 수 있는 아키텍처/DTO 경고도 git/에이전트 훅에 넣지 않습니다
-> (ESLint 에디터 + CI lint 로만 노출).
+> 막아 데드락을 유발할 수 있고, git-native local guard + CI가 이미 전 벤더를 동일하게
+> 커버하기 때문입니다.

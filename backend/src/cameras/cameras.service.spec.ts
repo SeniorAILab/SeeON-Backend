@@ -13,11 +13,17 @@ type CameraCreateArg = {
   };
 };
 
+type CameraUpdateArg = {
+  readonly data: {
+    readonly rtspUrl?: string | null;
+  };
+};
+
 type CameraDelegate = {
   findMany: jest.Mock;
   findUnique: jest.Mock;
   create: jest.Mock<Promise<typeof fullCamera>, [CameraCreateArg]>;
-  update: jest.Mock;
+  update: jest.Mock<Promise<typeof fullCamera>, [CameraUpdateArg]>;
   delete: jest.Mock;
 };
 type MlFacilityConfigDelegate = {
@@ -29,7 +35,7 @@ function setup() {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn<Promise<typeof fullCamera>, [CameraCreateArg]>(),
-    update: jest.fn(),
+    update: jest.fn<Promise<typeof fullCamera>, [CameraUpdateArg]>(),
     delete: jest.fn(),
   };
   const mlFacilityConfig: MlFacilityConfigDelegate = {

@@ -70,10 +70,10 @@ if [ "$fe" = 1 ]; then
 fi
 
 if [ "$be" = 1 ]; then
-  gg_warn "backend changed -> dto:check + tsc --noEmit (block) + lint (warn-first, ADR)"
+  gg_warn "backend changed -> dto:check + tsc --noEmit + lint (block)"
   pnpm --filter backend run dto:check || fail=1
   pnpm --filter backend exec tsc --noEmit || fail=1
-  pnpm --filter backend run lint || gg_warn "backend lint reported issues (warn-first per ADR — not blocking)"
+  pnpm --filter backend run lint || fail=1
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^eldercare-fall-db'; then
     gg_warn "backend changed but no local DB container (eldercare-fall-db*) — skipping backend tests; run 'pnpm backend:db:up' to enable this gate"
   elif [ ! -f .env.local ]; then

@@ -28,29 +28,44 @@ const event: RecordedEventResult['event'] = {
 };
 
 function setup(recordedEvent = event) {
+  const record = jest.fn<
+    ReturnType<EventRecorderService['record']>,
+    Parameters<EventRecorderService['record']>
+  >();
+  record.mockResolvedValue({
+    event: recordedEvent,
+    duplicate: false,
+  } satisfies RecordedEventResult);
+  const recordOffline = jest.fn<
+    ReturnType<CamerasService['recordOffline']>,
+    Parameters<CamerasService['recordOffline']>
+  >();
+  const writeAlert = jest.fn<
+    ReturnType<AlertWriterService['writeAlert']>,
+    Parameters<AlertWriterService['writeAlert']>
+  >();
   const recorder = {
-    record: jest.fn().mockResolvedValue({
-      event: recordedEvent,
-      duplicate: false,
-    } satisfies RecordedEventResult),
+    record,
   } as unknown as jest.Mocked<EventRecorderService>;
   const cameras = {
-    recordOffline: jest.fn().mockResolvedValue(undefined),
+    recordOffline,
   } as unknown as jest.Mocked<CamerasService>;
   const writer = {
-    writeAlert: jest.fn().mockResolvedValue({}),
+    writeAlert,
   } as unknown as jest.Mocked<AlertWriterService>;
   return {
     service: new EventAlarmService(recorder, cameras, writer),
     recorder,
     cameras,
     writer,
+    recordOffline,
+    writeAlert,
   };
 }
 
 describe('EventAlarmService', () => {
   it('dispatches valid events to AlertWriter with originEventId and shared dedup key', async () => {
-    const { service, writer } = setup();
+    const { service, writeAlert } = setup();
 
     await service.record({
       cameraId: event.cameraId,
@@ -59,7 +74,7 @@ describe('EventAlarmService', () => {
       confidence: event.confidence ?? undefined,
     });
 
-    expect(writer.writeAlert).toHaveBeenCalledWith(
+    expect(writeAlert).toHaveBeenCalledWith(
       expect.objectContaining({
         facilityId: event.facilityId,
         cameraId: event.cameraId,
@@ -73,7 +88,7 @@ describe('EventAlarmService', () => {
   });
   it('propagates Event.snapshotKey to the derived Alert', async () => {
     const eventWithSnapshot = { ...event, snapshotKey: 'events/event-1.jpg' };
-    const { service, writer } = setup(eventWithSnapshot);
+    const { service, writeAlert } = setup(eventWithSnapshot);
 
     await service.record({
       cameraId: eventWithSnapshot.cameraId,
@@ -82,7 +97,7 @@ describe('EventAlarmService', () => {
       confidence: eventWithSnapshot.confidence ?? undefined,
     });
 
-    expect(writer.writeAlert).toHaveBeenCalledWith(
+    expect(writeAlert).toHaveBeenCalledWith(
       expect.objectContaining({
         snapshotKey: 'events/event-1.jpg',
       }),
@@ -91,7 +106,7 @@ describe('EventAlarmService', () => {
 
   it('routes detection-lost to camera offline without writing an alert', async () => {
     const detectionLost = { ...event, type: 'detection-lost' };
-    const { service, cameras, writer } = setup(detectionLost);
+    const { service, recordOffline, writeAlert } = setup(detectionLost);
 
     await service.record({
       cameraId: detectionLost.cameraId,
@@ -100,10 +115,10 @@ describe('EventAlarmService', () => {
       confidence: detectionLost.confidence ?? undefined,
     });
 
-    expect(cameras.recordOffline).toHaveBeenCalledWith(
+    expect(recordOffline).toHaveBeenCalledWith(
       detectionLost.facilityId,
       detectionLost.cameraId,
     );
-    expect(writer.writeAlert).not.toHaveBeenCalled();
+    expect(writeAlert).not.toHaveBeenCalled();
   });
 });

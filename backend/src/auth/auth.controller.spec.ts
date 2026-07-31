@@ -34,14 +34,30 @@ describe('AuthController', () => {
   });
 
   const makeController = () => {
+    const loginWithPassword = jest.fn<
+      ReturnType<AuthService['loginWithPassword']>,
+      Parameters<AuthService['loginWithPassword']>
+    >();
+    const registerWithPassword = jest.fn<
+      ReturnType<AuthService['registerWithPassword']>,
+      Parameters<AuthService['registerWithPassword']>
+    >();
+    const revokeAllSessions = jest.fn<
+      ReturnType<AuthService['revokeAllSessions']>,
+      Parameters<AuthService['revokeAllSessions']>
+    >();
+    const createFacilityForUser = jest.fn<
+      ReturnType<AuthService['createFacilityForUser']>,
+      Parameters<AuthService['createFacilityForUser']>
+    >();
     const auth = {
-      loginWithPassword: jest.fn(),
-      registerWithPassword: jest.fn(),
-      revokeAllSessions: jest.fn(),
-      createFacilityForUser: jest.fn(),
+      loginWithPassword,
+      registerWithPassword,
+      revokeAllSessions,
+      createFacilityForUser,
     } as unknown as jest.Mocked<AuthService>;
     const controller = new AuthController(auth);
-    return { auth, controller };
+    return { auth, controller, revokeAllSessions, createFacilityForUser };
   };
 
   it('returns /auth/me identity without legacy session fields', () => {
@@ -68,7 +84,7 @@ describe('AuthController', () => {
   });
 
   it('logs out by bumping sessionVersion and clearing the auth cookie', async () => {
-    const { auth, controller } = makeController();
+    const { controller, revokeAllSessions } = makeController();
     const response = makeResponse();
 
     await controller.logout(
@@ -76,7 +92,7 @@ describe('AuthController', () => {
       response,
     );
 
-    expect(auth.revokeAllSessions).toHaveBeenCalledWith('user-1');
+    expect(revokeAllSessions).toHaveBeenCalledWith('user-1');
     expect(response.clearCookie).toHaveBeenCalled();
   });
 
@@ -156,8 +172,8 @@ describe('AuthController', () => {
   });
 
   it('creates a facility for the authenticated user and sets a session cookie', async () => {
-    const { auth, controller } = makeController();
-    auth.createFacilityForUser.mockResolvedValue({
+    const { controller, createFacilityForUser } = makeController();
+    createFacilityForUser.mockResolvedValue({
       token: 'session-token',
       maxAgeSeconds: 60,
       user: { ...makeUser('facility-2', 'ADMIN'), email: 'admin@sen.ai' },
@@ -170,7 +186,7 @@ describe('AuthController', () => {
       response,
     );
 
-    expect(auth.createFacilityForUser).toHaveBeenCalledWith(
+    expect(createFacilityForUser).toHaveBeenCalledWith(
       'user-1',
       'New Facility',
     );

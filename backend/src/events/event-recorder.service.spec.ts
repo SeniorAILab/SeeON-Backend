@@ -5,16 +5,21 @@ import {
   buildEventDedupKey,
 } from './event-recorder.service.js';
 
+type EventCreateInput = {
+  readonly data: Readonly<Record<string, unknown>>;
+};
+
 describe('EventRecorderService', () => {
   const detectedAt = new Date('2026-06-26T12:34:56.789Z');
   const edgeEventId = '123e4567-e89b-42d3-a456-426614174000';
   const camera = { id: 'cam_sp_202', facilityId: 'fac_1', spaceId: 'space_1' };
 
   function makeSubject() {
+    const create = jest.fn<Promise<unknown>, [EventCreateInput]>();
     const tx = {
       $queryRaw: jest.fn(),
       event: {
-        create: jest.fn(),
+        create,
         findUniqueOrThrow: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
@@ -62,22 +67,24 @@ describe('EventRecorderService', () => {
       }),
     ).resolves.toEqual({ event: created, duplicate: false });
 
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        facilityId: 'fac_1',
-        cameraId: 'cam_sp_202',
-        spaceId: 'space_1',
-        type: 'fall',
-        confidence: 0.91,
-        detectedAt,
-        clipId: 'clip-123',
-        configVersion: null,
-        modelVersion: null,
-        detectorVersion: null,
-        operatingThreshold: null,
-        snapshotKey: null,
-        clockSource: null,
-      }),
+    const createArgs = tx.event.create.mock.calls.at(0);
+    if (createArgs === undefined) {
+      throw new Error('event create was not called');
+    }
+    expect(createArgs[0].data).toMatchObject({
+      facilityId: 'fac_1',
+      cameraId: 'cam_sp_202',
+      spaceId: 'space_1',
+      type: 'fall',
+      confidence: 0.91,
+      detectedAt,
+      clipId: 'clip-123',
+      configVersion: null,
+      modelVersion: null,
+      detectorVersion: null,
+      operatingThreshold: null,
+      snapshotKey: null,
+      clockSource: null,
     });
   });
   it('persists optional audit envelope fields but ignores client-supplied snapshot_key (server-derived only)', async () => {
@@ -100,15 +107,17 @@ describe('EventRecorderService', () => {
       }),
     ).resolves.toEqual({ event: created, duplicate: false });
 
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        configVersion: 7,
-        modelVersion: 'rf-nh-2026-07-04',
-        detectorVersion: 'edge-detector-1.2.3',
-        operatingThreshold: 0.42,
-        snapshotKey: null,
-        clockSource: 'edge_wall_clock',
-      }),
+    const createArgs = tx.event.create.mock.calls.at(0);
+    if (createArgs === undefined) {
+      throw new Error('event create was not called');
+    }
+    expect(createArgs[0].data).toMatchObject({
+      configVersion: 7,
+      modelVersion: 'rf-nh-2026-07-04',
+      detectorVersion: 'edge-detector-1.2.3',
+      operatingThreshold: 0.42,
+      snapshotKey: null,
+      clockSource: 'edge_wall_clock',
     });
   });
 
@@ -129,14 +138,11 @@ describe('EventRecorderService', () => {
     ).resolves.toEqual({ event: created, duplicate: false });
 
     // Then: the backend stores the edge identity and derives deduplication from it.
-    const createCalls = tx.event.create.mock.calls as unknown as Array<
-      [
-        {
-          data: { edgeEventId: string; dedupKey: string };
-        },
-      ]
-    >;
-    expect(createCalls[0]?.[0].data).toMatchObject({
+    const createArgs = tx.event.create.mock.calls.at(0);
+    if (createArgs === undefined) {
+      throw new Error('event create was not called');
+    }
+    expect(createArgs[0].data).toMatchObject({
       edgeEventId,
       dedupKey:
         '7b7c6d41ca592336c550e5ff38554707a1791797734195fe8a595dac42b82dfd',

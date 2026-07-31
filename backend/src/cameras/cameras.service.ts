@@ -26,8 +26,8 @@ export class CamerasService {
     >`SELECT id, facility_id AS "facilityId", space_id AS "spaceId"
        FROM get_camera_for_event_ingest(${cameraId})`;
 
-    const camera = rows[0];
-    if (!camera) throw new NotFoundException('unknown_camera');
+    const camera = rows.at(0);
+    if (camera === undefined) throw new NotFoundException('unknown_camera');
 
     return camera;
   }

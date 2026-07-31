@@ -9,6 +9,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+type RecordedEventResponse = {
+  readonly event: { readonly id: string };
+  readonly duplicate: boolean;
+};
+
+function recordEventMock(): jest.Mock<
+  Promise<RecordedEventResponse>,
+  [unknown]
+> {
+  return jest.fn<Promise<RecordedEventResponse>, [unknown]>();
+}
+
 describe('EventsController record', () => {
   // Event-type canonicalization (trim+lowercase) and enum-membership
   // rejection now live entirely in EventRecorderService.record() (see
@@ -20,14 +32,14 @@ describe('EventsController record', () => {
   // responsibility: passing camera_id/type/detected_at through unmodified
   // and propagating whatever the recorder decides.
   it('propagates a rejection from the recorder for unsupported event types', async () => {
+    const record = recordEventMock();
+    record.mockRejectedValue(
+      new BadRequestException(
+        'type must be one of: detection-lost, bed-exit, fall',
+      ),
+    );
     const eventAlarm = {
-      record: jest
-        .fn()
-        .mockRejectedValue(
-          new BadRequestException(
-            'type must be one of: detection-lost, bed-exit, fall',
-          ),
-        ),
+      record,
     } as unknown as jest.Mocked<EventAlarmService>;
     const recorder = {} as EventRecorderService;
     const cameras = {} as CamerasService;
@@ -41,17 +53,16 @@ describe('EventsController record', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(eventAlarm.record).toHaveBeenCalledWith(
+    expect(record).toHaveBeenCalledWith(
       expect.objectContaining({ cameraId: 'camera-1', type: 'foo' }),
     );
   });
 
   it('passes the raw event type through for the recorder to canonicalize', async () => {
+    const record = recordEventMock();
+    record.mockResolvedValue({ event: { id: 'event-1' }, duplicate: false });
     const eventAlarm = {
-      record: jest.fn().mockResolvedValue({
-        event: { id: 'event-1' },
-        duplicate: false,
-      }),
+      record,
     } as unknown as jest.Mocked<EventAlarmService>;
     const recorder = {} as EventRecorderService;
     const cameras = {} as CamerasService;
@@ -65,7 +76,7 @@ describe('EventsController record', () => {
       }),
     ).resolves.toEqual({ id: 'event-1', status: 'created' });
 
-    expect(eventAlarm.record).toHaveBeenCalledWith({
+    expect(record).toHaveBeenCalledWith({
       cameraId: 'camera-1',
       type: ' DETECTION-LOST ',
       detectedAt: new Date('2026-06-26T01:02:03.456Z'),
@@ -81,11 +92,10 @@ describe('EventsController record', () => {
   });
 
   it('passes optional clip_id through as clipId', async () => {
+    const record = recordEventMock();
+    record.mockResolvedValue({ event: { id: 'event-1' }, duplicate: false });
     const eventAlarm = {
-      record: jest.fn().mockResolvedValue({
-        event: { id: 'event-1' },
-        duplicate: false,
-      }),
+      record,
     } as unknown as jest.Mocked<EventAlarmService>;
     const recorder = {} as EventRecorderService;
     const cameras = {} as CamerasService;
@@ -98,16 +108,15 @@ describe('EventsController record', () => {
       clip_id: ' clip-123 ',
     });
 
-    expect(eventAlarm.record).toHaveBeenCalledWith(
+    expect(record).toHaveBeenCalledWith(
       expect.objectContaining({ clipId: 'clip-123' }),
     );
   });
   it('accepts optional audit envelope fields and maps them to recorder input', async () => {
+    const record = recordEventMock();
+    record.mockResolvedValue({ event: { id: 'event-1' }, duplicate: false });
     const eventAlarm = {
-      record: jest.fn().mockResolvedValue({
-        event: { id: 'event-1' },
-        duplicate: false,
-      }),
+      record,
     } as unknown as jest.Mocked<EventAlarmService>;
     const recorder = {} as EventRecorderService;
     const cameras = {} as CamerasService;
@@ -128,7 +137,7 @@ describe('EventsController record', () => {
       }),
     ).resolves.toEqual({ id: 'event-1', status: 'created' });
 
-    expect(eventAlarm.record).toHaveBeenCalledWith({
+    expect(record).toHaveBeenCalledWith({
       cameraId: 'camera-1',
       type: 'fall',
       detectedAt: new Date('2026-06-26T01:02:03.456Z'),
@@ -164,11 +173,13 @@ describe('EventsController list', () => {
       clockSource: null,
     };
     const eventAlarm = {} as EventAlarmService;
+    const list = jest.fn<Promise<unknown>, [string, unknown]>();
+    list.mockResolvedValue({
+      items: [event],
+      nextCursor: 'opaque-cursor',
+    });
     const recorder = {
-      list: jest.fn().mockResolvedValue({
-        items: [event],
-        nextCursor: 'opaque-cursor',
-      }),
+      list,
     } as unknown as jest.Mocked<EventRecorderService>;
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
@@ -185,7 +196,7 @@ describe('EventsController list', () => {
       facilityId: event.facilityId,
     });
     expect(listed.items[0]).not.toHaveProperty('clipId');
-    expect(recorder.list).toHaveBeenCalledWith('facility-1', {
+    expect(list).toHaveBeenCalledWith('facility-1', {
       limit: 25,
       cursor: 'previous-cursor',
     });
@@ -195,13 +206,23 @@ describe('EventsController heartbeat', () => {
   it('resolves the camera through event ingest and records a heartbeat', async () => {
     const eventAlarm = {} as EventAlarmService;
     const recorder = {} as EventRecorderService;
+    const resolveForEventIngest = jest.fn<
+      Promise<{
+        readonly id: string;
+        readonly facilityId: string;
+        readonly spaceId: string;
+      }>,
+      [string]
+    >();
+    resolveForEventIngest.mockResolvedValue({
+      id: 'camera-1',
+      facilityId: 'facility-1',
+      spaceId: 'space-1',
+    });
+    const recordHeartbeat = jest.fn<Promise<void>, [string, string]>();
     const cameras = {
-      resolveForEventIngest: jest.fn().mockResolvedValue({
-        id: 'camera-1',
-        facilityId: 'facility-1',
-        spaceId: 'space-1',
-      }),
-      recordHeartbeat: jest.fn().mockResolvedValue(undefined),
+      resolveForEventIngest,
+      recordHeartbeat,
     } as unknown as jest.Mocked<CamerasService>;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
@@ -209,36 +230,50 @@ describe('EventsController heartbeat', () => {
       controller.heartbeat({ camera_id: 'camera-1' }),
     ).resolves.toEqual({ ok: true });
 
-    expect(cameras.resolveForEventIngest).toHaveBeenCalledWith('camera-1');
-    expect(cameras.recordHeartbeat).toHaveBeenCalledWith(
-      'facility-1',
-      'camera-1',
-    );
+    expect(resolveForEventIngest).toHaveBeenCalledWith('camera-1');
+    expect(recordHeartbeat).toHaveBeenCalledWith('facility-1', 'camera-1');
   });
 
   it('propagates unknown camera rejection without recording a heartbeat', async () => {
     const eventAlarm = {} as EventAlarmService;
     const recorder = {} as EventRecorderService;
+    const resolveForEventIngest = jest.fn<
+      Promise<{
+        readonly id: string;
+        readonly facilityId: string;
+        readonly spaceId: string;
+      }>,
+      [string]
+    >();
+    resolveForEventIngest.mockRejectedValue(
+      new NotFoundException('unknown_camera'),
+    );
+    const recordHeartbeat = jest.fn<Promise<void>, [string, string]>();
     const cameras = {
-      resolveForEventIngest: jest
-        .fn()
-        .mockRejectedValue(new NotFoundException('unknown_camera')),
-      recordHeartbeat: jest.fn(),
+      resolveForEventIngest,
+      recordHeartbeat,
     } as unknown as jest.Mocked<CamerasService>;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
     await expect(
       controller.heartbeat({ camera_id: 'missing-camera' }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(cameras.recordHeartbeat).not.toHaveBeenCalled();
+    expect(recordHeartbeat).not.toHaveBeenCalled();
   });
 });
 
 describe('EventsController guards', () => {
   it('guards snapshot uploads with the edge ingest token', () => {
-    const guards = Reflect.getMetadata(
+    const uploadSnapshot: unknown = Object.getOwnPropertyDescriptor(
+      EventsController.prototype,
+      'uploadSnapshot',
+    )?.value;
+    if (typeof uploadSnapshot !== 'function') {
+      throw new Error('EventsController.uploadSnapshot is not a method');
+    }
+    const guards: unknown = Reflect.getMetadata(
       GUARDS_METADATA,
-      EventsController.prototype.uploadSnapshot,
+      uploadSnapshot,
     );
 
     expect(guards).toContain(EdgeIngestTokenGuard);
@@ -267,7 +302,7 @@ describe('EventsController uploadSnapshot', () => {
       headers: { 'content-type': options.contentType ?? 'image/jpeg' },
       query: options.query,
       body: options.parsedBody,
-      async *[Symbol.asyncIterator]() {
+      *[Symbol.iterator]() {
         yield body;
       },
     };
@@ -279,12 +314,21 @@ describe('EventsController uploadSnapshot', () => {
     );
     process.env.SNAPSHOT_DIR = snapshotDir;
     const eventAlarm = {} as EventAlarmService;
+    const resolveForSnapshot = jest.fn<
+      Promise<{ readonly id: string; readonly facilityId: string }>,
+      [string]
+    >();
+    resolveForSnapshot.mockResolvedValue({
+      id: 'event-created-id',
+      facilityId: 'facility-1',
+    });
+    const persistSnapshotKey = jest.fn<
+      Promise<void>,
+      [string, string, string]
+    >();
     const recorder = {
-      resolveForSnapshot: jest.fn().mockResolvedValue({
-        id: 'event-created-id',
-        facilityId: 'facility-1',
-      }),
-      persistSnapshotKey: jest.fn().mockResolvedValue(undefined),
+      resolveForSnapshot,
+      persistSnapshotKey,
     } as unknown as jest.Mocked<EventRecorderService>;
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
@@ -294,8 +338,8 @@ describe('EventsController uploadSnapshot', () => {
       controller.uploadSnapshot(req as never, 'client-route-id'),
     ).resolves.toEqual({ snapshotKey: 'facility-1/event-created-id.jpg' });
 
-    expect(recorder.resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
-    expect(recorder.persistSnapshotKey).toHaveBeenCalledWith(
+    expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
+    expect(persistSnapshotKey).toHaveBeenCalledWith(
       'facility-1',
       'event-created-id',
       'facility-1/event-created-id.jpg',
@@ -309,9 +353,17 @@ describe('EventsController uploadSnapshot', () => {
 
   it('rejects client-supplied snapshot keys', async () => {
     const eventAlarm = {} as EventAlarmService;
+    const resolveForSnapshot = jest.fn<
+      Promise<{ readonly id: string; readonly facilityId: string }>,
+      [string]
+    >();
+    const persistSnapshotKey = jest.fn<
+      Promise<void>,
+      [string, string, string]
+    >();
     const recorder = {
-      resolveForSnapshot: jest.fn(),
-      persistSnapshotKey: jest.fn(),
+      resolveForSnapshot,
+      persistSnapshotKey,
     } as unknown as jest.Mocked<EventRecorderService>;
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
@@ -332,14 +384,22 @@ describe('EventsController uploadSnapshot', () => {
         'event-1',
       ),
     ).rejects.toThrow('snapshot key is server-derived');
-    expect(recorder.resolveForSnapshot).not.toHaveBeenCalled();
+    expect(resolveForSnapshot).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported snapshot content types', async () => {
     const eventAlarm = {} as EventAlarmService;
+    const resolveForSnapshot = jest.fn<
+      Promise<{ readonly id: string; readonly facilityId: string }>,
+      [string]
+    >();
+    const persistSnapshotKey = jest.fn<
+      Promise<void>,
+      [string, string, string]
+    >();
     const recorder = {
-      resolveForSnapshot: jest.fn(),
-      persistSnapshotKey: jest.fn(),
+      resolveForSnapshot,
+      persistSnapshotKey,
     } as unknown as jest.Mocked<EventRecorderService>;
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
@@ -352,6 +412,6 @@ describe('EventsController uploadSnapshot', () => {
         'event-1',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(recorder.resolveForSnapshot).not.toHaveBeenCalled();
+    expect(resolveForSnapshot).not.toHaveBeenCalled();
   });
 });
