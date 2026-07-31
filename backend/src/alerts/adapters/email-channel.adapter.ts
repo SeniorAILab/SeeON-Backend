@@ -154,10 +154,7 @@ export function classifyEmailDeliveryFailure(error: unknown): DeliveryResult {
   const { code, responseCode } = smtpErrorFields(error);
 
   // Authentication and permanent 5xx server rejections require operator action.
-  if (
-    code === 'EAUTH' ||
-    (responseCode !== undefined && responseCode >= 500)
-  ) {
+  if (code === 'EAUTH' || (responseCode !== undefined && responseCode >= 500)) {
     return failed(
       'terminal_operator_action',
       `smtp_${code ?? responseCode}`,

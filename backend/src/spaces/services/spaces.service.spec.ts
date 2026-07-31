@@ -74,13 +74,17 @@ describe('SpacesService', () => {
     await expect(
       service.update('facility-session', 'space-1', { isActive: true }),
     ).resolves.toMatchObject({ isActive: true });
-    expect(repository.update).toHaveBeenCalledWith('facility-session', 'space-1', {
-      floorId: undefined,
-      name: undefined,
-      type: undefined,
-      capacity: undefined,
-      isActive: true,
-      assignedStaff: undefined,
-    });
+    expect(repository.update).toHaveBeenCalledWith(
+      'facility-session',
+      'space-1',
+      {
+        floorId: undefined,
+        name: undefined,
+        type: undefined,
+        capacity: undefined,
+        isActive: true,
+        assignedStaff: undefined,
+      },
+    );
   });
 });

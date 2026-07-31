@@ -16,12 +16,7 @@ import { DEFAULT_JWT_TTL, hasRbacCapability } from './auth.constants';
 export interface AuthSession {
   readonly user: Pick<
     User,
-    | 'id'
-    | 'facilityId'
-    | 'role'
-    | 'nickname'
-    | 'email'
-    | 'sessionVersion'
+    'id' | 'facilityId' | 'role' | 'nickname' | 'email' | 'sessionVersion'
   >;
   readonly token: string;
   readonly maxAgeSeconds: number;
@@ -163,12 +158,7 @@ export class AuthService {
   private createJwtSession(
     user: Pick<
       User,
-      | 'id'
-      | 'facilityId'
-      | 'role'
-      | 'nickname'
-      | 'email'
-      | 'sessionVersion'
+      'id' | 'facilityId' | 'role' | 'nickname' | 'email' | 'sessionVersion'
     >,
   ): AuthSession {
     if (!hasRbacCapability(user.role, 'personalLogin')) {
@@ -187,7 +177,11 @@ export class AuthService {
   async getAlertSettings(userId: string): Promise<AlertSettings> {
     const user = await this.prisma.db.user.findUnique({
       where: { id: userId },
-      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+      select: {
+        notificationEmail: true,
+        emailAlertsEnabled: true,
+        email: true,
+      },
     });
     if (!user) throw new UnauthorizedException('Unknown user');
     return {
@@ -210,7 +204,9 @@ export class AuthService {
         input.notificationEmail !== null &&
         typeof input.notificationEmail !== 'string'
       ) {
-        throw new BadRequestException('notificationEmail must be a string or null');
+        throw new BadRequestException(
+          'notificationEmail must be a string or null',
+        );
       }
       const raw =
         input.notificationEmail === null ? '' : input.notificationEmail.trim();
@@ -225,7 +221,11 @@ export class AuthService {
     const user = await this.prisma.db.user.update({
       where: { id: userId },
       data,
-      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+      select: {
+        notificationEmail: true,
+        emailAlertsEnabled: true,
+        email: true,
+      },
     });
     return {
       notificationEmail: user.notificationEmail,

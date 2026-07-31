@@ -5,7 +5,6 @@ import { RequireFacilityGuard, type RequestWithAuth } from './jwt-auth.guard';
 import { JwtStrategy, jwtCookieExtractor } from './jwt.strategy';
 const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
 
-
 function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
   return {
     switchToHttp: () => ({

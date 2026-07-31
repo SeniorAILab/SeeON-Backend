@@ -110,7 +110,9 @@ describe('AlertEventsService', () => {
       deliveryAttempts: [],
     });
     const channel = channelDouble();
-    const prisma = prismaDouble([recipientRecord('user-1', 'admin1@example.test')]);
+    const prisma = prismaDouble([
+      recipientRecord('user-1', 'admin1@example.test'),
+    ]);
     const service = createService(repository, channel, prisma);
 
     await service.ensureOutboxForIngest({

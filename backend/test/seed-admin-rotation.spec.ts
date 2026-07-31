@@ -38,9 +38,9 @@ describe('Nokyang seeded admin password rotation', () => {
       select: { passwordHash: true, sessionVersion: true },
     });
 
-    expect(await verifyPassword(INITIAL_PASSWORD, initialAdmin.passwordHash ?? '')).toBe(
-      true,
-    );
+    expect(
+      await verifyPassword(INITIAL_PASSWORD, initialAdmin.passwordHash ?? ''),
+    ).toBe(true);
 
     process.env.NOKYANG_ADMIN_PASSWORD = ROTATED_PASSWORD;
     await seedNokyangDemo();
@@ -49,12 +49,12 @@ describe('Nokyang seeded admin password rotation', () => {
       select: { passwordHash: true, sessionVersion: true },
     });
 
-    expect(await verifyPassword(ROTATED_PASSWORD, rotatedAdmin.passwordHash ?? '')).toBe(
-      true,
-    );
-    expect(await verifyPassword(INITIAL_PASSWORD, rotatedAdmin.passwordHash ?? '')).toBe(
-      false,
-    );
+    expect(
+      await verifyPassword(ROTATED_PASSWORD, rotatedAdmin.passwordHash ?? ''),
+    ).toBe(true);
+    expect(
+      await verifyPassword(INITIAL_PASSWORD, rotatedAdmin.passwordHash ?? ''),
+    ).toBe(false);
     expect(rotatedAdmin.sessionVersion).toBe(initialAdmin.sessionVersion + 1);
 
     await seedNokyangDemo();
@@ -63,9 +63,12 @@ describe('Nokyang seeded admin password rotation', () => {
       select: { passwordHash: true, sessionVersion: true },
     });
 
-    expect(await verifyPassword(ROTATED_PASSWORD, idempotentAdmin.passwordHash ?? '')).toBe(
-      true,
-    );
+    expect(
+      await verifyPassword(
+        ROTATED_PASSWORD,
+        idempotentAdmin.passwordHash ?? '',
+      ),
+    ).toBe(true);
     expect(idempotentAdmin.sessionVersion).toBe(rotatedAdmin.sessionVersion);
   });
 });

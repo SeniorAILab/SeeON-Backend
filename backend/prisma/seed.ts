@@ -70,7 +70,9 @@ async function upsertAdmin(
     existing?.passwordHash != null
       ? await verifyPassword(password, existing.passwordHash)
       : false;
-  const passwordHash = passwordMatches ? undefined : await hashPassword(password);
+  const passwordHash = passwordMatches
+    ? undefined
+    : await hashPassword(password);
   await tx.user.upsert({
     where: { email: NOKYANG_ADMIN_EMAIL },
     update: {
@@ -108,7 +110,9 @@ async function upsertStaff(
     existing?.passwordHash != null
       ? await verifyPassword(password, existing.passwordHash)
       : false;
-  const passwordHash = passwordMatches ? undefined : await hashPassword(password);
+  const passwordHash = passwordMatches
+    ? undefined
+    : await hashPassword(password);
   await tx.user.upsert({
     where: { email: NOKYANG_STAFF_EMAIL },
     update: {
