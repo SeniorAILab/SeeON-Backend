@@ -9,6 +9,11 @@ import type { App } from 'supertest/types';
 import { SESSION_COOKIE_NAME } from '../src/auth/auth.constants';
 import { AppModule } from '../src/app.module';
 
+import {
+  readArray,
+  readObject,
+  readStringField,
+} from './helpers/json-response';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
@@ -154,23 +159,28 @@ describe('Facilities and cameras response contracts (e2e)', () => {
       .get('/api/v1/cameras')
       .set('cookie', adminCookie)
       .expect(200);
-    expect(afterList.body).toHaveLength(1);
-    expect(afterList.body[0]).toEqual({
+    const afterListBody = readArray(afterList.body, 'camera list response');
+    const afterCamera = readObject(afterListBody.at(0), 'camera list item');
+    const lastSeenAt = readStringField(afterCamera, 'lastSeenAt');
+    expect(afterListBody).toHaveLength(1);
+    expect(afterCamera).toEqual({
       id: seeded.cameraId,
       facilityId: seeded.facilityId,
       spaceId: seeded.spaceId,
       label: seeded.cameraLabel,
-      lastSeenAt: expect.any(String),
+      lastSeenAt,
       online: true,
       createdAt: seeded.cameraCreatedAt.toISOString(),
     });
-    expect(Date.parse(afterList.body[0].lastSeenAt)).not.toBeNaN();
+    expect(Date.parse(lastSeenAt)).not.toBeNaN();
 
     const getOne = await request(app.getHttpServer())
       .get(`/api/v1/cameras/${seeded.cameraId}`)
       .set('cookie', adminCookie)
       .expect(200);
-    expect(getOne.body).toEqual(afterList.body[0]);
+    expect(readObject(getOne.body, 'camera detail response')).toEqual(
+      afterCamera,
+    );
   });
 
   it('DELETE /floors/:id returns 409 and preserves events for hidden referenced spaces', async () => {

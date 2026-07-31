@@ -261,7 +261,7 @@ function jwtTtlSeconds(ttl: string): number {
   const match = /^(\d+)([smhd])?$/.exec(trimmed);
   if (!match) return 12 * 60 * 60;
   const value = Number.parseInt(match[1], 10);
-  const unit = match[2] ?? 's';
+  const unit = match[2];
   const multiplier =
     unit === 'd' ? 86400 : unit === 'h' ? 3600 : unit === 'm' ? 60 : 1;
   return value * multiplier;

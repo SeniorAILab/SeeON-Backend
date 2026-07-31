@@ -19,16 +19,20 @@ export class SystemAlertPolicyClock extends AlertPolicyClock {
 @Injectable()
 export class AlertPolicyService {
   evaluateIngress(
-    _facilityId: string,
-    _event: AlertEventRequestDto,
+    facilityId: string,
+    event: AlertEventRequestDto,
   ): AlertPolicyDecision {
+    void facilityId;
+    void event;
     return { kind: 'dispatch' };
   }
 
   evaluatePrediction(
-    _facilityId: string,
-    _input: PredictionAlertRequestDto,
+    facilityId: string,
+    input: PredictionAlertRequestDto,
   ): AlertPolicyDecision {
+    void facilityId;
+    void input;
     return { kind: 'dispatch' };
   }
 }

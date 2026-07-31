@@ -115,13 +115,9 @@ describe('AuthService facility onboarding', () => {
         user: { findUnique: jest.fn().mockResolvedValue(unassignedUser) },
         $transaction: jest.fn(
           async (callback: (client: typeof tx) => Promise<unknown>) => {
-            try {
-              const result = await callback(tx);
-              facilityCount += 1;
-              return result;
-            } catch (error) {
-              throw error;
-            }
+            const result = await callback(tx);
+            facilityCount += 1;
+            return result;
           },
         ),
       },

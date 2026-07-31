@@ -74,7 +74,7 @@ function requestToken(request: EdgeIngestRequest): string | null {
 function bearerToken(value: string | null): string | null {
   if (value === null) return null;
   const [scheme, token] = value.trim().split(/\s+/, 2);
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  if (scheme.toLowerCase() !== 'bearer' || !token) return null;
   return token;
 }
 

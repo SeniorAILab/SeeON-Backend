@@ -44,7 +44,7 @@ export class EmailChannelAdapter implements ChannelPort {
 
     try {
       const dto = toEmailAlertMessageDto(message, this.messageLinkUrl());
-      const info = await transporter.sendMail({
+      const response: unknown = await transporter.sendMail({
         from: this.fromAddress(),
         to,
         subject: dto.subject,
@@ -53,7 +53,7 @@ export class EmailChannelAdapter implements ChannelPort {
       });
       return {
         kind: 'sent',
-        provider_reference: info.messageId ?? 'smtp-email',
+        provider_reference: sentMessageId(response) ?? 'smtp-email',
       };
     } catch (error) {
       return classifyEmailDeliveryFailure(error);
@@ -128,17 +128,38 @@ interface SmtpError {
 }
 
 function smtpErrorFields(error: unknown): SmtpError {
-  if (typeof error !== 'object' || error === null) {
+  const candidate = objectFields(error);
+  if (candidate === null) {
     return {};
   }
-  const candidate = error as { code?: unknown; responseCode?: unknown };
   return {
-    code: typeof candidate.code === 'string' ? candidate.code : undefined,
+    code: typeof candidate['code'] === 'string' ? candidate['code'] : undefined,
     responseCode:
-      typeof candidate.responseCode === 'number'
-        ? candidate.responseCode
+      typeof candidate['responseCode'] === 'number'
+        ? candidate['responseCode']
         : undefined,
   };
+}
+
+function sentMessageId(response: unknown): string | undefined {
+  const fields = objectFields(response);
+  const messageId = fields?.['messageId'];
+  return typeof messageId === 'string' ? messageId : undefined;
+}
+
+function objectFields(
+  value: unknown,
+): Readonly<Record<string, unknown>> | null {
+  if (!isObjectFields(value)) {
+    return null;
+  }
+  return value;
+}
+
+function isObjectFields(
+  value: unknown,
+): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function classifyEmailDeliveryFailure(error: unknown): DeliveryResult {

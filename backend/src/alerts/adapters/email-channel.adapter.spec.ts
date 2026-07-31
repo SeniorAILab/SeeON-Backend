@@ -1,13 +1,18 @@
 import { Logger } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
+import {
+  readObject,
+  readStringField,
+} from '../../../test/helpers/json-response.js';
 
-const sendMailMock = jest.fn();
-const createTransportMock = jest.fn((_config?: unknown) => ({
-  sendMail: sendMailMock,
-}));
+const sendMailMock = jest.fn<Promise<unknown>, [unknown]>();
+const createTransportMock = jest.fn<
+  { readonly sendMail: typeof sendMailMock },
+  [unknown]
+>(() => ({ sendMail: sendMailMock }));
 
 jest.mock('nodemailer', () => ({
-  createTransport: (config: unknown) => createTransportMock(config),
+  createTransport: (...args: [unknown]) => createTransportMock(...args),
 }));
 
 import {
@@ -28,9 +33,7 @@ const alertMessage = {
 } as const;
 
 function configService(values: Record<string, string> = {}): ConfigService {
-  return {
-    get: jest.fn((key: string) => values[key]),
-  } as unknown as ConfigService;
+  return new ConfigService(values);
 }
 
 beforeEach(() => {
@@ -71,8 +74,11 @@ describe('EmailChannelAdapter.send', () => {
 
     expect(result).toEqual({ kind: 'sent', provider_reference: 'msg-123' });
     expect(sendMailMock).toHaveBeenCalledTimes(1);
-    const sentArgs = sendMailMock.mock.calls[0][0] as { to: string };
-    expect(sentArgs.to).toBe('admin@example.test');
+    const sendArgs = sendMailMock.mock.calls.at(0);
+    if (sendArgs === undefined) throw new Error('sendMail was not called');
+    expect(
+      readStringField(readObject(sendArgs[0], 'sendMail input'), 'to'),
+    ).toBe('admin@example.test');
   });
   it.each([
     ['absent', {}],
