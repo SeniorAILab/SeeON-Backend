@@ -8,7 +8,6 @@ import {
 } from '../../prisma/seed-super-admin';
 const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
 
-
 describe('super-admin bootstrap config', () => {
   it('skips when SUPER_ADMIN_PASSWORD is unset or empty', () => {
     expect(readSuperAdminConfig({})).toEqual({

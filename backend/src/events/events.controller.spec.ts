@@ -346,7 +346,9 @@ describe('EventsController uploadSnapshot', () => {
 
     await expect(
       controller.uploadSnapshot(
-        makeRawRequest(Buffer.from('gif-bytes'), { contentType: 'image/gif' }) as never,
+        makeRawRequest(Buffer.from('gif-bytes'), {
+          contentType: 'image/gif',
+        }) as never,
         'event-1',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);

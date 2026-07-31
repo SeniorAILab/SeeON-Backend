@@ -108,14 +108,14 @@ export function buildEmailAlertHtml(dto: EmailAlertMessageDto): string {
   const rows: string[] = [
     `<h2 style="margin:0 0 12px">${esc(dto.title)}</h2>`,
     `<p style="margin:4px 0">${
-      dto.residentName && dto.room
-        ? `${who} · 🏠 ${esc(dto.room)}`
-        : who
+      dto.residentName && dto.room ? `${who} · 🏠 ${esc(dto.room)}` : who
     }</p>`,
     `<p style="margin:4px 0">🕐 ${esc(dto.detectedAtKST)}</p>`,
   ];
   if (dto.confidencePercent !== null) {
-    rows.push(`<p style="margin:4px 0">📊 확신도 ${dto.confidencePercent}%</p>`);
+    rows.push(
+      `<p style="margin:4px 0">📊 확신도 ${dto.confidencePercent}%</p>`,
+    );
   }
   rows.push(
     `<p style="margin:16px 0 0"><a href="${esc(dto.dashboardLink)}">대시보드에서 상태 확인</a></p>`,

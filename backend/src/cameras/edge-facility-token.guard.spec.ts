@@ -1,5 +1,5 @@
+import type { ExecutionContext } from '@nestjs/common';
 import {
-  ExecutionContext,
   ForbiddenException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -75,7 +75,9 @@ describe('EdgeFacilityTokenGuard', () => {
     );
 
     expect(() =>
-      guard.canActivate(contextFor({ authorization: 'Bearer edge-token' }).context),
+      guard.canActivate(
+        contextFor({ authorization: 'Bearer edge-token' }).context,
+      ),
     ).toThrow(ForbiddenException);
   });
 

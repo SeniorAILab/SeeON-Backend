@@ -176,7 +176,6 @@ export class AlertsController {
   }
 }
 
-
 function requireFacilityId(req: RequestWithAuth): string {
   const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
   if (!facilityId) throw new ForbiddenException('Facility context required');

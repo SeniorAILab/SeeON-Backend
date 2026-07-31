@@ -249,9 +249,9 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', firstCookie)
       .expect(200);
-    expect(firstList.body.items.map((event: { id: string }) => event.id)).toEqual([
-      created.body.id,
-    ]);
+    expect(
+      firstList.body.items.map((event: { id: string }) => event.id),
+    ).toEqual([created.body.id]);
     expect(firstList.body.nextCursor).toBeNull();
 
     const secondList = await request(app.getHttpServer())
@@ -333,7 +333,9 @@ describe('Events API (e2e)', () => {
         .query(cursor ? { cursor } : {})
         .set('cookie', cookie)
         .expect(200);
-      retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
+      retrievedIds.push(
+        ...page.body.items.map((event: { id: string }) => event.id),
+      );
       cursor = page.body.nextCursor as string | null;
     } while (cursor);
 
@@ -387,9 +389,9 @@ describe('Events API (e2e)', () => {
       .get('/api/v1/events')
       .set('cookie', cookie)
       .expect(200);
-    expect(firstPage.body.items.map((event: { id: string }) => event.id)).toEqual(
-      expected.slice(0, 50).map((event) => event.id),
-    );
+    expect(
+      firstPage.body.items.map((event: { id: string }) => event.id),
+    ).toEqual(expected.slice(0, 50).map((event) => event.id));
 
     const retrievedIds: string[] = [];
     let cursor: string | null = null;
@@ -399,7 +401,9 @@ describe('Events API (e2e)', () => {
         .query(cursor ? { cursor } : {})
         .set('cookie', cookie)
         .expect(200);
-      retrievedIds.push(...page.body.items.map((event: { id: string }) => event.id));
+      retrievedIds.push(
+        ...page.body.items.map((event: { id: string }) => event.id),
+      );
       cursor = page.body.nextCursor as string | null;
     } while (cursor);
 

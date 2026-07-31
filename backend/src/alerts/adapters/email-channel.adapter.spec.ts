@@ -2,7 +2,9 @@ import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 const sendMailMock = jest.fn();
-const createTransportMock = jest.fn((_config?: unknown) => ({ sendMail: sendMailMock }));
+const createTransportMock = jest.fn((_config?: unknown) => ({
+  sendMail: sendMailMock,
+}));
 
 jest.mock('nodemailer', () => ({
   createTransport: (config: unknown) => createTransportMock(config),
@@ -180,9 +182,7 @@ describe('classifyEmailDeliveryFailure', () => {
   });
 
   it('classifies EAUTH auth failures as terminal operator-action', () => {
-    expect(
-      classifyEmailDeliveryFailure({ code: 'EAUTH' }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ code: 'EAUTH' })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'terminal_operator_action',
@@ -192,9 +192,7 @@ describe('classifyEmailDeliveryFailure', () => {
   });
 
   it('classifies provider 5xx responseCode as terminal operator-action', () => {
-    expect(
-      classifyEmailDeliveryFailure({ responseCode: 550 }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ responseCode: 550 })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'terminal_operator_action',
@@ -204,18 +202,14 @@ describe('classifyEmailDeliveryFailure', () => {
   });
 
   it('classifies EENVELOPE / EMESSAGE as terminal operator-action', () => {
-    expect(
-      classifyEmailDeliveryFailure({ code: 'EENVELOPE' }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ code: 'EENVELOPE' })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'terminal_operator_action',
         reason: 'smtp_EENVELOPE',
       }),
     );
-    expect(
-      classifyEmailDeliveryFailure({ code: 'EMESSAGE' }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ code: 'EMESSAGE' })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'terminal_operator_action',
@@ -225,18 +219,14 @@ describe('classifyEmailDeliveryFailure', () => {
   });
 
   it('classifies connection/timeout errors as retryable transient failures', () => {
-    expect(
-      classifyEmailDeliveryFailure({ code: 'ECONNECTION' }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ code: 'ECONNECTION' })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'transient',
         retry_after_ms: 60_000,
       }),
     );
-    expect(
-      classifyEmailDeliveryFailure({ code: 'ETIMEDOUT' }),
-    ).toEqual(
+    expect(classifyEmailDeliveryFailure({ code: 'ETIMEDOUT' })).toEqual(
       expect.objectContaining({
         kind: 'failed',
         failure_class: 'transient',

@@ -24,7 +24,6 @@ type MlFacilityConfigDelegate = {
   upsert: jest.Mock;
 };
 
-
 function setup() {
   const camera: CameraDelegate = {
     findMany: jest.fn(),
@@ -175,9 +174,9 @@ describe('CamerasService', () => {
         createdAt: fullCamera.createdAt,
       },
     ]);
-    await expect(service.getOne('facility-1', 'c1')).resolves.not.toHaveProperty(
-      'rtspUrl',
-    );
+    await expect(
+      service.getOne('facility-1', 'c1'),
+    ).resolves.not.toHaveProperty('rtspUrl');
   });
 
   it('does not log rtspUrl during create or update', async () => {

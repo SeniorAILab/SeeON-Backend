@@ -126,7 +126,11 @@ describe('AuthService facility onboarding', () => {
         ),
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await expect(
       service.createFacilityForUser('user-1', '새 요양원'),
@@ -160,7 +164,11 @@ describe('AuthService facility onboarding', () => {
         ),
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await expect(
       service.createFacilityForUser('user-1', '새 요양원'),
@@ -185,7 +193,11 @@ describe('AuthService facility onboarding', () => {
         $transaction: jest.fn(),
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await expect(
       service.createFacilityForUser('user-1', '새 요양원'),
@@ -208,7 +220,11 @@ describe('AuthService email-alert settings', () => {
         },
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await expect(service.getAlertSettings('user-1')).resolves.toEqual({
       notificationEmail: null,
@@ -217,7 +233,11 @@ describe('AuthService email-alert settings', () => {
     });
     expect(prisma.db.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+      select: {
+        notificationEmail: true,
+        emailAlertsEnabled: true,
+        email: true,
+      },
     });
   });
 
@@ -233,7 +253,11 @@ describe('AuthService email-alert settings', () => {
         },
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     const result = await service.updateAlertSettings('user-1', {
       notificationEmail: ' Alerts@Example.TEST ',
@@ -246,7 +270,11 @@ describe('AuthService email-alert settings', () => {
         notificationEmail: 'alerts@example.test',
         emailAlertsEnabled: false,
       },
-      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+      select: {
+        notificationEmail: true,
+        emailAlertsEnabled: true,
+        email: true,
+      },
     });
     expect(result.notificationEmail).toBe('alerts@example.test');
     expect(result.emailAlertsEnabled).toBe(false);
@@ -264,23 +292,37 @@ describe('AuthService email-alert settings', () => {
         },
       },
     };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await service.updateAlertSettings('user-1', { notificationEmail: '   ' });
 
     expect(prisma.db.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
       data: { notificationEmail: null },
-      select: { notificationEmail: true, emailAlertsEnabled: true, email: true },
+      select: {
+        notificationEmail: true,
+        emailAlertsEnabled: true,
+        email: true,
+      },
     });
   });
 
   it('rejects an invalid notification email without updating', async () => {
     const prisma = { db: { user: { update: jest.fn() } } };
-    const service = new AuthService(prisma as never, jwtMock() as never, config());
+    const service = new AuthService(
+      prisma as never,
+      jwtMock() as never,
+      config(),
+    );
 
     await expect(
-      service.updateAlertSettings('user-1', { notificationEmail: 'not-an-email' }),
+      service.updateAlertSettings('user-1', {
+        notificationEmail: 'not-an-email',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.db.user.update).not.toHaveBeenCalled();
   });

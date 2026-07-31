@@ -7,7 +7,9 @@ async function main(): Promise<void> {
   const password = (process.env.NOKYANG_ADMIN_PASSWORD ?? '').trim();
 
   if (!directUrl) {
-    throw new Error('DIRECT_URL must be set for the Nokyang admin drift check.');
+    throw new Error(
+      'DIRECT_URL must be set for the Nokyang admin drift check.',
+    );
   }
   if (!password) {
     throw new Error(
@@ -23,7 +25,9 @@ async function main(): Promise<void> {
     });
 
     if (!admin) {
-      throw new Error('Nokyang admin is missing; run the seed before this check.');
+      throw new Error(
+        'Nokyang admin is missing; run the seed before this check.',
+      );
     }
     if (
       !admin.passwordHash ||
@@ -42,7 +46,9 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   console.error(
-    error instanceof Error ? error.message : 'Nokyang admin drift check failed.',
+    error instanceof Error
+      ? error.message
+      : 'Nokyang admin drift check failed.',
   );
   process.exit(1);
 });
