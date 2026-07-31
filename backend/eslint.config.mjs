@@ -4,7 +4,7 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-// 백엔드 계층/DTO 경계를 warn-first로 기계 강제 (신규 의존성 0).
+// 백엔드 계층/DTO 경계를 blocking error로 기계 강제 (신규 의존성 0).
 // 규약 SoT: ADR · docs/rules/backend-architecture-lint-and-guard.md.
 export default tseslint.config(
   {
@@ -38,14 +38,13 @@ export default tseslint.config(
     },
   },
   {
-    // 현재 OFF인 규칙만 warn으로 추가. recommendedTypeChecked의 기존 error
-    // (no-explicit-any/no-misused-promises/require-await)는 강등하지 않는다.
+    // recommendedTypeChecked에서 빠진 typed 규칙도 blocking error로 추가한다.
     rules: {
       '@typescript-eslint/consistent-type-imports': [
-        'warn',
+        'error',
         { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
       ],
-      '@typescript-eslint/no-unnecessary-condition': 'warn',
+      '@typescript-eslint/no-unnecessary-condition': 'error',
     },
   },
   {
@@ -53,7 +52,7 @@ export default tseslint.config(
     files: ['src/**/*.controller.ts', 'src/**/controllers/**/*.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
-        'warn',
+        'error',
         {
           patterns: [
             {
@@ -80,7 +79,7 @@ export default tseslint.config(
     files: ['src/**/*.repository.ts', 'src/**/repositories/**/*.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
-        'warn',
+        'error',
         {
           paths: [
             {
@@ -131,7 +130,7 @@ export default tseslint.config(
     files: ['src/**/*.service.ts', 'src/**/services/**/*.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
-        'warn',
+        'error',
         {
           patterns: [
             {
@@ -154,7 +153,7 @@ export default tseslint.config(
     ignores: ['src/**/dto/**/*.dto.ts'],
     rules: {
       'no-restricted-syntax': [
-        'warn',
+        'error',
         {
           selector: 'ExportNamedDeclaration > TSInterfaceDeclaration[id.name=/Dto$/]',
           message:

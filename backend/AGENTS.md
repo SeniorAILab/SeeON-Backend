@@ -44,4 +44,4 @@ for the alert write/read split, `src/media/AGENTS.md` for clips, and
 
 ## Run
 - pnpm only; test: `pnpm --filter backend test` (jest).
-- lint: `pnpm --filter backend lint` (check) / `pnpm --filter backend lint:fix` (autofix). Convention: ADR.
+- lint: `pnpm --filter backend lint` (blocking check) / `pnpm --filter backend lint:fix` (autofix).

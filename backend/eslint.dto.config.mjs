@@ -1,7 +1,7 @@
 // @ts-check
 // dto:check 전용 경량 ESLint config — 구 check-dto-contracts.mjs(정규식 스캐너)를
 // AST 기반으로 대체한다. 타입정보(projectService) 없이 선택자만 쓰므로 수 초 안에 끝난다.
-// 메인 eslint.config.mjs 의 계층 규칙은 warn-first지만 이 파일은 전부 error(차단, ADR).
+// 메인 eslint.config.mjs와 이 DTO 전용 config 모두 error로 차단한다.
 //
 // 별도 config 인 이유: no-restricted-syntax 는 같은 파일 세트에 같은 규칙이 다시 오면
 // 병합이 아니라 교체(replace)된다. 메인 config 의 warn 항목(147-170행 인라인 DTO 경고)과

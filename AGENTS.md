@@ -67,7 +67,7 @@ pnpm dev:front
 
 # Gates (blocking in CI unless noted)
 pnpm typecheck                     # front tsc -b + backend tsc
-pnpm lint                          # backend lint is warn-first/non-blocking per ADR
+pnpm lint                          # blocking convention gate for backend + front
 pnpm --filter backend test         # jest; DB-backed specs need DATABASE_URL + DIRECT_URL
 pnpm --filter front test           # vitest/jsdom
 pnpm --filter backend run dto:check

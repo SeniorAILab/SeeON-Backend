@@ -45,7 +45,7 @@ scripts/
 - `backend-guard/check-schema-migration.sh` is a blocking schema/migration
   contract. It runs from pre-commit and CI.
 - `backend/eslint.dto.config.mjs` (run as `dto:check`) is the hard DTO contract
-  gate. ESLint layering checks in the main backend config remain warn-first.
+  gate. The main backend ESLint config is also blocking in local guards and CI.
 - Production release issuance is the deployment trigger. Release and deploy
   scripts must use explicit refs or image tags.
 - Production DB deploy runs `prisma migrate deploy` through `scripts/deploy/iwinv-deploy.sh`; there is no `DEPLOY_DB_MODE`, `baseline-existing`, or `reset-demo` mode.
