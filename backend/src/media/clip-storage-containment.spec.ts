@@ -14,6 +14,13 @@ const FACILITY_ID = 'facility-1';
 const CLIP_ID = 'clip-1';
 const MEDIA = Buffer.from('contained-media');
 
+// Atomic parent-replacement races are only defensible with fd-anchored path
+// operations, which require Linux /proc descriptor traversal. The macOS dev-only
+// devino fallback re-derives paths from expectedPath and cannot atomically anchor
+// a link/create to an already-opened directory inode, so these specs are the
+// Linux security gate (CI). See clip-storage-containment.ts strategy docs.
+const raceIt = process.platform === 'linux' ? it : it.skip;
+
 describe('ClipStorageService write containment', () => {
   let sandbox: string;
   let rootDir: string;
@@ -42,47 +49,52 @@ describe('ClipStorageService write containment', () => {
     await fs.rm(sandbox, { recursive: true, force: true });
   });
 
-  it('rejects a lock parent swapped immediately before file creation without writing outside', async () => {
-    // Given: an attacker replaces the verified lock directory at the create seam.
-    const lockDir = path.join(rootDir, '.locks');
-    const parkedLockDir = path.join(sandbox, 'parked-locks');
-    const outsideStoreLock = path.join(outsideDir, '.store.lock');
-    const originalOpen = fs.open.bind(fs);
-    let replaced = false;
-    let escapedBytes: Buffer | undefined;
-    jest.spyOn(fs, 'open').mockImplementation(async (filePath, flags, mode) => {
-      if (
-        !replaced &&
-        typeof filePath === 'string' &&
-        filePath.endsWith('.store.lock')
-      ) {
-        replaced = true;
-        await fs.rename(lockDir, parkedLockDir);
-        await fs.symlink(outsideDir, lockDir, 'dir');
-      } else if (
-        replaced &&
-        typeof filePath === 'string' &&
-        filePath.endsWith(`${CLIP_ID}.lock`)
-      ) {
-        escapedBytes = await fs
-          .readFile(outsideStoreLock)
-          .catch(() => undefined);
-        const denied = new Error('forced lock acquisition failure');
-        Object.assign(denied, { code: 'EACCES' });
-        throw denied;
-      }
-      return originalOpen(filePath, flags, mode);
-    });
+  raceIt(
+    'rejects a lock parent swapped immediately before file creation without writing outside',
+    async () => {
+      // Given: an attacker replaces the verified lock directory at the create seam.
+      const lockDir = path.join(rootDir, '.locks');
+      const parkedLockDir = path.join(sandbox, 'parked-locks');
+      const outsideStoreLock = path.join(outsideDir, '.store.lock');
+      const originalOpen = fs.open.bind(fs);
+      let replaced = false;
+      let escapedBytes: Buffer | undefined;
+      jest
+        .spyOn(fs, 'open')
+        .mockImplementation(async (filePath, flags, mode) => {
+          if (
+            !replaced &&
+            typeof filePath === 'string' &&
+            filePath.endsWith('.store.lock')
+          ) {
+            replaced = true;
+            await fs.rename(lockDir, parkedLockDir);
+            await fs.symlink(outsideDir, lockDir, 'dir');
+          } else if (
+            replaced &&
+            typeof filePath === 'string' &&
+            filePath.endsWith(`${CLIP_ID}.lock`)
+          ) {
+            escapedBytes = await fs
+              .readFile(outsideStoreLock)
+              .catch(() => undefined);
+            const denied = new Error('forced lock acquisition failure');
+            Object.assign(denied, { code: 'EACCES' });
+            throw denied;
+          }
+          return originalOpen(filePath, flags, mode);
+        });
 
-    // When: persistence acquires the global lock after the directory swap.
-    const action = service(config).persist(request());
+      // When: persistence acquires the global lock after the directory swap.
+      const action = service(config).persist(request());
 
-    // Then: containment fails before any lock bytes reach the outside target.
-    await expectContainmentRejection(action);
-    expect(escapedBytes).toBeUndefined();
-    await expect(listFiles(outsideDir)).resolves.toEqual([]);
-    await expect(listFiles(parkedLockDir)).resolves.toEqual([]);
-  });
+      // Then: containment fails before any lock bytes reach the outside target.
+      await expectContainmentRejection(action);
+      expect(escapedBytes).toBeUndefined();
+      await expect(listFiles(outsideDir)).resolves.toEqual([]);
+      await expect(listFiles(parkedLockDir)).resolves.toEqual([]);
+    },
+  );
 
   it('rejects an intermediate staging symlink before writing media', async () => {
     // Given: the facility staging segment redirects outside the configured root.
@@ -116,65 +128,75 @@ describe('ClipStorageService write containment', () => {
     await expect(listFiles(outsideDir)).resolves.toEqual([]);
   });
 
-  it('rejects a staging parent replaced immediately before file creation', async () => {
-    // Given: an attacker swaps the verified staging parent at the create seam.
-    const temporaryDir = path.join(rootDir, '.staging', FACILITY_ID, CLIP_ID);
-    const parkedDir = path.join(sandbox, 'parked-staging');
-    const inspect = jest.fn<ReturnType<ClipInspector['inspect']>, [string]>(
-      () => Promise.resolve({ codec: 'h264', durationMs: 1_000 }),
-    );
-    const originalOpen = fs.open.bind(fs);
-    let replaced = false;
-    jest.spyOn(fs, 'open').mockImplementation(async (filePath, flags, mode) => {
-      if (
-        !replaced &&
-        typeof filePath === 'string' &&
-        filePath.endsWith('.part')
-      ) {
-        replaced = true;
-        await fs.rename(temporaryDir, parkedDir);
-        await fs.symlink(outsideDir, temporaryDir, 'dir');
-      }
-      return originalOpen(filePath, flags, mode);
-    });
+  raceIt(
+    'rejects a staging parent replaced immediately before file creation',
+    async () => {
+      // Given: an attacker swaps the verified staging parent at the create seam.
+      const temporaryDir = path.join(rootDir, '.staging', FACILITY_ID, CLIP_ID);
+      const parkedDir = path.join(sandbox, 'parked-staging');
+      const inspect = jest.fn<ReturnType<ClipInspector['inspect']>, [string]>(
+        () => Promise.resolve({ codec: 'h264', durationMs: 1_000 }),
+      );
+      const originalOpen = fs.open.bind(fs);
+      let replaced = false;
+      jest
+        .spyOn(fs, 'open')
+        .mockImplementation(async (filePath, flags, mode) => {
+          if (
+            !replaced &&
+            typeof filePath === 'string' &&
+            filePath.endsWith('.part')
+          ) {
+            replaced = true;
+            await fs.rename(temporaryDir, parkedDir);
+            await fs.symlink(outsideDir, temporaryDir, 'dir');
+          }
+          return originalOpen(filePath, flags, mode);
+        });
 
-    // When: the staged file is opened after the directory replacement.
-    const action = service(config, { inspect }).persist(request());
+      // When: the staged file is opened after the directory replacement.
+      const action = service(config, { inspect }).persist(request());
 
-    // Then: the descriptor mismatch rejects and removes every escaped file.
-    await expectContainmentRejection(action);
-    expect(inspect).not.toHaveBeenCalled();
-    await expect(listFiles(outsideDir)).resolves.toEqual([]);
-    await expect(listFiles(parkedDir)).resolves.toEqual([]);
-  });
+      // Then: the descriptor mismatch rejects and removes every escaped file.
+      await expectContainmentRejection(action);
+      expect(inspect).not.toHaveBeenCalled();
+      await expect(listFiles(outsideDir)).resolves.toEqual([]);
+      await expect(listFiles(parkedDir)).resolves.toEqual([]);
+    },
+  );
 
-  it('rejects a final parent replaced after enumeration but before publish', async () => {
-    // Given: the exact final directory is replaced at the atomic-link seam.
-    const finalDir = path.join(rootDir, FACILITY_ID, CLIP_ID);
-    const parkedDir = path.join(sandbox, 'parked-final');
-    const originalReaddir = fs.readdir.bind(fs);
-    let replaced = false;
-    jest.spyOn(fs, 'readdir').mockImplementation(async (directory, options) => {
-      const entries = await originalReaddir(directory, options);
-      if (!replaced) {
-        const resolved = await fs.realpath(directory);
-        if (resolved === finalDir) {
-          replaced = true;
-          await fs.rename(finalDir, parkedDir);
-          await fs.symlink(outsideDir, finalDir, 'dir');
-        }
-      }
-      return entries;
-    });
+  raceIt(
+    'rejects a final parent replaced after enumeration but before publish',
+    async () => {
+      // Given: the exact final directory is replaced at the atomic-link seam.
+      const finalDir = path.join(rootDir, FACILITY_ID, CLIP_ID);
+      const parkedDir = path.join(sandbox, 'parked-final');
+      const originalReaddir = fs.readdir.bind(fs);
+      let replaced = false;
+      jest
+        .spyOn(fs, 'readdir')
+        .mockImplementation(async (directory, options) => {
+          const entries = await originalReaddir(directory, options);
+          if (!replaced) {
+            const resolved = await fs.realpath(directory);
+            if (resolved === finalDir) {
+              replaced = true;
+              await fs.rename(finalDir, parkedDir);
+              await fs.symlink(outsideDir, finalDir, 'dir');
+            }
+          }
+          return entries;
+        });
 
-    // When: publication continues after the parent replacement.
-    const action = service(config).persist(request());
+      // When: publication continues after the parent replacement.
+      const action = service(config).persist(request());
 
-    // Then: no final media survives in either attacker-controlled directory.
-    await expectContainmentRejection(action);
-    await expect(listFiles(outsideDir)).resolves.toEqual([]);
-    await expect(listFiles(parkedDir)).resolves.toEqual([]);
-  });
+      // Then: no final media survives in either attacker-controlled directory.
+      await expectContainmentRejection(action);
+      await expect(listFiles(outsideDir)).resolves.toEqual([]);
+      await expect(listFiles(parkedDir)).resolves.toEqual([]);
+    },
+  );
 });
 
 function service(

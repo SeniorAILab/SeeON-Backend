@@ -5,4 +5,4 @@
 - Store only server-derived paths. Reject traversal and symlinks; publish atomically and reconcile DB/filesystem state after interruption.
 - Content reads must preserve Range/ETag behavior, close file handles, and append access audit records. Holds block expiry and deletion.
 - Keep the media feature flag fail-closed. Do not synthesize proxy credentials or expose edge URLs to the browser.
-
+- Linux production requires `/proc` descriptor traversal for fd-anchored TOCTOU protection and must fail closed without it. macOS uses a non-production devino fallback so local media suites run; atomic parent-swap race specs remain Linux-only CI gates and must not be unskipped by weakening containment.

@@ -1,5 +1,7 @@
 import { constants, promises as fs } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   CLIP_STORAGE_ERROR_CODES,
@@ -9,10 +11,71 @@ import {
 const DIRECTORY_FLAGS =
   constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 
+/**
+ * Descriptor-relative containment strategy.
+ *
+ * `proc` is the only strategy that gives atomic fd-anchored path operations:
+ * `/proc/${pid}/fd/${fd}` lets every subsequent mkdir/open/readdir traverse
+ * through the already-opened directory inode, and `realpath(/proc/self/fd/N)`
+ * proves what path an open handle currently resolves to. Linux production runs
+ * this strategy exclusively.
+ *
+ * `devino` is a development-only fallback for platforms without `/proc` fd
+ * traversal (macOS: `/dev/fd/<dir-fd>` returns ENOTDIR). It re-derives paths
+ * from `expectedPath` and proves object identity with a BigInt (dev, ino, type)
+ * comparison between an `lstat` of the namespace path and an `fstat` of the open
+ * handle. It CANNOT defend against a transient swap-and-restore race, so the
+ * atomic-parent-replacement attack specs are Linux-only (see the specs).
+ */
+type ContainmentStrategy = 'proc' | 'devino';
+
+let cachedStrategy: ContainmentStrategy | undefined;
+
+/**
+ * Resolve the containment strategy once per process. Fail closed: any non-macOS
+ * host that cannot traverse an opened directory fd through `/proc` aborts rather
+ * than silently downgrading production security to the dev-only fallback.
+ */
+export async function resolveContainmentStrategy(): Promise<ContainmentStrategy> {
+  if (cachedStrategy !== undefined) return cachedStrategy;
+  const procTraversable = await probeProcFdTraversal();
+  if (procTraversable) {
+    cachedStrategy = 'proc';
+    return cachedStrategy;
+  }
+  if (os.platform() !== 'darwin' || process.env.NODE_ENV === 'production') {
+    throw new ClipStorageError(
+      CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
+      'clip storage requires /proc file-descriptor traversal on this platform; ' +
+        'the descriptor fallback is restricted to non-production macOS',
+    );
+  }
+  cachedStrategy = 'devino';
+  return cachedStrategy;
+}
+
+async function probeProcFdTraversal(): Promise<boolean> {
+  let handle: FileHandle;
+  try {
+    handle = await fs.open(os.tmpdir(), DIRECTORY_FLAGS);
+  } catch {
+    return false;
+  }
+  try {
+    await fs.readdir(`/proc/${process.pid}/fd/${handle.fd}`);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
 export type VerifiedDirectory = {
   readonly handle: FileHandle;
   readonly expectedPath: string;
   readonly descriptorPath: string;
+  readonly strategy: ContainmentStrategy;
 };
 
 export type ContainedFile = {
@@ -27,11 +90,13 @@ export async function openVerifiedDirectory(
   rootDir: string,
   segments: readonly string[],
 ): Promise<VerifiedDirectory> {
+  const strategy = await resolveContainmentStrategy();
   const expectedRoot = path.resolve(rootDir);
   await fs.mkdir(expectedRoot, { recursive: true, mode: 0o700 });
   let current = directory(
     await fs.open(expectedRoot, DIRECTORY_FLAGS),
     expectedRoot,
+    strategy,
   );
   try {
     await assertVerifiedDirectory(current);
@@ -47,6 +112,7 @@ export async function openVerifiedDirectory(
       const child = directory(
         await fs.open(descriptorPath, DIRECTORY_FLAGS),
         expectedPath,
+        strategy,
       );
       try {
         await assertVerifiedDirectory(current);
@@ -68,13 +134,63 @@ export async function openVerifiedDirectory(
 export async function assertVerifiedDirectory(
   value: VerifiedDirectory,
 ): Promise<void> {
-  const [actualPath, stat] = await Promise.all([
-    fs.realpath(descriptor(value.handle)),
-    value.handle.stat(),
-  ]);
-  if (actualPath !== value.expectedPath || !stat.isDirectory()) {
+  await assertHandleIdentity(
+    value.handle,
+    value.expectedPath,
+    value.strategy,
+    'directory',
+  );
+}
+
+/**
+ * Prove that an open handle still resolves to `expectedPath` as the required
+ * type. `proc` keeps the original Linux guarantee: `realpath` through the fd
+ * proves path provenance atomically. `devino` (macOS dev-only) instead compares
+ * the BigInt (dev, ino) of an `fstat` on the handle against an `lstat` of the
+ * namespace path — object identity, not path provenance. Any post-open failure
+ * (ENOENT/ELOOP/ENOTDIR/ESTALE/EACCES) is a containment violation, not absence.
+ */
+async function assertHandleIdentity(
+  handle: FileHandle,
+  expectedPath: string,
+  strategy: ContainmentStrategy,
+  requiredType: 'file' | 'directory',
+): Promise<void> {
+  if (strategy === 'proc') {
+    const [actualPath, stat] = await Promise.all([
+      fs.realpath(descriptor(handle)),
+      handle.stat(),
+    ]);
+    if (actualPath !== expectedPath || !isType(stat, requiredType)) {
+      throw containmentFailure();
+    }
+    return;
+  }
+  let handleStat: BigIntStats;
+  let pathStat: BigIntStats;
+  try {
+    [handleStat, pathStat] = await Promise.all([
+      handle.stat({ bigint: true }),
+      fs.lstat(expectedPath, { bigint: true }),
+    ]);
+  } catch (error) {
+    throw containmentFailure({ cause: error });
+  }
+  if (
+    !isType(handleStat, requiredType) ||
+    !isType(pathStat, requiredType) ||
+    handleStat.dev !== pathStat.dev ||
+    handleStat.ino !== pathStat.ino
+  ) {
     throw containmentFailure();
   }
+}
+
+function isType(
+  stat: { isFile(): boolean; isDirectory(): boolean },
+  requiredType: 'file' | 'directory',
+): boolean {
+  return requiredType === 'file' ? stat.isFile() : stat.isDirectory();
 }
 
 export async function createContainedFile(
@@ -98,7 +214,9 @@ export async function createContainedFile(
     return value;
   } catch (error) {
     await handle.close().catch(() => undefined);
-    await fs.unlink(filePath).catch(() => undefined);
+    if (directoryValue.strategy === 'proc') {
+      await fs.unlink(filePath).catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -125,27 +243,30 @@ export async function openContainedFile(
 
 export async function assertContainedFile(value: ContainedFile): Promise<void> {
   await assertVerifiedDirectory(value.directory);
-  const [actualPath, stat] = await Promise.all([
-    fs.realpath(descriptor(value.handle)),
-    value.handle.stat(),
-  ]);
-  if (actualPath !== value.expectedPath || !stat.isFile()) {
-    throw containmentFailure();
-  }
+  await assertHandleIdentity(
+    value.handle,
+    value.expectedPath,
+    value.directory.strategy,
+    'file',
+  );
   const current = await fs.open(
     value.path,
     constants.O_RDONLY | constants.O_NOFOLLOW,
   );
   try {
-    const [currentPath, currentStat] = await Promise.all([
-      fs.realpath(descriptor(current)),
-      current.stat(),
+    await assertHandleIdentity(
+      current,
+      value.expectedPath,
+      value.directory.strategy,
+      'file',
+    );
+    const [originalStat, currentStat] = await Promise.all([
+      value.handle.stat({ bigint: true }),
+      current.stat({ bigint: true }),
     ]);
     if (
-      currentPath !== value.expectedPath ||
-      !currentStat.isFile() ||
-      currentStat.dev !== stat.dev ||
-      currentStat.ino !== stat.ino
+      currentStat.dev !== originalStat.dev ||
+      currentStat.ino !== originalStat.ino
     ) {
       throw containmentFailure();
     }
@@ -158,15 +279,26 @@ export async function cleanupContainedFile(
   value: ContainedFile,
 ): Promise<void> {
   const failures: unknown[] = [];
+  let namespaceOwned = value.directory.strategy === 'proc';
+  if (!namespaceOwned) {
+    try {
+      await assertContainedFile(value);
+      namespaceOwned = true;
+    } catch (error) {
+      failures.push(error);
+    }
+  }
   try {
     await value.handle.close();
   } catch (error) {
     failures.push(error);
   }
-  try {
-    await fs.unlink(value.path);
-  } catch (error) {
-    if (!hasErrorCode(error, 'ENOENT')) failures.push(error);
+  if (namespaceOwned) {
+    try {
+      await fs.unlink(value.path);
+    } catch (error) {
+      if (!hasErrorCode(error, 'ENOENT')) failures.push(error);
+    }
   }
   try {
     await value.directory.handle.close();
@@ -206,11 +338,16 @@ export function containedPath(
 function directory(
   handle: FileHandle,
   expectedPath: string,
+  strategy: ContainmentStrategy,
 ): VerifiedDirectory {
   return {
     handle,
     expectedPath,
-    descriptorPath: `/proc/${process.pid}/fd/${handle.fd}`,
+    strategy,
+    descriptorPath:
+      strategy === 'proc'
+        ? `/proc/${process.pid}/fd/${handle.fd}`
+        : expectedPath,
   };
 }
 
@@ -243,10 +380,11 @@ function assertSegment(value: string): void {
   }
 }
 
-function containmentFailure(): ClipStorageError {
+function containmentFailure(options?: ErrorOptions): ClipStorageError {
   return new ClipStorageError(
     CLIP_STORAGE_ERROR_CODES.STORAGE_UNWRITABLE,
     'clip storage parent changed during a write',
+    options,
   );
 }
 

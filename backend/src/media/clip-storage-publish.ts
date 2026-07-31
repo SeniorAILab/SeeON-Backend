@@ -110,7 +110,7 @@ export async function publishStagedClip(
     await assertVerifiedDirectory(finalDirectory);
     return { storageKey, duplicate };
   } catch (error) {
-    if (createdFinal) {
+    if (createdFinal && finalDirectory.strategy === 'proc') {
       try {
         await fs.unlink(finalPath);
       } catch (cleanupError) {

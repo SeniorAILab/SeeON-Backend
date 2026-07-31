@@ -1,7 +1,9 @@
 import { constants, promises as fs } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import * as path from 'node:path';
 import { isSafeStorageSegment } from './clip-storage-write.js';
+import { resolveContainmentStrategy } from './clip-storage-containment.js';
 
 export type AlertMediaFile = {
   readonly handle: FileHandle;
@@ -58,10 +60,7 @@ export async function openAlertMediaFile(input: {
     throw new AlertMediaFileError('MISSING', { cause: error });
   }
   try {
-    const openedRealPath = await openedDescriptorRealPath(handle);
-    if (openedRealPath !== expectedRealPath) {
-      throw new AlertMediaFileError('INVALID_REFERENCE');
-    }
+    await assertOpenedFileIdentity(handle, expectedRealPath, parentRealPath);
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size !== input.expectedSizeBytes) {
       throw new AlertMediaFileError('CORRUPT');
@@ -74,11 +73,53 @@ export async function openAlertMediaFile(input: {
   }
 }
 
-async function openedDescriptorRealPath(handle: FileHandle): Promise<string> {
+/**
+ * Prove the opened read handle is exactly `expectedRealPath`. `proc` keeps the
+ * original Linux guarantee (`realpath` through the fd proves path provenance).
+ * `devino` (macOS dev-only) has no fd path, so it substitutes: the parent was
+ * already canonicalised to `parentRealPath`, so require it to equal the expected
+ * parent exactly (closes the in-root intermediate-symlink gap that plain lstat
+ * misses), then confirm the handle and `lstat(expectedRealPath)` are the same
+ * BigInt (dev, ino) regular file.
+ */
+async function assertOpenedFileIdentity(
+  handle: FileHandle,
+  expectedRealPath: string,
+  parentRealPath: string,
+): Promise<void> {
+  const strategy = await resolveContainmentStrategy();
+  if (strategy === 'proc') {
+    let openedRealPath: string;
+    try {
+      openedRealPath = await fs.realpath(`/proc/self/fd/${handle.fd}`);
+    } catch (error) {
+      throw new AlertMediaFileError('INVALID_REFERENCE', { cause: error });
+    }
+    if (openedRealPath !== expectedRealPath) {
+      throw new AlertMediaFileError('INVALID_REFERENCE');
+    }
+    return;
+  }
+  if (parentRealPath !== path.dirname(expectedRealPath)) {
+    throw new AlertMediaFileError('INVALID_REFERENCE');
+  }
+  let handleStat: BigIntStats;
+  let pathStat: BigIntStats;
   try {
-    return await fs.realpath(`/proc/self/fd/${handle.fd}`);
+    [handleStat, pathStat] = await Promise.all([
+      handle.stat({ bigint: true }),
+      fs.lstat(expectedRealPath, { bigint: true }),
+    ]);
   } catch (error) {
     throw new AlertMediaFileError('INVALID_REFERENCE', { cause: error });
+  }
+  if (
+    !handleStat.isFile() ||
+    !pathStat.isFile() ||
+    handleStat.dev !== pathStat.dev ||
+    handleStat.ino !== pathStat.ino
+  ) {
+    throw new AlertMediaFileError('INVALID_REFERENCE');
   }
 }
 
