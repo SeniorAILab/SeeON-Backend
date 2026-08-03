@@ -16,6 +16,24 @@ if (!directUrl) {
   throw new Error('DIRECT_URL must be set for privileged seed execution');
 }
 
+/**
+ * 데모 시드 가드.
+ *
+ * 이 시드는 녹양 데모 시설·층·방·카메라를 만들고 카메라를 online으로 되돌린다.
+ * 프로덕션에서 실수로 한 번 돌리면 운영자가 정리한 공간이 되살아나고 죽은
+ * 카메라가 다시 "정상"으로 표시된다. 정기 배포 경로는 이 스크립트를 부르지
+ * 않지만(iwinv-deploy.sh는 seed-super-admin.js만 실행), 수동 실행은 막아야 한다.
+ *
+ * 정말 프로덕션에 데모 데이터를 넣어야 하면 ALLOW_DEMO_SEED=1을 명시한다.
+ */
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== '1') {
+  throw new Error(
+    'Refusing to run the demo seed in production. ' +
+      'It recreates demo spaces/cameras and flips cameras back to online. ' +
+      'Set ALLOW_DEMO_SEED=1 only if you truly intend this.',
+  );
+}
+
 const prisma = new PrismaClient({
   datasources: { db: { url: directUrl } },
 });
