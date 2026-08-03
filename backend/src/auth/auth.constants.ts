@@ -1,7 +1,15 @@
 import { Role } from '@prisma/client';
 
 export const SESSION_COOKIE_NAME = 'app_session';
-export const DEFAULT_JWT_TTL = '12h';
+/**
+ * 세션 수명. 쿠키 max-age도 auth.service의 jwtTtlSeconds()로 여기서 파생된다.
+ *
+ * 요양보호사가 TV에 화면을 상시 띄워두고 그 화면으로 낙상 알림을 받는다.
+ * refresh 경로가 없으므로 TTL이 만료되면 TV가 조용히 로그인 화면으로 튕기고
+ * 아무도 눈치채지 못한다. 12h였을 때는 아침에 켠 TV가 저녁에 죽었다 —
+ * 낙상이 제일 많은 야간이 그대로 사각지대였다.
+ */
+export const DEFAULT_JWT_TTL = '30d';
 
 export type AuthRole = Role;
 

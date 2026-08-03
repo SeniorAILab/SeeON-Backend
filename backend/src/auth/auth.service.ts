@@ -259,7 +259,9 @@ function requiredString(value: unknown, fieldName: string): string {
 function jwtTtlSeconds(ttl: string): number {
   const trimmed = ttl.trim();
   const match = /^(\d+)([smhd])?$/.exec(trimmed);
-  if (!match) return 12 * 60 * 60;
+  // 파싱 실패 시에도 쿠키와 JWT가 어긋나지 않도록 같은 기본값에서 재계산한다.
+  // (하드코딩 12h로 떨어지면 JWT는 30일인데 쿠키만 12시간이 되어 TV가 죽는다.)
+  if (!match) return jwtTtlSeconds(DEFAULT_JWT_TTL);
   const value = Number.parseInt(match[1], 10);
   const unit = match[2];
   const multiplier =

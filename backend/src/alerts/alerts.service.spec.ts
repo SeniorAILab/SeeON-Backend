@@ -17,6 +17,7 @@ type AlertDelegate = {
 
 type AlertNoteDelegate = {
   create: jest.Mock;
+  count: jest.Mock;
 };
 
 function setup() {
@@ -27,6 +28,8 @@ function setup() {
   };
   const alertNote: AlertNoteDelegate = {
     create: jest.fn(),
+    // 기본은 조치 기록이 하나 있는 상태(해결 가능).
+    count: jest.fn().mockResolvedValue(1),
   };
   const prisma = {
     withFacilityContext: jest.fn(
@@ -187,3 +190,50 @@ function alertRow(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
+  it('ack는 ACKED 전이만 하고 resolve를 부르지 않는다', async () => {
+    const { service, ackAlert, resolveAlert } = setup();
+
+    await service.ack('facility-1', 'alert-1', 'user-1');
+
+    expect(ackAlert).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'alert-1',
+      actorUserId: 'user-1',
+    });
+    expect(resolveAlert).not.toHaveBeenCalled();
+  });
+
+  it('조치 기록이 없으면 해결 완료를 거부한다', async () => {
+    const { service, alertNote, resolveAlert } = setup();
+    alertNote.count.mockResolvedValue(0);
+
+    await expect(
+      service.resolve('facility-1', 'alert-1', 'user-1'),
+    ).rejects.toThrow('조치 결과를 먼저 기록해야 해결 완료로 바꿀 수 있습니다.');
+    expect(resolveAlert).not.toHaveBeenCalled();
+  });
+
+  it('조치 기록이 있으면 해결 완료가 통과한다', async () => {
+    const { service, alertNote, resolveAlert } = setup();
+    alertNote.count.mockResolvedValue(1);
+
+    await service.resolve('facility-1', 'alert-1', 'user-1');
+
+    expect(resolveAlert).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'alert-1',
+      actorUserId: 'user-1',
+    });
+  });
+
+  it('메모 개수는 해당 알림으로만 센다', async () => {
+    const { service, alertNote } = setup();
+    alertNote.count.mockResolvedValue(2);
+
+    await service.resolve('facility-1', 'alert-42', 'user-1');
+
+    expect(alertNote.count).toHaveBeenCalledWith({ where: { alertId: 'alert-42' } });
+  });
+});

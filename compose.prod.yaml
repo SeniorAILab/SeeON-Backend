@@ -34,6 +34,9 @@ services:
       SMTP_SECURE: ${SMTP_SECURE-}
       # Shared bearer token for remote Event API producers.
       EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:?EDGE_FACILITY_TOKEN is required in prod}
+      # 세션 수명. 미설정 시 backend의 DEFAULT_JWT_TTL(30d)로 떨어진다.
+      # 요양보호사 TV가 상시 로그인 상태를 유지해야 하므로 짧게 두지 말 것.
+      JWT_TTL: ${JWT_TTL:-30d}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-}
       NOKYANG_ADMIN_PASSWORD: ${NOKYANG_ADMIN_PASSWORD:-}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
