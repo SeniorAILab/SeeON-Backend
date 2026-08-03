@@ -26,7 +26,10 @@ if (!directUrl) {
  *
  * 정말 프로덕션에 데모 데이터를 넣어야 하면 ALLOW_DEMO_SEED=1을 명시한다.
  */
-if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== '1') {
+if (
+  process.env.NODE_ENV === 'production' &&
+  process.env.ALLOW_DEMO_SEED !== '1'
+) {
   throw new Error(
     'Refusing to run the demo seed in production. ' +
       'It recreates demo spaces/cameras and flips cameras back to online. ' +

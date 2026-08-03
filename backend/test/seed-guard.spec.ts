@@ -10,7 +10,10 @@ import { join } from 'node:path';
  * 카메라가 다시 online으로 뒤집힌다.
  */
 describe('demo seed production guard', () => {
-  const source = readFileSync(join(__dirname, '..', 'prisma', 'seed.ts'), 'utf8');
+  const source = readFileSync(
+    join(__dirname, '..', 'prisma', 'seed.ts'),
+    'utf8',
+  );
 
   it('프로덕션에서는 기본적으로 실행을 거부한다', () => {
     expect(source).toContain("process.env.NODE_ENV === 'production'");
