@@ -211,7 +211,9 @@ describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
 
     await expect(
       service.resolve('facility-1', 'alert-1', 'user-1'),
-    ).rejects.toThrow('조치 결과를 먼저 기록해야 해결 완료로 바꿀 수 있습니다.');
+    ).rejects.toThrow(
+      '조치 결과를 먼저 기록해야 해결 완료로 바꿀 수 있습니다.',
+    );
     expect(resolveAlert).not.toHaveBeenCalled();
   });
 
@@ -234,6 +236,8 @@ describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
 
     await service.resolve('facility-1', 'alert-42', 'user-1');
 
-    expect(alertNote.count).toHaveBeenCalledWith({ where: { alertId: 'alert-42' } });
+    expect(alertNote.count).toHaveBeenCalledWith({
+      where: { alertId: 'alert-42' },
+    });
   });
 });

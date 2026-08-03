@@ -26,9 +26,11 @@ describe('auth session TTL', () => {
   it('TTL 문자열이 d 단위 파서와 호환된다', () => {
     // auth.service.jwtTtlSeconds()가 쓰는 것과 같은 패턴.
     const match = /^(\d+)([smhd])?$/.exec(DEFAULT_JWT_TTL);
-    expect(match).not.toBeNull();
-    const value = Number.parseInt(match![1], 10);
-    const unit = match![2];
+    if (match === null) {
+      throw new Error(`DEFAULT_JWT_TTL is not parseable: ${DEFAULT_JWT_TTL}`);
+    }
+    const value = Number.parseInt(match[1], 10);
+    const unit = match[2];
     const multiplier =
       unit === 'd' ? 86400 : unit === 'h' ? 3600 : unit === 'm' ? 60 : 1;
     expect(value * multiplier).toBe(THIRTY_DAYS_SECONDS);

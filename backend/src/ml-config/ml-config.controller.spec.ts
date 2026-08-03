@@ -75,9 +75,8 @@ describe('MlConfigController', () => {
       updateNightWindow,
     } as unknown as jest.Mocked<MlConfigService>;
     const controller = new MlConfigController(service);
-    const handler = (
-      controller as unknown as Record<string, unknown>
-    ).updateNightWindow;
+    const handler = (controller as unknown as Record<string, unknown>)
+      .updateNightWindow;
     if (typeof handler !== 'function') {
       throw new Error('MlConfigController.updateNightWindow is not a method');
     }
@@ -103,7 +102,8 @@ describe('MlConfigController', () => {
     const getConfig = jest.fn();
     const service = { getConfig } as unknown as jest.Mocked<MlConfigService>;
     const controller = new MlConfigController(service);
-    const handler = (controller as unknown as Record<string, unknown>).getConfig;
+    const handler = (controller as unknown as Record<string, unknown>)
+      .getConfig;
     if (typeof handler !== 'function') {
       throw new Error('MlConfigController.getConfig is not a method');
     }
