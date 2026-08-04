@@ -688,6 +688,20 @@ GPU 도착 전이므로 살아 있는 카메라는 2대다.
 
 전체 층 진입이 안 되면 모니터 설정의 `allowAllView`가 꺼진 것이다
 (`FloorMonitorPage.tsx:134`가 그때 다른 화면으로 보낸다).
+관리자 화면 `/facilities/<FACILITY_ID>/admin/monitor-settings`에서 켠다.
+
+> **이 설정은 서버가 아니라 브라우저에 저장된다**
+> (`monitorSettingsStore.ts`가 `localStorage`를 쓴다). 그래서 **어느 기기의
+> 어느 브라우저에서 보느냐에 따라 화면이 달라진다.**
+>
+> - 오라클은 **현장 TV에 띄울 그 브라우저**에서 재는 것이 원칙이다.
+>   노트북에서 재고 통과시켰는데 TV 쪽 설정이 다르면 승인한 화면과 실제
+>   화면이 어긋난다.
+> - 1단계에서 승인한 카드 크기(`lg`)도 같은 저장소에 있다. TV 브라우저가
+>   `xl`이면 맨 아래 층 방 이름이 잘린다(1단계 경고 참조).
+> - 처음 켜는 기기라면 기본값이 적용된다 —
+>   `allowAllView: true`, `cardSize: "lg"`(`monitorSettingsStore.ts:14,16`).
+>   오늘 TV는 새로 세팅하므로 기본값 그대로일 가능성이 높다.
 
 ### 7-2-a. DB 쪽 판정 (SQL)
 
