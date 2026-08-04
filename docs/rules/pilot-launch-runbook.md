@@ -220,6 +220,71 @@ pnpm release:prod -- v0.5.8             # 확인 후 실제 발행
 **진행 조건:** Jenkins 잡이 실제로 시작됐는지 확인. 30초 안에 안 잡히면
 webhook을 놓친 것이므로 수동 트리거.
 
+### 2.5 엣지 이미지 발행 — **#142를 병합했다고 이미지가 생기지 않는다**
+
+**이 단계를 건너뛰면 오늘 고친 엣지 결함이 현장에 반영되지 않는다.**
+
+`.env.edge.prod`의 `ML_API_IMAGE`/`ML_WORKER_IMAGE`는 ghcr에 이미 올라가
+있는 이미지를 가리킨다. 그 이미지를 만드는 워크플로
+(`eldercare-fall-ml-v2/.github/workflows/edge-images.yml`)는 **`main` push로
+돌지 않는다.** 트리거는 `release: published`와 `workflow_dispatch` 둘뿐이다.
+
+야간 실측: ghcr의 최신 `ml-api`/`ml-worker` 태그는 둘 다
+`58a6d6f4…`(2026-07-10)다. **#142의 `/api` prefix 수정(I9)이 그 이미지에
+없다.** 그대로 띄우면 4-1에서 heartbeat가 계속 실패하는데 원인이 안 보인다.
+
+병합 직후 `main`으로 이미지를 굽는다.
+
+```bash
+gh workflow run edge-images.yml --repo SeniorAILab/eldercare-fall-ml-v2 -f ref=main
+gh run watch --repo SeniorAILab/eldercare-fall-ml-v2   # 완료까지 대기
+```
+
+굽고 나면 태그를 확인해 `.env.edge.prod`에 넣는다. 태그는 **빌드한 ref의
+40자 커밋 SHA**다(`edge-images.yml`의 `DEPLOY_SHA=$(git rev-parse HEAD)`).
+
+```bash
+git -C eldercare-fall-ml-v2 fetch -q origin && git -C eldercare-fall-ml-v2 rev-parse origin/main
+```
+
+```bash
+# .env.edge.prod — 예시 파일의 <git-sha> 자리를 위 값으로 바꾼다
+ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-api:<위 SHA>
+ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-worker:<위 SHA>
+```
+
+> **ghcr 로그인이 필요하다.** 맥북에서 한 번도 pull한 적이 없으면
+> `read:packages` 권한 토큰으로 로그인한다
+> (`.env.edge.prod.example:29`가 같은 안내를 한다).
+>
+> ```bash
+> docker login ghcr.io
+> ```
+>
+> 3.5의 `docker compose ... up -d`가 `manifest unknown`이나 `denied`로
+> 실패하면 십중팔구 이 로그인 또는 위 태그 문제다.
+
+> **이 워크플로는 아직 한 번도 돈 적이 없다(`Total runs 0`, 야간 실측).
+> 첫 실행이 권한으로 막힐 가능성이 크다.** 시간을 넉넉히 잡는다.
+>
+> 근거: 워크플로는 `ghcr.io/seniorailab/eldercare-fall-ml`(**`-v2` 없음**)에
+> 푸시하는데(`edge-images.yml:28`), 그 패키지는 GitHub상
+> `SeniorAILab/eldercare-fall-ml`(구 저장소)에 연결돼 있다. 워크플로는
+> `SeniorAILab/eldercare-fall-ml-v2`에서 돈다. GHCR은 다른 저장소에
+> 연결된 패키지로의 푸시를 기본적으로 막으므로 `denied` 계열 오류가
+> 날 수 있다.
+>
+> 그렇게 막히면 둘 중 하나다.
+> - 패키지 설정에서 `eldercare-fall-ml-v2`에 write 권한을 준다
+>   (GitHub → Packages → 해당 패키지 → Manage Actions access → 저장소 추가)
+> - 또는 `IMAGE_NAMESPACE`를 v2가 소유하는 이름으로 바꿔 다시 돌린다
+>
+> **막혔다고 그냥 예전 이미지로 진행하지 않는다.** 그러면 I9 수정이
+> 빠진 채로 돌아가고, 4-1에서 heartbeat 실패의 원인을 못 찾는다.
+
+**진행 조건:** 워크플로 성공, `.env.edge.prod`의 두 이미지 태그가
+`origin/main` SHA와 같음.
+
 ---
 
 ## 3.5 엣지 기동 (맥북)
