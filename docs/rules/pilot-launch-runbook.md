@@ -549,10 +549,15 @@ uv run rtsp-generator list        # RTSP URL 확인
 
 **진행 조건:** 카메라 2대가 각각 대상 방 두 곳에 매핑된 상태로 저장됨.
 
-정리(끝난 뒤):
+**정리는 7단계 오라클까지 끝난 뒤에 한다. 여기서 내리지 않는다.**
+
+스트림을 내리면 heartbeat가 끊기고, 3분(`STALE_CUTOFF_MS`)이 지나면 그
+두 방이 회색으로 바뀐다. 4단계 smoke도 7단계 오라클도 **살아 있는 카메라
+2대**를 전제로 한다.
 
 ```bash
-cd "rtsp-generator"      # 위에서 다른 디렉터리로 옮겨 갔다면 다시 들어간다
+# 7단계 오라클을 통과시킨 뒤에 실행한다
+cd "rtsp-generator"      # 다른 디렉터리로 옮겨 갔다면 다시 들어간다
 uv run rtsp-generator stop --name nursing-home
 ```
 
