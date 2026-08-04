@@ -168,59 +168,7 @@ gh pr merge 142 --repo SeniorAILab/eldercare-fall-ml-v2 --merge
 
 ---
 
-## 3. 릴리스 발행
-
-**먼저 서버 여유를 본다.** 완전히 안전한 검사다 — 메모리와 디스크만 읽고
-즉시 종료하며 아무것도 바꾸지 않는다
-(`iwinv-deploy.sh:30-37`, `--preflight-only`는 `preflight` 실행 후 `exit 0`).
-
-```bash
-ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --preflight-only'
-# 필요: 메모리+스왑 1024MiB 이상, 디스크 2048MiB 이상
-```
-
-여기서 부족하다고 나오면 **발행하지 않는다.** 배포 도중 같은 검사로 멈추면
-컨테이너만 교체된 채 릴리스 포인터가 갱신되지 않는 상태가 된다(5단계 참조).
-
-여유가 확인된 뒤에 발행한다.
-
-```bash
-# 현재 최신 릴리스는 v0.5.7이므로 다음은 v0.5.8이다.
-# 태그는 vMAJOR.MINOR.PATCH만 받는다 — v0.5.8-rc1 같은 형식은 거부된다
-# (create-production-release.mjs:70).
-pnpm release:prod -- v0.5.8 --dry-run   # 먼저 이걸로 명령을 확인
-pnpm release:prod -- v0.5.8             # 확인 후 실제 발행
-```
-
-> **`--dry-run`은 실행할 명령을 찍고 끝난다.** 야간에 실제로 돌려 확인했다:
-> `gh 'release' 'create' 'v0.5.8' '--target' 'main' '--title' 'v0.5.8' '--generate-notes'`
-> (exit 0, 아무것도 만들지 않음).
->
-> **두 번째 줄이 곧 배포다.** `gh release create`는 `--draft` 없이 즉시
-> 게시하고, 게시되는 순간 `release: published` 워크플로가 돈다. 중간에
-> 한 번 더 묻는 단계는 없다.
->
-> `--target main`이므로 **그 시점의 `main` HEAD**로 릴리스가 만들어진다.
-> 2단계 병합이 끝나 있어야 하는 이유다.
-
-> **태그 push로는 배포가 안 나간다.** `release: published` 트리거만 동작한다.
->
-> **버전을 올려야 실제로 나간다.** `ADR-002-release-based-cd`에 따르면
-> 같은 버전이나 **더 낮은 버전을 다시 발행하면 성공한 no-op으로 수렴**한다 —
-> 빌드도 배포도 하지 않는다. 실패로 보이지 않으므로 "발행했는데 왜 안
-> 바뀌지"가 된다. `v0.5.7`이 최신이니 반드시 `v0.5.8` 이상을 쓴다.
->
-> **병합이 먼저다.** Jenkins가 해석한 태그 커밋이 `origin/main`에 포함돼
-> 있어야 한다(같은 ADR). 2단계 병합을 마치기 전에 발행하면 그 조건을
-> 못 채운다.
-
-배포 경로: Actions → Jenkins webhook(30초, 재시도 없음) → SHA resolve →
-`iwinv-deploy.sh --sha <sha>`
-
-**진행 조건:** Jenkins 잡이 실제로 시작됐는지 확인. 30초 안에 안 잡히면
-webhook을 놓친 것이므로 수동 트리거.
-
-### 2.5 엣지 이미지 발행 — **#142를 병합했다고 이미지가 생기지 않는다**
+## 2.5 엣지 이미지 발행 — **#142를 병합했다고 이미지가 생기지 않는다**
 
 **이 단계를 건너뛰면 오늘 고친 엣지 결함이 현장에 반영되지 않는다.**
 
@@ -286,6 +234,58 @@ ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-worker:<위 SHA>
 `origin/main` SHA와 같음.
 
 ---
+
+## 3. 릴리스 발행
+
+**먼저 서버 여유를 본다.** 완전히 안전한 검사다 — 메모리와 디스크만 읽고
+즉시 종료하며 아무것도 바꾸지 않는다
+(`iwinv-deploy.sh:30-37`, `--preflight-only`는 `preflight` 실행 후 `exit 0`).
+
+```bash
+ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --preflight-only'
+# 필요: 메모리+스왑 1024MiB 이상, 디스크 2048MiB 이상
+```
+
+여기서 부족하다고 나오면 **발행하지 않는다.** 배포 도중 같은 검사로 멈추면
+컨테이너만 교체된 채 릴리스 포인터가 갱신되지 않는 상태가 된다(5단계 참조).
+
+여유가 확인된 뒤에 발행한다.
+
+```bash
+# 현재 최신 릴리스는 v0.5.7이므로 다음은 v0.5.8이다.
+# 태그는 vMAJOR.MINOR.PATCH만 받는다 — v0.5.8-rc1 같은 형식은 거부된다
+# (create-production-release.mjs:70).
+pnpm release:prod -- v0.5.8 --dry-run   # 먼저 이걸로 명령을 확인
+pnpm release:prod -- v0.5.8             # 확인 후 실제 발행
+```
+
+> **`--dry-run`은 실행할 명령을 찍고 끝난다.** 야간에 실제로 돌려 확인했다:
+> `gh 'release' 'create' 'v0.5.8' '--target' 'main' '--title' 'v0.5.8' '--generate-notes'`
+> (exit 0, 아무것도 만들지 않음).
+>
+> **두 번째 줄이 곧 배포다.** `gh release create`는 `--draft` 없이 즉시
+> 게시하고, 게시되는 순간 `release: published` 워크플로가 돈다. 중간에
+> 한 번 더 묻는 단계는 없다.
+>
+> `--target main`이므로 **그 시점의 `main` HEAD**로 릴리스가 만들어진다.
+> 2단계 병합이 끝나 있어야 하는 이유다.
+
+> **태그 push로는 배포가 안 나간다.** `release: published` 트리거만 동작한다.
+>
+> **버전을 올려야 실제로 나간다.** `ADR-002-release-based-cd`에 따르면
+> 같은 버전이나 **더 낮은 버전을 다시 발행하면 성공한 no-op으로 수렴**한다 —
+> 빌드도 배포도 하지 않는다. 실패로 보이지 않으므로 "발행했는데 왜 안
+> 바뀌지"가 된다. `v0.5.7`이 최신이니 반드시 `v0.5.8` 이상을 쓴다.
+>
+> **병합이 먼저다.** Jenkins가 해석한 태그 커밋이 `origin/main`에 포함돼
+> 있어야 한다(같은 ADR). 2단계 병합을 마치기 전에 발행하면 그 조건을
+> 못 채운다.
+
+배포 경로: Actions → Jenkins webhook(30초, 재시도 없음) → SHA resolve →
+`iwinv-deploy.sh --sha <sha>`
+
+**진행 조건:** Jenkins 잡이 실제로 시작됐는지 확인. 30초 안에 안 잡히면
+webhook을 놓친 것이므로 수동 트리거.
 
 ## 3.5 엣지 기동 (맥북)
 
