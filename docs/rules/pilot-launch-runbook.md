@@ -103,12 +103,23 @@ ssh -o BatchMode=yes iwinv 'echo ok && hostname'
 
 ## 1. 스크린샷 승인
 
+세 장이 `.gjc/` 아래 세션 디렉터리에 있다. 세션 id가 길어 손으로 치기
+어려우므로 **찾아서 바로 연다**(워크스페이스 루트에서).
+
+```bash
+find .gjc -name 'monitor-*.png' -newermt '-1 day' | sort
+open $(find .gjc -name 'monitor-*.png' -newermt '-1 day' | sort)
 ```
-.gjc/_session-019fc81a-.../ultragoal/artifacts/
-  monitor-mixed.png      위험 1 + 확인됨 1 + 연결 끊김 5
-  monitor-all-live.png   전 카메라 연결, 위험/확인필요/주의/안정 혼재
-  monitor-panel.png      위험한 방을 눌렀을 때의 조작면 (I4 확인/해결 분리)
+
 ```
+monitor-mixed.png      위험 1 + 확인됨 1 + 연결 끊김 5
+monitor-all-live.png   전 카메라 연결, 위험/확인필요/주의/안정 혼재
+monitor-panel.png      위험한 방을 눌렀을 때의 조작면 (I4 확인/해결 분리)
+```
+
+> 안 나오면 야간 산출물이 정리된 것이다. 다시 만들 수 있다 —
+> `front/visual/`의 하니스로 `node visual/capture.mjs <출력 디렉터리>`를
+> 돌린다(dev 서버 `npx vite --port 5199 --strictPort` 먼저).
 
 **볼 것**
 
