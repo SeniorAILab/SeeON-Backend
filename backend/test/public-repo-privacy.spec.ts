@@ -39,8 +39,16 @@ const CGNAT_IPV4 = /^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
 
 const IPV4 = /(?<![\w.-])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.-])/g;
 
-/** `ssh -i <키>` / `IdentityFile <키>` — 어느 키 파일을 쓰는지도 정찰 정보다. */
-const SSH_KEY_REFERENCE = /(?:IdentityFile\s+|ssh\s+(?:\S+\s+)*?-i\s+)(\S+)/g;
+/**
+ * `ssh -i <키>` / `IdentityFile <키>` — 어느 키 파일을 쓰는지도 정찰 정보다.
+ *
+ * `-i` 앞 토큰에 `\s`를 쓰면 줄바꿈을 넘어 매칭한다. 실제로 `` `ssh iwinv` ``
+ * 가 적힌 줄과 한참 아래 다른 줄의 `-i`가 이어져 잡혔다. 로컬에서는 파일이
+ * 커밋되기 전이라 스캔 대상이 아니어서 CI에서만 드러났다.
+ * 그래서 줄바꿈을 뺀 `[^\S\n]`로 같은 줄 안에서만 본다.
+ */
+const SSH_KEY_REFERENCE =
+  /(?:IdentityFile[^\S\n]+|ssh[^\S\n]+(?:[^\s-][^\s]*[^\S\n]+)*?-i[^\S\n]+)([^\s]+)/g;
 
 /** 개발자 계정명이 드러나는 홈 절대경로. 이식성 문제이기도 하다. */
 const HOME_ABSOLUTE_PATH =
@@ -197,6 +205,19 @@ describe('프라이버시 가드 판정 로직', () => {
     ).not.toEqual([]);
     // 별칭만 쓰는 형태는 권장 방식이므로 잡지 않는다.
     expect(collect(SSH_KEY_REFERENCE, 'ssh iwinv "docker ps"')).toEqual([]);
+  });
+
+  it('줄바꿈을 넘어 `-i`와 이어 붙이지 않는다', () => {
+    // 실제로 CI에서 이 형태로 오탐이 났다 — `ssh iwinv`가 적힌 줄과
+    // 한참 아래 다른 줄의 `-i` 옵션이 하나로 매칭됐다.
+    const doc = [
+      '|0|`gh auth status` · `ssh iwinv`|',
+      '',
+      '어떤 문단이 사이에 들어간다.',
+      '',
+      'docker exec -i -e PGPASSWORD="$PW" db psql',
+    ].join('\n');
+    expect(collect(SSH_KEY_REFERENCE, doc)).toEqual([]);
   });
 
   it('홈 절대경로를 잡되 컨테이너 표준 경로는 놓아준다', () => {
