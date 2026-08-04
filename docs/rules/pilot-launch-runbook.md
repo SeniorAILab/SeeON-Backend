@@ -7,11 +7,24 @@
 `package.json:33`(`release:prod`), `scripts/deploy/iwinv-deploy.sh:22`(usage),
 `iwinv-deploy.sh:342`(`verify_services` = 정확 SHA + DB health).
 
-## 시작하기 전에 손으로 준비할 것 3가지
+## 시작하기 전에 손으로 준비할 것 4가지
 
 아래는 저장소에 없거나 사람만 정할 수 있는 값이다. **0단계로 들어가기 전에
 미리 챙긴다.** 안 그러면 병합·릴리스를 되돌릴 수 없는 지점까지 지나간 뒤
 3.5단계에서 막힌다.
+
+**0. 시설 ID — 이 문서의 `<FACILITY_ID>` 자리에 들어갈 값.**
+
+3.5-b(엣지 env)에서 처음 필요하고 6·7단계 SQL에서도 계속 쓴다. **로그인해서
+현황판에 들어가면 주소창에 그대로 보인다.**
+
+```text
+https://<프로덕션 호스트>/facilities/<FACILITY_ID>/dashboard
+                                     ^^^^^^^^^^^^^ 이 부분
+```
+
+DB로 확인하고 싶으면 6단계의 `SELECT id, name FROM facilities;`를 쓴다.
+다만 그건 6단계에서야 나오므로, 먼저 URL에서 읽어 적어 둔다.
 
 **1. 영상 파일 — 이미 있다. 복사하지 말고 경로로 참조한다.**
 
@@ -742,6 +755,8 @@ ORDER BY id;
 -- 기대: <카메라A> / <카메라B>
 
 -- (4) 그 두 방에 활성 알림이 없어야 "녹색"이 된다
+--     <방A>/<방B>는 3.5-c에서 카메라를 매핑한 그 두 방이다.
+--     방 id를 모르면 (3)의 결과에 space_id가 같이 나오므로 그 값을 쓴다.
 SELECT space_id, count(*) FROM alerts
 WHERE facility_id = '<FACILITY_ID>'
   AND space_id IN ('<방A>', '<방B>')
