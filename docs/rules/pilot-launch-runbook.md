@@ -114,6 +114,13 @@ shasum -a 256 "$CLIP"
 > `git status`를 치면 `fatal: not a git repository`로 죽는다.
 
 ```bash
+# 워크스페이스 루트를 기억해 둔다. 이후 모든 `cd`가 이 값을 쓴다 —
+# 절마다 다른 저장소로 들어가므로 상대 경로로 이어 가면 두 번째부터 깨진다.
+# (3단계에서 eldercare-fall-ai로 들어간 뒤 3.5의 `cd eldercare-fall-ml-v2`가
+#  바로 실패한다.)
+WS=$(pwd)
+echo "$WS"   # 새 터미널을 열면 이 값을 다시 넣는다: WS=<위 출력>
+
 # 두 저장소를 각각 본다. compose.yaml 외 dirty가 없어야 한다.
 git -C eldercare-fall-ai status --short
 git -C eldercare-fall-ml-v2 status --short
@@ -304,7 +311,7 @@ ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --prefligh
 여유가 확인된 뒤에 발행한다.
 
 ```bash
-cd "eldercare-fall-ai"   # 루트에서 치면 pnpm이 워크스페이스를 못 찾고 죽는다
+cd "$WS/eldercare-fall-ai"   # 루트에서 치면 pnpm이 워크스페이스를 못 찾고 죽는다
 # 현재 최신 릴리스는 v0.5.7이므로 다음은 v0.5.8이다.
 # 태그는 vMAJOR.MINOR.PATCH만 받는다 — v0.5.8-rc1 같은 형식은 거부된다
 # (create-production-release.mjs:70).
@@ -365,7 +372,7 @@ webhook을 놓친 것이므로 수동 트리거.
 `eldercare-fall-ml-v2`에서 (`compose.edge.yaml`, `.env.edge.prod.example`):
 
 ```bash
-cd "eldercare-fall-ml-v2"
+cd "$WS/eldercare-fall-ml-v2"
 cp .env.edge.prod.example .env.edge.prod   # 없으면
 # 같은 디렉터리의 `.env.example`과 헷갈리지 않는다. 그건 로컬 개발용이고
 # 아래 필수 8개(ML_API_IMAGE, API_EDGE_RELAY_TOKEN, CLIP_STORE_HOST_DIR …)가
@@ -405,7 +412,7 @@ ML_WORKER_IMAGE=…              #  (예시는 <git-sha> 플레이스홀더)
 바꿔 두는 편이 낫다.**
 
 ```bash
-cd "eldercare-fall-ml-v2"   # env를 고치다 다른 데로 갔다면 다시 들어간다
+cd "$WS/eldercare-fall-ml-v2"   # env를 고치다 다른 데로 갔다면 다시 들어간다
 docker compose --env-file .env.edge.prod -f compose.edge.yaml up -d
 docker compose -f compose.edge.yaml ps
 ```
@@ -515,7 +522,7 @@ EDGE_FACILITY_TOKEN    시설 토큰
 > 도달 여부이지 영상 내용이 아니다.
 
 ```bash
-cd "rtsp-generator"
+cd "$WS/rtsp-generator"
 uv sync --group dev
 # dataset-ops의 핀된 클립을 저장소 밖 경로 그대로 넘긴다 (복사 금지)
 CLIP="../eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>"
@@ -563,7 +570,7 @@ uv run rtsp-generator list        # RTSP URL 확인
 
 ```bash
 # 7단계 오라클을 통과시킨 뒤에 실행한다
-cd "rtsp-generator"      # 다른 디렉터리로 옮겨 갔다면 다시 들어간다
+cd "$WS/rtsp-generator"      # 다른 디렉터리로 옮겨 갔다면 다시 들어간다
 uv run rtsp-generator stop --name nursing-home
 ```
 
