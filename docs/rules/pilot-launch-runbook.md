@@ -336,6 +336,10 @@ webhook을 놓친 것이므로 수동 트리거.
 ```bash
 cd "eldercare-fall-ml-v2"
 cp .env.edge.prod.example .env.edge.prod   # 없으면
+# 같은 디렉터리의 `.env.example`과 헷갈리지 않는다. 그건 로컬 개발용이고
+# 아래 필수 8개(ML_API_IMAGE, API_EDGE_RELAY_TOKEN, CLIP_STORE_HOST_DIR …)가
+# 아예 들어 있지 않다. 그걸 복사하면 compose가
+# "required variable ... is missing a value"로 즉시 실패한다.
 ```
 
 **필수 env 8개** — 하나라도 비면 컨테이너가 아예 뜨지 않는다
