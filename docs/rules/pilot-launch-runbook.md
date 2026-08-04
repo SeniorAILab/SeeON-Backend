@@ -420,8 +420,11 @@ cd "rtsp-generator"
 uv sync --group dev
 # dataset-ops의 핀된 클립을 저장소 밖 경로 그대로 넘긴다 (복사 금지)
 CLIP="../eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>"
-uv run rtsp-generator start "$CLIP" --path <카메라A> \
-                            "$CLIP" --path <카메라B> \
+# --path는 카메라 id가 아니라 **RTSP 경로**다. 두 스트림이 같은 경로를
+# 쓰면 거부되므로(rtsp.py:_require_no_duplicate_paths) 서로 다르게 준다.
+# 나중에 어느 스트림인지 알아보기 쉬운 이름이면 충분하다.
+uv run rtsp-generator start "$CLIP" --path room-a \
+                            "$CLIP" --path room-b \
                             --name nursing-home --detach
 uv run rtsp-generator list        # RTSP URL 확인
 ```
@@ -684,9 +687,13 @@ COMMIT;
 스트림 기동과 카메라 등록은 **3.5-c**에서 이미 했다. 여기서는 판정만 한다.
 GPU 도착 전이므로 살아 있는 카메라는 2대다.
 
-> **카메라 id 주의(3.5-c 재확인).** 프로덕션에 이미 있는 `<카메라A>`(첫 번째 대상 방)와
-> `<카메라B>`(두 번째 대상 방)에 매핑돼 있어야 한다. 새 id로 등록했다면
-> 클라우드에 카메라가 추가돼 7대가 아니라 9대가 되고 기대값이 깨진다.
+> **카메라 id 주의(3.5-c 재확인).** 프로덕션에 **이미 등록돼 있는** 카메라
+> 두 대(대상 방 두 곳에 매핑된 것)를 그대로 쓴다. 새 id로 추가 등록하면
+> 클라우드 카메라가 7대가 아니라 9대가 되고 기대값이 깨진다.
+>
+> 아래 `<카메라A>`/`<카메라B>`는 **그 프로덕션 카메라 id**를 가리킨다 —
+> 3.5-c에서 `--path`에 준 `room-a`/`room-b`(RTSP 경로)와는 다른 값이다.
+> 헷갈리면 (3) 쿼리 결과의 `id` 열이 정답이다.
 
 **어느 화면에서 재는지가 중요하다.** 카메라 7대는 2F·3F·4F에 흩어져 있어
 **층별 화면에서는 7개가 다 안 보인다** — `FloorMonitorPage.tsx:78`이
