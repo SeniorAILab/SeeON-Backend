@@ -694,6 +694,17 @@ ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --rollback
 `APP_ROOT=/opt/eldercare-fall-ai`, env는 `$APP_ROOT/shared/.env`.
 DB 자격증명은 그 env 파일에만 있으므로 **하드코딩하지 말고 읽어서 쓴다.**
 
+컨테이너 이름 `eldercare-fall-db`는 `compose.yaml:16`의 `container_name`으로
+고정돼 있다. compose가 프로젝트명을 붙여 짓는 이름이 아니므로 배포 위치와
+무관하게 이 이름이다.
+
+변수명(`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`)은
+`.env.host.prod.example`과 대조해 확인했다.
+
+> `docker ps`에 다른 이름이 보이면 그 호스트는 이 compose로 띄운 것이
+> 아니다. **이름을 바꿔 맞추지 말고 왜 다른지부터 본다.** 로컬 개발
+> 컨테이너와 헷갈리기 쉽다.
+
 ```bash
 # 1) 덤프 — 자격증명을 env에서 읽어 쓴다(추측 금지)
 ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
