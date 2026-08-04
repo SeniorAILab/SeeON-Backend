@@ -74,7 +74,9 @@ DB로 확인하고 싶으면 6단계의 `SELECT id, name FROM facilities;`를 �
 한다. 야간에 대조해 일치를 확인했다:
 
 ```bash
-CLIP="../eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>"
+# 워크스페이스 루트에서 친다. 3.5-c에서는 rtsp-generator/ 안에서 치므로
+# 같은 `../` 경로가 그대로 맞는다(둘 다 루트 바로 아래 형제 디렉터리).
+CLIP="eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>"
 shasum -a 256 "$CLIP"
 # 기대: local-e2e-rtsp-source.md에 적힌 핀 값과 일치해야 한다
 ```
