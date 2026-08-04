@@ -116,4 +116,34 @@ describe('MlConfigController', () => {
     expect(guards).toContain(EdgeIngestTokenGuard);
     expect(guards).not.toContain(RolesGuard);
   });
+
+  it('엣지 pull은 GET이므로 야간정책 쓰기 제한에 영향받지 않는다', () => {
+    // 엣지 lifespan.py는 ml-config를 GET으로만 읽는다. PUT :facilityId/night-window에
+    // RolesGuard를 걸어도 엣지 config pull이 끊기지 않는 근거다.
+    const controller = new MlConfigController({
+      getConfig: jest.fn(),
+    } as unknown as jest.Mocked<MlConfigService>);
+    const getHandler = (controller as unknown as Record<string, unknown>)
+      .getConfig;
+    const putHandler = (controller as unknown as Record<string, unknown>)
+      .updateNightWindow;
+    if (typeof getHandler !== 'function' || typeof putHandler !== 'function') {
+      throw new Error('MlConfigController handlers missing');
+    }
+
+    // 읽기와 쓰기가 서로 다른 가드 집합을 가진다 — 하나가 다른 하나를 막지 않는다.
+    const getGuards = readArray(
+      Reflect.getMetadata(GUARDS_METADATA, getHandler),
+      'getConfig guards',
+    );
+    const putGuards = readArray(
+      Reflect.getMetadata(GUARDS_METADATA, putHandler),
+      'updateNightWindow guards',
+    );
+
+    expect(getGuards).toContain(EdgeIngestTokenGuard);
+    expect(putGuards).not.toContain(EdgeIngestTokenGuard);
+    expect(putGuards).toContain(RolesGuard);
+    expect(getGuards).not.toContain(RolesGuard);
+  });
 });
