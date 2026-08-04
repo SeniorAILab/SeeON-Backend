@@ -788,16 +788,16 @@ ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
 ```
 
 ```sql
--- 0-a) 테이블명 확인 — spaces/facilities는 마이그레이션 DDL로 확정하지 못했다
+-- 1) 테이블명 확인 — spaces/facilities는 마이그레이션 DDL로 확정하지 못했다
 \dt
 -- 기대: spaces, cameras, events, alerts, facilities
 --       다르면 아래 모든 쿼리의 이름을 실제 값으로 맞춘다
 
--- 0) 시설 id 확인 — 이후 모든 쿼리에 이 값을 넣는다
+-- 2) 시설 id 확인 — 이후 모든 쿼리에 이 값을 넣는다
 SELECT id, name FROM facilities;
 -- 이 결과의 id를 아래 <FACILITY_ID> 자리에 넣는다
 
--- 2) 삭제 대상 수 확인 — 47이어야 한다
+-- 3) 삭제 대상 수 확인 — 47이어야 한다
 --    카메라·이벤트·알림이 전무한 방만 해당
 --    spaces/cameras/events/alerts는 모두 facility_id를 갖고 FK가
 --    (facility_id, space_id) 복합키다. 시설 스코프를 빼면 다른 시설의
@@ -814,8 +814,8 @@ WHERE s.facility_id = '<FACILITY_ID>'
     SELECT 1 FROM alerts a
     WHERE a.facility_id = s.facility_id AND a.space_id = s.id);
 
--- 3) 47이 확인된 뒤에만 DELETE.
---    아래는 2)의 WHERE와 글자 그대로 같다. 손으로 옮겨 적지 말고
+-- 4) 47이 확인된 뒤에만 DELETE.
+--    아래는 3)의 WHERE와 글자 그대로 같다. 손으로 옮겨 적지 말고
 --    통째로 복사한다 — NOT EXISTS 한 덩어리를 빠뜨리면 카메라나
 --    이벤트가 붙은 방까지 지워지고, 그건 되돌릴 수 없다.
 --
@@ -843,13 +843,13 @@ SELECT count(*) FROM spaces WHERE facility_id = '<FACILITY_ID>';
 
 COMMIT;
 
--- 4) COMMIT 뒤 최종 확인 — 2)의 count 쿼리를 다시 돌리면 0이어야 한다.
+-- 5) COMMIT 뒤 최종 확인 — 3)의 count 쿼리를 다시 돌리면 0이어야 한다.
 --    남는 방 7개의 구성: 2층 4개, 3층 2개, 4층 1개 (카메라가 붙은 방만)
 --    1층과 5층에는 방이 하나도 안 남는다 — 현황판에서 그 층 그룹이 통째로
 --    사라진다. 정상이다(빈 층은 렌더하지 않는다, RoomStatusTreemap.tsx:83).
 ```
 
-**중단 조건:** 2번 결과가 47이 아니면 **멈춘다.** 시드 이후 데이터가 붙었다는
+**중단 조건:** 3번 결과가 47이 아니면 **멈춘다.** 시드 이후 데이터가 붙었다는
 뜻이므로 대상을 다시 산정해야 한다.
 
 `Space`에는 `onDelete: Cascade`가 없어 FK 충돌 없이 지워진다.
