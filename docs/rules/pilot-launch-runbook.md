@@ -28,7 +28,7 @@
 |---|---|
 |준비물|시설 ID(현황판 URL에서), 클립 경로, 토큰·계정, TV 브라우저|
 |0|`git -C … status` · `gh pr checks` · `gh auth status` · `ssh iwinv`|
-|1|`find .gjc -name 'monitor-*.png'` → 3장 승인|
+|1|`find "$WS/.gjc" -name 'monitor-*.png'` → 3장 승인|
 |2|`gh pr merge 657/658/142 --merge` — **squash 금지**|
 |2.5|ML 저장소 런북대로 이미지 발행 → digest 두 줄 복사 (절차는 그쪽에)|
 |3|`--preflight-only` → `release:prod -- v0.5.8 --dry-run` → 실발행|
@@ -157,8 +157,8 @@ ssh -o BatchMode=yes iwinv 'echo ok && hostname'
 어려우므로 **찾아서 바로 연다**(워크스페이스 루트에서).
 
 ```bash
-find .gjc -name 'monitor-*.png' -newermt '-1 day' | sort
-open $(find .gjc -name 'monitor-*.png' -newermt '-1 day' | sort)
+find "$WS/.gjc" -name 'monitor-*.png' -newermt '-1 day' | sort
+open $(find "$WS/.gjc" -name 'monitor-*.png' -newermt '-1 day' | sort)
 ```
 
 ```
@@ -167,9 +167,16 @@ monitor-all-live.png   전 카메라 연결, 위험/확인필요/주의/안정 �
 monitor-panel.png      위험한 방을 눌렀을 때의 조작면 (I4 확인/해결 분리)
 ```
 
-> 안 나오면 야간 산출물이 정리된 것이다. 다시 만들 수 있다 —
-> `front/visual/`의 하니스로 `node visual/capture.mjs <출력 디렉터리>`를
-> 돌린다(dev 서버 `npx vite --port 5199 --strictPort` 먼저).
+> 안 나오면 야간 산출물이 정리된 것이다. 다시 만들 수 있다.
+>
+> ```bash
+> cd "$WS/eldercare-fall-ai/front"
+> npx vite --port 5199 --strictPort &     # dev 서버를 먼저 띄운다
+> node visual/capture.mjs /tmp/monitor-shots
+> ```
+>
+> 세 장(`monitor-mixed` / `monitor-all-live` / `monitor-panel`)이 나오고
+> 마지막 줄에 `ORACLE PASS`가 찍혀야 한다. 끝나면 dev 서버를 내린다.
 
 **볼 것**
 
