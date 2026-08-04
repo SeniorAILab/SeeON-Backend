@@ -20,6 +20,26 @@
 **3 발행** → 3.5 엣지 기동 → 3.5-c 스트림·등록 → 4 smoke → 5 실패 시 →
 **6 정리** → 7 오라클
 
+**각 단계에서 실제로 치는 것.** 아래는 목차이자 요약이다. 세부 조건과
+함정은 각 절에 있으니 **그 절을 열고 진행한다.** 이 표만 보고 실행하지
+않는다.
+
+|단계|한 줄|
+|---|---|
+|준비물|시설 ID(현황판 URL에서), 클립 경로, 토큰·계정, TV 브라우저|
+|0|`git -C … status` · `gh pr checks` · `gh auth status` · `ssh iwinv`|
+|1|`find .gjc -name 'monitor-*.png'` → 3장 승인|
+|2|`gh pr merge 657/658/142 --merge` — **squash 금지**|
+|2.5|ML 저장소 런북대로 이미지 발행 → digest 두 줄 복사 (절차는 그쪽에)|
+|3|`--preflight-only` → `release:prod -- v0.5.8 --dry-run` → 실발행|
+|3.5|`.env.edge.prod` 7개 채우고 `compose … up -d`|
+|3.5-b|연결 설정에서 시설 ID·이벤트 URL 눈 확인|
+|3.5-c|`rtsp-generator start … --path room-a/room-b` → 카메라 2대 등록|
+|4|엣지 "클라우드 전송" 정상 → 클라우드 현황판 → 확인/메모/해결|
+|5|(실패 시) `current.json` 보고 `--sha` 또는 `--rollback`|
+|6|덤프 → 데이터 행 확인 → count 47 → 트랜잭션 DELETE → COMMIT|
+|7|SQL (1)~(4) → 콘솔 DOM 판정 `{LIVE:2, STALE:5}`|
+
 ## 시작하기 전에 손으로 준비할 것 4가지
 
 아래는 저장소에 없거나 사람만 정할 수 있는 값이다. **0단계로 들어가기 전에
