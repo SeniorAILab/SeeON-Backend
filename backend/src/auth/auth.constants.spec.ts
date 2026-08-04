@@ -59,4 +59,20 @@ describe('auth session TTL', () => {
     const service = readFileSync(join(__dirname, 'auth.service.ts'), 'utf8');
     expect(service).toContain('sessionVersion: { increment: 1 }');
   });
+
+  it('프로덕션 compose가 코드 기본값과 같은 TTL을 넘긴다', () => {
+    // TTL을 12h에서 30d로 늘린 것은 TV가 저녁에 조용히 로그인 화면으로
+    // 튕기는 것을 막기 위해서다. 코드 기본값만 바꾸고 compose가 옛 값을
+    // 넘기면 프로덕션에서는 아무것도 달라지지 않는데 테스트는 통과한다.
+    const compose = readFileSync(
+      join(__dirname, '..', '..', '..', 'compose.prod.yaml'),
+      'utf8',
+    );
+
+    expect(compose).toContain('JWT_TTL:');
+    // compose의 fallback과 코드 기본값이 같아야 한다.
+    expect(compose).toContain(
+      `JWT_TTL: \${JWT_TTL:-${authConstants.DEFAULT_JWT_TTL}}`,
+    );
+  });
 });
