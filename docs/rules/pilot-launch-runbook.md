@@ -72,8 +72,8 @@ ssh -o BatchMode=yes iwinv 'echo ok && hostname'
 
 **진행 조건:** 세 PR 모두 전 항목 pass, `ssh iwinv` 응답 확인.
 
-> 접속 정보는 `~/.ssh/config`의 `Host iwinv`(공인 IP 직결, root)만 쓴다. **tailscale blackwell 노드
-> (<REDACTED_CGNAT_ADDRESS>)는 접근하지 않는다.**
+> 접속 정보는 `~/.ssh/config`의 `Host iwinv`(공인 IP 직결, root)만 쓴다. **tailscale blackwell
+> 노드는 접근하지 않는다** — 주소는 `~/.ssh/config`와 `tailscale status`에서 확인한다.
 
 ---
 
