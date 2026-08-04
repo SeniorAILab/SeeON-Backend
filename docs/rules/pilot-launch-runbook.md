@@ -14,7 +14,7 @@
 |---|---|---|
 |**2 병합**|`main` 히스토리|revert 커밋 — 되돌린 흔적이 남는다|
 |**3 발행**|배포가 즉시 시작됨|5단계 복구 — **자동 복구는 없다**|
-|**6 DELETE**|프로덕션 방 47행|덤프에서 복원 — **먼저 덤프를 떠야 한다**|
+|**6 DELETE**|프로덕션 방 47행|덤프에서 복원(6단계에 절차 있음) — **먼저 덤프를 떠야 한다**|
 
 전체 흐름: 준비물 → 0 확인 → 1 승인 → **2 병합** → 2.5 엣지 이미지 →
 **3 발행** → 3.5 엣지 기동 → 3.5-c 스트림·등록 → 4 smoke → 5 실패 시 →
@@ -667,6 +667,38 @@ ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
 # 덤프가 비어 있지 않은지 확인 — 0바이트면 여기서 멈춘다
 wc -l spaces-floors-*.sql
 ```
+
+> **복원이 필요해지면 — 덤프를 그냥 다시 흘려넣으면 안 된다.**
+>
+> `--data-only` 덤프는 `COPY public.spaces (...) FROM stdin;` 형식이다.
+> 삭제 후 남아 있는 7행과 기본키가 겹치므로 그대로 넣으면 `duplicate key`로
+> **`COPY` 전체가 롤백된다.** 야간에 일회용 postgres로 재현해 확인했다 —
+> 10행 중 3행을 지운 뒤 덤프를 그대로 넣으니 7행 그대로였다.
+>
+> 겹치는 것은 건너뛰고 없어진 것만 되살리는 절차다.
+>
+> ```sql
+> -- 1) 받아 놓을 빈 테이블을 만든다(제약까지 같게)
+> CREATE TABLE spaces_restore (LIKE spaces INCLUDING ALL);
+> ```
+>
+> ```bash
+> # 2) 덤프의 COPY 대상만 그 테이블로 바꿔 흘려넣는다
+> sed 's/COPY public\.spaces /COPY public.spaces_restore /' spaces-floors-*.sql \
+>   | ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
+>       docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" eldercare-fall-db \
+>         psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+> ```
+>
+> ```sql
+> -- 3) 없어진 것만 되살린다. 남아 있는 행은 건드리지 않는다.
+> INSERT INTO spaces SELECT * FROM spaces_restore ON CONFLICT DO NOTHING;
+> SELECT count(*) FROM spaces WHERE facility_id = '<FACILITY_ID>';  -- 54로 돌아온다
+> DROP TABLE spaces_restore;
+> ```
+>
+> `floors`도 지웠다면 같은 방식으로 한 번 더 한다.
+> 이 절차는 위 재현에서 7 → 10으로 복원되는 것을 확인했다.
 
 이후 SQL은 같은 방식으로 접속한다:
 
