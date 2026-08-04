@@ -399,11 +399,21 @@ ML_WORKER_IMAGE=…              #  (예시는 <git-sha> 플레이스홀더)
 바꿔 두는 편이 낫다.**
 
 ```bash
+cd "eldercare-fall-ml-v2"   # env를 고치다 다른 데로 갔다면 다시 들어간다
 docker compose --env-file .env.edge.prod -f compose.edge.yaml up -d
 docker compose -f compose.edge.yaml ps
 ```
 
 **진행 조건:** ml-api와 worker 컨테이너가 모두 Up.
+
+> **안 뜨면 먼저 이걸 본다.** `up -d`는 실패해도 출력이 짧아 놓치기 쉽다.
+>
+> ```bash
+> docker compose --env-file .env.edge.prod -f compose.edge.yaml config >/dev/null
+> ```
+>
+> env가 빠졌으면 어느 변수인지 이름으로 알려준다. 컨테이너를 띄우지 않는
+> 검사라 몇 번을 돌려도 안전하다.
 
 > 컨테이너가 안 뜨면 십중팔구 필수 env 누락이다 — `docker compose ... config`가
 > 어떤 변수가 비었는지 이름으로 알려준다.
