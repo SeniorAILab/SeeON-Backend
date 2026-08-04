@@ -470,13 +470,43 @@ I2가 오늘 범위 밖(env 두 개가 꺼짐)이라 나오는 문구다. **버�
 `verify_services` 실패 시 `activate_manifest`가 실행되지 않아
 **`current.json`은 구버전인데 깨진 신버전 컨테이너가 떠 있을 수 있다.**
 
+**먼저 `current.json`이 무엇을 가리키는지 본다. 그에 따라 쓸 명령이 다르다.**
+
 ```bash
-# 경로는 iwinv-deploy.sh:5-6 기준 (APP_ROOT=/opt/eldercare-fall-ai, APP_DIR=$APP_ROOT/repo)
+ssh iwinv 'cat /opt/eldercare-fall-ai/releases/current.json'
+```
+
+**경우 A — `current.json`이 아직 직전 정상 SHA를 가리킨다** (활성화 전에
+실패한 경우, 오늘 가장 가능성이 높다).
+
+그 SHA를 그대로 다시 배포한다. `--rollback`을 쓰면 안 된다.
+
+```bash
+ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --sha <current.json의 sha>'
+```
+
+> `--sha`는 **40자 소문자 16진수만** 받는다(`iwinv-deploy.sh:72`).
+> `git log --oneline`의 짧은 해시를 붙이면 거부된다. `current.json`에
+> 들어 있는 값을 그대로 쓴다.
+
+> **왜 `--rollback`이 아닌가.** 무인자 `--rollback`은 `previous.json`을
+> 읽는다(`iwinv-deploy.sh:162`). 활성화가 안 됐으므로 `previous.json`은
+> 아직 **직전 정상보다 한 세대 더 이전**을 가리킨다 — 필요 이상으로
+> 내려간다. 그렇다고 `--rollback <current의 sha>`도 못 쓴다. `:167`이
+> **현재 SHA로의 롤백을 명시적으로 거부**한다. 남는 길은 `--sha`다.
+
+**경우 B — `current.json`이 새(문제의) SHA를 가리킨다** (활성화까지 끝난
+뒤에 문제를 발견한 경우).
+
+```bash
 ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --rollback'
 # 특정 SHA로: --rollback <sha>
 ```
 
-롤백 후 **4번 smoke를 처음부터 다시** 실행한다.
+경로는 `iwinv-deploy.sh:5-6` 기준(`APP_ROOT=/opt/eldercare-fall-ai`,
+`APP_DIR=$APP_ROOT/repo`, `RELEASE_DIR=$APP_ROOT/releases`).
+
+어느 경우든 복구 후 **4번 smoke를 처음부터 다시** 실행한다.
 
 > **엣지 워커가 이상할 때는 여기가 아니다.** 위 절차는 클라우드(iwinv)
 > 배포용이다. 엣지 워커 이미지를 되돌려야 하면
