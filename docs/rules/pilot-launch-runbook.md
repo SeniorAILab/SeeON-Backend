@@ -201,18 +201,29 @@ gh workflow run edge-images.yml --repo SeniorAILab/eldercare-fall-ml-v2 -f ref=m
 gh run watch --repo SeniorAILab/eldercare-fall-ml-v2   # 완료까지 대기
 ```
 
-굽고 나면 태그를 확인해 `.env.edge.prod`에 넣는다. 태그는 **빌드한 ref의
-40자 커밋 SHA**다(`edge-images.yml`의 `DEPLOY_SHA=$(git rev-parse HEAD)`).
+**값을 손으로 만들지 않는다.** 워크플로가 마지막 단계에서
+`ML_API_IMAGE`/`ML_WORKER_IMAGE` 두 줄을 **digest로 고정해** 그대로 찍어
+준다(`edge-images.yml`의 `Write edge image env artifact`). 실행 요약 화면에
+`dotenv` 블록으로 보이므로 복사해서 `.env.edge.prod`에 붙인다.
 
 ```bash
-git -C eldercare-fall-ml-v2 fetch -q origin && git -C eldercare-fall-ml-v2 rev-parse origin/main
+# 실행 요약(웹)에서 바로 복사하거나, 아티팩트로 받는다
+gh run download --repo SeniorAILab/eldercare-fall-ml-v2 \
+  --name edge-ml-image-refs-<빌드한 SHA> --dir .
+cat edge-ml-image-refs.env
 ```
 
-```bash
-# .env.edge.prod — 예시 파일의 <git-sha> 자리를 위 값으로 바꾼다
-ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-api:<위 SHA>
-ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-worker:<위 SHA>
+받은 두 줄은 이런 모양이다 — **태그가 아니라 `@sha256:` digest**다.
+
+```dotenv
+ML_API_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-api@sha256:…
+ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-worker@sha256:…
 ```
+
+> **digest로 붙이는 편이 낫다.** 태그는 나중에 같은 이름으로 다른 이미지를
+> 가리킬 수 있지만 digest는 고정이다. 엣지가 어떤 바이너리를 돌렸는지
+> 나중에 다투지 않아도 된다. `.env.edge.prod.example:27`도 digest 형태를
+> 예시로 든다.
 
 > **ghcr 로그인이 필요하다.** 맥북에서 한 번도 pull한 적이 없으면
 > `read:packages` 권한 토큰으로 로그인한다
@@ -243,8 +254,8 @@ ML_WORKER_IMAGE=ghcr.io/seniorailab/eldercare-fall-ml/ml-worker:<위 SHA>
 > **막혔다고 그냥 예전 이미지로 진행하지 않는다.** 그러면 I9 수정이
 > 빠진 채로 돌아가고, 4-1에서 heartbeat 실패의 원인을 못 찾는다.
 
-**진행 조건:** 워크플로 성공, `.env.edge.prod`의 두 이미지 태그가
-`origin/main` SHA와 같음.
+**진행 조건:** 워크플로 성공, 그리고 `.env.edge.prod`의 두 줄이 그 실행이
+찍어 준 digest와 **글자 그대로 같음**. 옮겨 적지 말고 복사한다.
 
 ---
 
