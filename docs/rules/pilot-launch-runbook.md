@@ -843,3 +843,18 @@ console.log('stale', stale.length, stale.every((t) => t.label?.includes('연결 
 - **멀티테넌시** — `EdgeFacilityTokenGuard`가 `x-facility-id`를 검증 없이
   신뢰한다. 단일 시설에서는 노출되지 않지만 **2번째 요양원 온보딩 전 필수**.
   (`EdgeIngestTokenGuard`는 서버에서 소유권을 해석하므로 이벤트 주입은 불가)
+
+- **전역(SUPERADMIN) 화면의 미완 항목 2가지.** 야간에 계획 항목을 소스와
+  대조하다 확인했다. 단일 시설 파일럿에서는 막지 않으므로 이월한다.
+
+  - **엣지 토큰 확인·복사가 없다.** 시설 ID는 전체 표시 + 복사가 있지만
+    (`SuperAdminDashboardPage.tsx:101-108,204-208`) 토큰은 없다.
+    **일부러 만들지 않았다** — 엣지 토큰은 DB가 아니라 서버 env
+    (`EDGE_FACILITY_TOKEN` / `API_EDGE_RELAY_TOKEN`,
+    `edge-facility-token.guard.ts:47-48`)에 있다. 화면에 띄우려면 서버
+    시크릿을 웹 API로 내보내야 하고, 그건 런칭 전날 밤에 급히 설계할
+    문제가 아니다. 오늘은 기사에게 토큰을 별도 경로로 전달한다.
+  - **시설 카드에 최근 이벤트 시각이 없다.** 카메라 총수와 끊긴 수는 있다
+    (`cameraHealth.total` / `.stale`). 시설이 조용해진 지 얼마나 됐는지는
+    아직 안 보인다. 시설이 하나뿐인 오늘은 메인 현황판이 같은 정보를
+    더 정확히 준다.
