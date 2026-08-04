@@ -90,9 +90,14 @@ shasum -a 256 "$CLIP"
 > 워크스페이스 `AGENTS.md`도 private media 커밋을 금지한다.
 > `rtsp-generator`는 저장소 밖 경로를 인자로 받으므로 그대로 넘기면 된다.
 
-**2. 엣지 대시보드 계정** — `.env.edge.prod`의
-`API_DASHBOARD_USERNAME` / `API_DASHBOARD_PASSWORD`.
-비우면 컨테이너가 아예 뜨지 않는다. 그게 안전장치다 — 비워두면
+**2. 엣지 계정과 relay 토큰** — `.env.edge.prod`가 **비워둔 채로 주는 값
+3개**다. 예시 파일을 복사해도 안 채워져 있으니 미리 정해 온다.
+
+- `API_DASHBOARD_USERNAME` / `API_DASHBOARD_PASSWORD` — 엣지 대시보드 로그인
+- `API_EDGE_RELAY_TOKEN` — 워커가 ml-api로 보낼 때 쓰는 토큰.
+  3.5-b의 연결 확인 `curl`에서도 이 값을 헤더로 쓴다
+
+셋 다 비우면 컨테이너가 아예 뜨지 않는다. 그게 안전장치다 — 비워두면
 `admin/admin`으로 뜨는 게 아니라 기동 자체가 막힌다.
 
 **3. 백엔드 주소** — `.env.edge.prod`의 `API_BACKEND_BASE_URL`(권장) 또는
