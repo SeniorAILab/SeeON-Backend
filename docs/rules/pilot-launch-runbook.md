@@ -664,8 +664,15 @@ ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
     -t spaces -t floors --data-only' \
   > spaces-floors-$(date +%Y%m%d-%H%M).sql
 
-# 덤프가 비어 있지 않은지 확인 — 0바이트면 여기서 멈춘다
-wc -l spaces-floors-*.sql
+# 덤프에 실제 데이터가 들어 있는지 확인한다.
+# wc -l로는 부족하다 — 데이터가 0행이어도 pg_dump 헤더만으로 30행 넘게
+# 나온다(야간에 실측: 빈 테이블 덤프가 34행). 행 수만 보고 넘어가면
+# 아무것도 안 든 덤프를 믿고 47행을 지우게 된다.
+for f in spaces-floors-*.sql; do
+  n=$(sed -n '/^COPY/,/^\\.$/p' "$f" | grep -vcE '^COPY|^\\.$')
+  echo "$f: 데이터 $n행"
+done
+# 기대: spaces 54행 + floors 5행. 0행이면 여기서 멈춘다.
 ```
 
 > **복원이 필요해지면 — 덤프를 그냥 다시 흘려넣으면 안 된다.**
