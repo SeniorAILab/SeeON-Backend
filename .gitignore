@@ -73,3 +73,11 @@ assets/
 front/artifacts/
 # Obsidian vault symlink (canonical technical report lives in secondbrain/book/)
 secondbrain
+
+# 에이전트/도구 런타임 산출물. 추적하면 안 된다 — output/에는 Playwright가
+# 남긴 영상·스크린샷이 쌓이고(현재 6.5MB), AGENTS.md가 private media 커밋을
+# 금지한다. CI의 repo-residue 잡은 ML 잔여물만 보므로 이걸 잡지 못한다.
+/output/
+/.playwright-cli/
+/backend/snapshots/
+/.oms/
