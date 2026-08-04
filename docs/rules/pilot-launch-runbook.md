@@ -121,6 +121,10 @@ shasum -a 256 "$CLIP"
 WS=$(pwd)
 echo "$WS"   # 새 터미널을 열면 이 값을 다시 넣는다: WS=<위 출력>
 
+# 값이 맞는지 한 번 본다. 여기서 걸리면 루트가 아닌 곳에서 시작한 것이다.
+[ -d "$WS/eldercare-fall-ai" ] && [ -d "$WS/eldercare-fall-ml-v2" ] \
+  && echo "WS OK" || echo "WS가 워크스페이스 루트가 아니다"
+
 # 두 저장소를 각각 본다. compose.yaml 외 dirty가 없어야 한다.
 git -C eldercare-fall-ai status --short
 git -C eldercare-fall-ml-v2 status --short
