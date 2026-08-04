@@ -515,15 +515,39 @@ WHERE s.facility_id = '<FACILITY_ID>'
     SELECT 1 FROM alerts a
     WHERE a.facility_id = s.facility_id AND a.space_id = s.id);
 
--- 3) 47이 확인된 뒤에만 DELETE — 위 WHERE를 그대로 옮긴다
--- DELETE FROM spaces s WHERE s.facility_id = '...' AND NOT EXISTS (...);
+-- 3) 47이 확인된 뒤에만 DELETE.
+--    아래는 2)의 WHERE와 글자 그대로 같다. 손으로 옮겨 적지 말고
+--    통째로 복사한다 — NOT EXISTS 한 덩어리를 빠뜨리면 카메라나
+--    이벤트가 붙은 방까지 지워지고, 그건 되돌릴 수 없다.
+--
+--    트랜잭션으로 감싼다. DELETE가 몇 행을 지웠는지 보고 47이 아니면
+--    COMMIT 대신 ROLLBACK 한다. 이게 마지막 방어선이다.
+BEGIN;
 
--- 4) 삭제 후 같은 count 쿼리 → 0
--- 5) 남은 방 수 확인 → 7 (카메라가 붙은 방)
---    남는 방: 2층 4개, 3층 2개, 4층 1개 (카메라가 붙은 방만)
+DELETE FROM spaces s
+WHERE s.facility_id = '<FACILITY_ID>'
+  AND NOT EXISTS (
+    SELECT 1 FROM cameras c
+    WHERE c.facility_id = s.facility_id AND c.space_id = s.id)
+  AND NOT EXISTS (
+    SELECT 1 FROM events e
+    WHERE e.facility_id = s.facility_id AND e.space_id = s.id)
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a
+    WHERE a.facility_id = s.facility_id AND a.space_id = s.id);
+-- psql이 'DELETE 47'을 출력해야 한다.
+
+-- 47이 아니면 여기서 ROLLBACK; 을 치고 멈춘다.
+-- 47이면 아래 확인 쿼리를 트랜잭션 안에서 먼저 돌린다.
+SELECT count(*) FROM spaces WHERE facility_id = '<FACILITY_ID>';
+-- 7이어야 한다. 7이 아니면 ROLLBACK;
+
+COMMIT;
+
+-- 4) COMMIT 뒤 최종 확인 — 2)의 count 쿼리를 다시 돌리면 0이어야 한다.
+--    남는 방 7개의 구성: 2층 4개, 3층 2개, 4층 1개 (카메라가 붙은 방만)
 --    1층과 5층에는 방이 하나도 안 남는다 — 현황판에서 그 층 그룹이 통째로
 --    사라진다. 정상이다(빈 층은 렌더하지 않는다, RoomStatusTreemap:82).
-SELECT count(*) FROM spaces WHERE facility_id = '<FACILITY_ID>';
 ```
 
 **중단 조건:** 2번 결과가 47이 아니면 **멈춘다.** 시드 이후 데이터가 붙었다는
