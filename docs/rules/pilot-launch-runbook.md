@@ -981,3 +981,25 @@ console.log('stale', stale.length, stale.every((t) => t.label?.includes('연결 
     (`cameraHealth.total` / `.stale`). 시설이 조용해진 지 얼마나 됐는지는
     아직 안 보인다. 시설이 하나뿐인 오늘은 메인 현황판이 같은 정보를
     더 정확히 준다.
+
+---
+
+## 이 문서를 고칠 때
+
+이 저장소는 공개다. 문서만 고쳐도 프라이버시 가드를 돌린다.
+
+```bash
+pnpm --filter backend exec jest --runInBand test/public-repo-privacy.spec.ts
+```
+
+라우팅 가능한 IP, ssh 키 파일을 직접 가리키는 형태, 개발자 홈 절대경로를
+잡는다.
+ML 레지스트리 경로는 이 저장소에 둘 수 없으므로 함께 확인한다.
+
+```bash
+node scripts/repo-residue-check.mjs --repo-role host
+```
+
+야간에 요약 표를 넣다가 이 가드에 걸려 CI가 빨간불이 됐다. `pnpm lint`만
+돌리고 넘어갔기 때문이다. **가드는 커밋하지 않은 수정도 잡으므로 push
+전에 돌리면 된다.**
