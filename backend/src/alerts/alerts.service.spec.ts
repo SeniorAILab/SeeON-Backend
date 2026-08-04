@@ -66,6 +66,32 @@ describe('AlertsService (read-model)', () => {
     expect(arg.orderBy).toEqual({ alertSeq: 'desc' });
   });
 
+  // 이벤트 목록 화면이 이 커서로 과거 페이지를 이어 받는다
+  // (`front/src/services/api/alertEndpoints.ts`의 `listAllAlerts`).
+  // `lt`가 `gt`로 바뀌면 목록이 최신 쪽으로 되감기며 같은 장을 무한히
+  // 반복해 받게 되므로 방향까지 고정한다.
+  it('applies the beforeSeq backward cursor used by the events list', async () => {
+    const { service, alert } = setup();
+    alert.findMany.mockResolvedValue([]);
+    await service.list('facility-1', { beforeSeq: 171n, limit: 200 });
+
+    const [[arg]] = alert.findMany.mock.calls as [[FindManyArg]];
+    expect(arg.where.alertSeq).toEqual({ lt: 171n });
+    expect(arg.take).toBe(200);
+    expect(arg.orderBy).toEqual({ alertSeq: 'desc' });
+  });
+
+  it('defaults to 50 when the caller omits limit', async () => {
+    // 목록이 이 기본값에 갇히면 오래된 사건이 화면에서 사라진다.
+    // `listAllAlerts`가 명시적으로 limit을 넘기는 이유다.
+    const { service, alert } = setup();
+    alert.findMany.mockResolvedValue([]);
+    await service.list('facility-1', {});
+
+    const [[arg]] = alert.findMany.mock.calls as [[FindManyArg]];
+    expect(arg.take).toBe(50);
+  });
+
   it('throws FacilityScopedNotFoundException when getOne misses', async () => {
     const { service, alert } = setup();
     alert.findUnique.mockResolvedValue(null);
