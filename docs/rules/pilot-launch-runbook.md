@@ -458,12 +458,18 @@ EDGE_FACILITY_TOKEN    시설 토큰
 > 그래서 URL은 API로 본다 — 엣지를 돌리는 기기에서:
 >
 > ```bash
-> curl -s http://127.0.0.1:8000/api/v1/connection | python3 -m json.tool
+> # 인증이 필요하다. .env.edge.prod의 relay 토큰을 헤더로 넘긴다.
+> curl -s -H "X-Edge-Relay-Token: $API_EDGE_RELAY_TOKEN" \
+>   http://127.0.0.1:8000/api/v1/connection | python3 -m json.tool
 > ```
 >
 > `events_url`과 `config_url`이 실제 프로덕션 호스트를 가리켜야 한다.
 > `api.eldercare-fall-ai.example`이 보이면 base URL을 안 넣은 것이다
-> (위 설명 참조). 대시보드 로그인이 필요하면 브라우저로 같은 주소를 연다.
+> (위 설명 참조).
+>
+> 토큰 없이 치면 401이 난다. 대시보드에 이미 로그인한 브라우저라면
+> 같은 주소를 그냥 열어도 된다 — 세션 쿠키로도 통과한다
+> (`cameras/router.py:885-887`이 relay 토큰과 대시보드 세션 둘 다 받는다).
 
 ---
 
