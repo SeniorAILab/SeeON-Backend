@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as authConstants from './auth.constants';
 import { DEFAULT_JWT_TTL, SESSION_COOKIE_NAME } from './auth.constants';
 
@@ -41,5 +43,20 @@ describe('auth session TTL', () => {
       key.toUpperCase().includes('REFRESH'),
     );
     expect(refreshKeys).toEqual([]);
+  });
+
+  it('TTL이 길어져도 즉시 무효화 수단이 남아 있다', () => {
+    // backend/src/auth/AGENTS.md: "Enforce sessionVersion ... on every tenant
+    // operation; logout invalidates existing sessions."
+    // 30일 TTL은 그 자체로 위험하지 않다 — sessionVersion이 매 요청 검증되고
+    // 로그아웃이 증가시키기 때문이다. 그 연결이 끊기면 30일짜리 토큰을
+    // 회수할 방법이 사라진다.
+    const strategy = readFileSync(join(__dirname, 'jwt.strategy.ts'), 'utf8');
+    expect(strategy).toContain(
+      'user.sessionVersion !== payload.sessionVersion',
+    );
+
+    const service = readFileSync(join(__dirname, 'auth.service.ts'), 'utf8');
+    expect(service).toContain('sessionVersion: { increment: 1 }');
   });
 });
