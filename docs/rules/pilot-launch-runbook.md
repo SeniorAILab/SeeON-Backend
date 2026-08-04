@@ -65,8 +65,11 @@ DB로 확인하고 싶으면 6단계의 `SELECT id, name FROM facilities;`를 �
 (`eldercare-fall-ml-v2/docs/runbooks/local-e2e-rtsp-source.md`에 문서화됨):
 
 ```text
-../eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>
+Senior AI Lab/eldercare-dataset-ops/ml/data/releases/v1/clips/<핀된 클립>
 ```
+
+경로는 실행 위치에 따라 다르게 쓴다 — 워크스페이스 루트에서는
+`eldercare-dataset-ops/...`, `rtsp-generator/` 안에서는 `../`를 붙인다.
 
 실재 확인함(132MB, HEVC 2520x970, 31.3초). 같은 디렉터리에 다른 클립도 있다.
 
