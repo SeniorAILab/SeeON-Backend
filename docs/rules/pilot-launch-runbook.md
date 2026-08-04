@@ -304,9 +304,22 @@ EDGE_FACILITY_TOKEN    시설 토큰
 > 어느 쪽이든 3.5-b 진행 조건대로 **연결 설정 화면에서 실제 값을 눈으로
 > 확인**한다. 가짜 도메인이 남아 있으면 heartbeat가 나가지 않는다.
 
-> **`/api`는 붙이지 않아도 된다.** base에서 `/api/v1/events`를 파생하도록
-> 이번에 고쳤다(`store.py:_normalize_api_base`). 이미 `/api`로 끝나면
-> 중복해서 붙이지 않는다.
+> **`/api` 처리는 두 방식이 다르다. 여기서 틀리면 조용히 404가 된다.**
+>
+> - `API_BACKEND_BASE_URL`을 쓰면 **`/api`를 붙이지 않아도 된다.**
+>   `store.py:_normalize_api_base`가 base에 `/api`를 붙여
+>   `{base}/api/v1/events`를 만든다. 이미 `/api`로 끝나면 중복해서 붙이지
+>   않는다.
+> - `API_BACKEND_EVENTS_URL`/`API_BACKEND_CONFIG_URL`을 쓰면 **`/api`를
+>   직접 넣어야 한다.** 이 두 변수는 `store.py:145,150`에서 정규화 없이
+>   그대로 쓰인다. `.env.edge.prod.example`의 예시가
+>   `.../api/v1/events`인 것도 그래서다. 호스트만 바꾸고 `/api/v1/events`는
+>   그대로 둔다.
+>
+> 이 구분을 놓치면 엣지가 `{host}/v1/events/...`로 쏘고 NestJS는 모든
+> 라우트를 `/api` 아래 두므로 404가 난다. 엣지는 그걸 조용한 실패로
+> 넘겨서 **카메라가 계속 online으로 보인다** — 이번에 고친 결함이 정확히
+> 이것이다(`store.py:96-113` 주석).
 
 > **함정 — 저장된 설정이 env를 이긴다.** `store.py:153-154`가
 > `saved.get(...) or os.environ.get(...)` 순서다. 예전에 대시보드에서 저장한
