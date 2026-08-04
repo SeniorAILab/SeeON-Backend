@@ -1079,6 +1079,9 @@ console.log('stale', stale.length, stale.every((t) => t.label?.includes('연결 
 
 이 저장소는 공개다. 문서만 고쳐도 프라이버시 가드를 돌린다.
 
+**아래는 `eldercare-fall-ai/` 안에서 실행한다.** 앞 절들과 달리 이 절은
+아침 절차가 아니라 이 문서를 편집할 때 쓰는 것이라 기준이 다르다.
+
 ```bash
 pnpm --filter backend exec jest --runInBand test/public-repo-privacy.spec.ts
 ```
