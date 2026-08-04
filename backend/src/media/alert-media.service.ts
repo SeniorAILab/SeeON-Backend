@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { FileHandle } from 'node:fs/promises';
 import type { Role } from '@prisma/client';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
@@ -10,6 +14,14 @@ import {
 } from './alert-media.repository.js';
 import { AlertMediaFileError, openAlertMediaFile } from './alert-media-file.js';
 import { readClipStorageConfig } from './clip-storage.config.js';
+
+/**
+ * 근거 영상 기능이 꺼져 있음을 나타내는 코드.
+ *
+ * "이 알림에 클립이 없음"(일반 404)과 반드시 구분돼야 한다 — 화면이
+ * 지어낸 상태를 말하지 않게 하는 것이 목적이다.
+ */
+export const MEDIA_FEATURE_DISABLED_CODE = 'MEDIA_FEATURE_DISABLED';
 
 export type AlertMediaMetadata =
   | {
@@ -163,7 +175,17 @@ export class AlertMediaService {
   }
 
   private requireEnabled(): void {
-    if (process.env.EVENT_CLIPS_ENABLED !== 'true') throw notFound();
+    // 기능이 꺼진 것과 "이 알림에 클립이 없는 것"은 다른 사실이다. 같은 404를
+    // 쓰면 화면이 "이 알림에 연결된 근거 영상이 없습니다"라고 말하는데 실제로는
+    // 녹화 자체가 켜져 있지 않다 — 원장이 그 알림만 녹화에 실패한 것으로
+    // 오해한다. 구분 가능한 코드를 실어 보낸다.
+    if (process.env.EVENT_CLIPS_ENABLED !== 'true') {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'media',
+        code: MEDIA_FEATURE_DISABLED_CODE,
+      });
+    }
   }
 }
 
