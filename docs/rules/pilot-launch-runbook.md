@@ -915,6 +915,14 @@ DOM을 보기 전에 데이터가 맞는지부터 본다. 화면이 틀린 것�
 확인했지만, `spaces`/`facilities`는 리네임 이력이 없어 DDL로 확정하지
 못했다. 한 줄로 실제 이름을 확인하고 시작한다.
 
+접속은 6단계와 같다. 이미 닫았다면 다시 연다.
+
+```bash
+ssh iwinv 'set -a; . /opt/eldercare-fall-ai/shared/.env; set +a;
+  docker exec -it -e PGPASSWORD="$POSTGRES_PASSWORD" eldercare-fall-db \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
 ```sql
 \dt
 -- 기대: cameras, spaces, alerts, facilities (다르면 아래 SQL의 이름을 맞춘다)
