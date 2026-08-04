@@ -66,8 +66,15 @@ shasum -a 256 "$CLIP"
 
 ## 0. 시작 전 확인
 
+> 아래는 **워크스페이스 루트**(`Senior AI Lab/`)에서 실행한다. 루트는 git
+> 저장소가 아니므로 `git` 명령은 `-C <저장소>`로 대상을 지정한다. 그냥
+> `git status`를 치면 `fatal: not a git repository`로 죽는다.
+
 ```bash
-git status --short          # compose.yaml 외 dirty 없어야 함
+# 두 저장소를 각각 본다. compose.yaml 외 dirty가 없어야 한다.
+git -C eldercare-fall-ai status --short
+git -C eldercare-fall-ml-v2 status --short
+
 gh pr checks 657 --repo SeniorAILab/eldercare-fall-ai
 gh pr checks 658 --repo SeniorAILab/eldercare-fall-ai
 gh pr checks 142 --repo SeniorAILab/eldercare-fall-ml-v2
@@ -77,6 +84,10 @@ for t in uv gh docker pnpm node; do printf '%-8s ' "$t"; command -v "$t" >/dev/n
 docker info >/dev/null && echo "docker 데몬 실행 중"
 # 확인된 버전: uv 0.10.4 / gh 2.97.0 / docker 29.6.1 / pnpm 11.0.0 / node v24.19.0
 # psql은 로컬에 없어도 된다 — 6단계는 docker exec로 DB 컨테이너 안에서 실행한다.
+
+# gh 로그인 — 2단계 병합, 2.5 워크플로 실행·아티팩트 받기에 전부 필요하다.
+gh auth status
+# 기대: Logged in to github.com account <계정>
 
 # 프로덕션 접속 경로 — 3~6단계에서 쓴다. 여기서 미리 확인한다.
 ssh -o BatchMode=yes iwinv 'echo ok && hostname'
@@ -226,6 +237,7 @@ ssh iwinv '/opt/eldercare-fall-ai/repo/scripts/deploy/iwinv-deploy.sh --prefligh
 여유가 확인된 뒤에 발행한다.
 
 ```bash
+cd "eldercare-fall-ai"   # 루트에서 치면 pnpm이 워크스페이스를 못 찾고 죽는다
 # 현재 최신 릴리스는 v0.5.7이므로 다음은 v0.5.8이다.
 # 태그는 vMAJOR.MINOR.PATCH만 받는다 — v0.5.8-rc1 같은 형식은 거부된다
 # (create-production-release.mjs:70).
@@ -431,6 +443,7 @@ uv run rtsp-generator list        # RTSP URL 확인
 정리(끝난 뒤):
 
 ```bash
+cd "rtsp-generator"      # 위에서 다른 디렉터리로 옮겨 갔다면 다시 들어간다
 uv run rtsp-generator stop --name nursing-home
 ```
 
