@@ -349,13 +349,27 @@ API_EDGE_RELAY_TOKEN  API_DASHBOARD_USERNAME  API_DASHBOARD_PASSWORD
 API_FACILITY_ID  CLIP_STORE_HOST_DIR
 ```
 
-**맥북에서 반드시 바꿀 것:**
+**맥북에서 손대야 할 값 7개.** 야간에 예시 파일을 그대로 복사해
+`docker compose config`를 돌려 실측했다 — 아래를 다 채워야 통과한다.
 
 ```bash
-# .env.edge.prod.example:33 기본값이 cuda다. 맥북은 mps.
-ML_WORKER_PROFILE=mps
-API_FACILITY_ID=<FACILITY_ID>
+# (1) 예시 파일이 아예 비워 둔 것 3개. 안 채우면 compose가
+#     "required variable ... is missing a value"로 즉시 실패한다.
+API_EDGE_RELAY_TOKEN=<엣지 relay 토큰>
+API_DASHBOARD_USERNAME=<대시보드 계정>      # admin/admin 금지
+API_DASHBOARD_PASSWORD=<대시보드 비밀번호>
+
+# (2) 예시 값이 맥북에 안 맞는 것 4개
+ML_WORKER_PROFILE=mps          # 예시는 cuda(:33). 맥북은 mps
+API_FACILITY_ID=<FACILITY_ID>  # 예시는 <facility-id> 플레이스홀더
+ML_API_IMAGE=…                 # 2.5에서 복사한 digest 두 줄로 교체
+ML_WORKER_IMAGE=…              #  (예시는 <git-sha> 플레이스홀더)
 ```
+
+`CLIP_STORE_HOST_DIR`은 예시 기본값(`/srv/eldercare/clip-store`)이 그대로
+해석되므로 compose는 통과한다. 다만 맥북에 그 경로가 없으면 클립 저장이
+실패하므로, 오늘 I2가 꺼져 있어 문제가 없더라도 **맥북에 있는 경로로
+바꿔 두는 편이 낫다.**
 
 ```bash
 docker compose --env-file .env.edge.prod -f compose.edge.yaml up -d
