@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { AlertStatusDto } from './dto/alert-status.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -76,8 +76,21 @@ export class AlertsService {
   /**
    * Resolve an alert (NEW/ACKED → RESOLVED). Delegated to the writer for
    * serialized transition + audit stamp + post-commit SSE emit.
+   *
+   * 조치 기록(note)이 하나도 없으면 해결 처리를 거부한다. 요양보호사가 방에
+   * 가서 무엇을 했는지가 남지 않은 채 알림만 사라지면, 사고 후 근거가 없다.
    */
-  resolve(facilityId: string, id: string, actorUserId: string) {
+  async resolve(facilityId: string, id: string, actorUserId: string) {
+    const noteCount = await this.prisma.withFacilityContext(
+      facilityId,
+      (tx: Prisma.TransactionClient) =>
+        tx.alertNote.count({ where: { alertId: id } }),
+    );
+    if (noteCount === 0) {
+      throw new BadRequestException(
+        '조치 결과를 먼저 기록해야 해결 완료로 바꿀 수 있습니다.',
+      );
+    }
     return this.writer.resolveAlert({ facilityId, alertId: id, actorUserId });
   }
 

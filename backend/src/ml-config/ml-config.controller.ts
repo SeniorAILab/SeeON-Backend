@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { JwtAuthGuard, RequireFacilityGuard } from '../auth/jwt-auth.guard.js';
+import { RequireCapability, RolesGuard } from '../auth/roles.guard.js';
 import { EdgeIngestTokenGuard } from '../events/edge-ingest-token.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import {
@@ -42,7 +43,11 @@ export class MlConfigController {
   @Put(':facilityId/night-window')
   @HttpCode(200)
   @ApiCookieAuth()
-  @UseGuards(JwtAuthGuard, RequireFacilityGuard)
+  // 야간정책은 낙상 감지 민감도를 바꾼다. 교대 근무자(STAFF)가 임의로
+  // 건드릴 수 있으면 안 되므로 시설 관리자 이상으로 제한한다.
+  // 위의 GET은 엣지 워커가 공유 토큰으로 pull하는 경로이므로 건드리지 않는다.
+  @UseGuards(JwtAuthGuard, RequireFacilityGuard, RolesGuard)
+  @RequireCapability('facilityAdmin')
   @UseInterceptors(FacilityContextInterceptor)
   updateNightWindow(
     @Req() req: RequestWithAuth,

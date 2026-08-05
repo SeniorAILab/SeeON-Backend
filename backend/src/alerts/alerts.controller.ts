@@ -94,6 +94,18 @@ export class AlertsController {
   }
 
   @ApiOperation({
+    summary: 'Acknowledge an alert',
+    description:
+      'Marks an alert acknowledged (NEW → ACKED) without resolving it. 요양보호사가 ' +
+      '알림을 확인하고 현장으로 가는 단계이며 조치 결과는 아직 기록되지 않았다.',
+  })
+  @Patch(':id/ack')
+  @HttpCode(200)
+  ack(@Req() req: RequestWithAuth, @Param('id') id: string) {
+    return this.service.ack(requireFacilityId(req), id, requireUserId(req));
+  }
+
+  @ApiOperation({
     summary: 'Resolve an alert',
     description:
       'Marks an alert resolved by the current user and emits the live alert-updated dashboard frame.',
