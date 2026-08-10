@@ -2,9 +2,11 @@ import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { configureHttpBodyParsing } from './common/json/strict-json-parser.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  configureHttpBodyParsing(app);
   if (process.env.FRONT_ORIGIN) {
     app.enableCors({ origin: process.env.FRONT_ORIGIN, credentials: true });
   }
