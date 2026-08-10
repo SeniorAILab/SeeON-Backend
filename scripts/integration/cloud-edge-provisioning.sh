@@ -194,11 +194,14 @@ ML_PID=$!
 wait_http "$CLOUD_EDGE_ML_URL/health/live" "$ML_LOG"
 
 unset EDGE_FACILITY_TOKEN
-pnpm --dir "$AI_REPO" --filter backend test -- --runInBand \
-  test/edge-legacy-compat-characterization.spec.ts \
-  test/alert-media-download.spec.ts
-pnpm --dir "$AI_REPO" --filter backend test -- --runInBand \
-  test/cloud-edge-provisioning.e2e-spec.ts
+(
+  cd "$AI_REPO"
+  pnpm --filter backend test -- --runInBand \
+    test/edge-legacy-compat-characterization.spec.ts \
+    test/alert-media-download.spec.ts
+  pnpm --filter backend test -- --runInBand \
+    test/cloud-edge-provisioning.e2e-spec.ts
+)
 (
   cd "$ML_REPO"
   uv run pytest -q -m integration tests/test_cloud_edge_provisioning_integration.py
@@ -207,16 +210,22 @@ pnpm --dir "$AI_REPO" --filter backend test -- --runInBand \
 OLD_AI_DIR="$TMP_DIR/old-ai"
 mkdir -p "$OLD_AI_DIR"
 GIT_MASTER=1 git -C "$AI_REPO" archive 14c484124a2d74972b15ee6d34860c3593b1580b | tar -x -C "$OLD_AI_DIR"
-pnpm --dir "$OLD_AI_DIR" install --frozen-lockfile
-pnpm --dir "$OLD_AI_DIR/backend" exec prisma generate
-pnpm --dir "$OLD_AI_DIR" --filter backend build
+(
+  cd "$OLD_AI_DIR"
+  pnpm install --frozen-lockfile
+  pnpm --dir backend exec prisma generate
+  pnpm --filter backend build
+)
 kill "$AI_PID"
 wait "$AI_PID" 2>/dev/null || true
 AI_PID=
 export EDGE_FACILITY_TOKEN="$EDGE_TOKEN"
-PORT="$AI_PORT" pnpm --dir "$OLD_AI_DIR" --filter backend start:prod >"$TMP_DIR/old-ai.log" 2>&1 &
+(
+  cd "$OLD_AI_DIR"
+  PORT="$AI_PORT" pnpm --filter backend start:prod
+) >"$TMP_DIR/old-ai.log" 2>&1 &
 AI_PID=$!
-wait_http "$CLOUD_EDGE_AI_URL/health"
+wait_http "$CLOUD_EDGE_AI_URL/health" "$TMP_DIR/old-ai.log"
 LOGIN_JSON="$TMP_DIR/login.json"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 CAMERAS_JSON="$TMP_DIR/cameras.json"
