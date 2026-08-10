@@ -47,6 +47,13 @@ gate_artifacts() {
     image=$(json_value "$SEAL" ai "$key")
     case "$image" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) fail "sealed AI $key is not digest-pinned" ;; esac
   done
+  ml_sha=$(json_value "$SEAL" ml sha)
+  case "$ml_sha" in *[!0-9a-f]*) fail 'sealed ML SHA is invalid' ;; esac
+  [ "${#ml_sha}" -eq 40 ] || fail 'sealed ML SHA is invalid'
+  for key in apiImage workerImage; do
+    image=$(json_value "$SEAL" ml "$key")
+    case "$image" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) fail "sealed ML $key is not digest-pinned" ;; esac
+  done
 }
 check_readback() {
   [ -f "$READBACK" ] || fail 'AI API readback receipt is missing'
@@ -61,6 +68,13 @@ check_readback() {
   [ "$(json_value "$READBACK" queuesDrained)" = true ] || fail 'AI queues are not drained'
   [ "$(json_value "$READBACK" backupVerified)" = true ] || fail 'AI backup is missing or unverifiable'
   [ "$(json_value "$READBACK" legacyCompatibility)" = true ] || fail 'legacy rollback compatibility is disabled'
+  if [ "$FULL_LIFECYCLE" = true ]; then
+    [ "$(json_value "$READBACK" fullLifecycleVerified)" = true ] || fail 'AI full lifecycle API readback is incomplete'
+    [ "$(json_value "$READBACK" rollbackDryRunVerified)" = true ] || fail 'AI rollback dry-run readback is incomplete'
+  fi
+  if [ "$SCOPE_READBACK" = true ]; then
+    [ "$(json_value "$READBACK" scopeVerified)" = true ] || fail 'AI scope API readback is incomplete'
+  fi
 }
 fixture() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/edge-provisioning-smoke.XXXXXX")
@@ -72,7 +86,7 @@ fixture() {
 {"schemaVersion":1,"approvedPlanSha256":"$digest","ai":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","backendImage":"local/backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","frontImage":"local/front@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"ml":{"sha":"dddddddddddddddddddddddddddddddddddddddd","apiImage":"local/api@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","workerImage":"local/worker@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}}
 EOF
   cat > "$tmp/readback.json" <<'EOF'
-{"schemaVersion":1,"deploySha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","database":"ok","deployLockAvailable":true,"jenkinsIdle":true,"memorySwapFreeMiB":1024,"diskFreeMiB":10240,"volumesHealthy":true,"queuesDrained":true,"backupVerified":true,"legacyCompatibility":true}
+{"schemaVersion":1,"deploySha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","database":"ok","deployLockAvailable":true,"jenkinsIdle":true,"memorySwapFreeMiB":1024,"diskFreeMiB":10240,"volumesHealthy":true,"queuesDrained":true,"backupVerified":true,"legacyCompatibility":true,"fullLifecycleVerified":true,"rollbackDryRunVerified":true,"scopeVerified":true}
 EOF
   PLAN=$tmp/plan.md DRAFT=$tmp/draft.md SEAL=$tmp/seal.json READBACK=$tmp/readback.json
   gate_artifacts
@@ -98,6 +112,27 @@ EOF
       if (check_readback) >/dev/null 2>&1; then fail "$mutation rejection fixture passed"; fi
       READBACK=$tmp/readback.json
     fi
+  done
+  for mutation in ml-sha ml-image; do
+    cp "$tmp/seal.json" "$tmp/bad-seal.json"
+    case "$mutation" in
+      ml-sha) node -e 'const f=process.argv[1],v=require(f);v.ml.sha="invalid";require("node:fs").writeFileSync(f,JSON.stringify(v))' "$tmp/bad-seal.json" ;;
+      ml-image) node -e 'const f=process.argv[1],v=require(f);v.ml.workerImage="local/worker:mutable";require("node:fs").writeFileSync(f,JSON.stringify(v))' "$tmp/bad-seal.json" ;;
+    esac
+    SEAL=$tmp/bad-seal.json
+    if (gate_artifacts) >/dev/null 2>&1; then fail "$mutation rejection fixture passed"; fi
+    SEAL=$tmp/seal.json
+  done
+  for mutation in lifecycle rollback scope; do
+    cp "$tmp/readback.json" "$tmp/bad.json"
+    case "$mutation" in
+      lifecycle) node -e 'const f=process.argv[1],v=require(f);v.fullLifecycleVerified=false;require("node:fs").writeFileSync(f,JSON.stringify(v))' "$tmp/bad.json"; FULL_LIFECYCLE=true ;;
+      rollback) node -e 'const f=process.argv[1],v=require(f);v.rollbackDryRunVerified=false;require("node:fs").writeFileSync(f,JSON.stringify(v))' "$tmp/bad.json"; FULL_LIFECYCLE=true ;;
+      scope) node -e 'const f=process.argv[1],v=require(f);v.scopeVerified=false;require("node:fs").writeFileSync(f,JSON.stringify(v))' "$tmp/bad.json"; SCOPE_READBACK=true ;;
+    esac
+    READBACK=$tmp/bad.json
+    if (check_readback) >/dev/null 2>&1; then fail "$mutation rejection fixture passed"; fi
+    READBACK=$tmp/readback.json FULL_LIFECYCLE=false SCOPE_READBACK=false
   done
   printf '%s\n' 'EDGE_PROVISIONING_SMOKE_FIXTURE_OK'
 }
