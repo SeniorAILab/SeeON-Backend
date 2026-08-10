@@ -23,7 +23,7 @@ function sha256(path) {
 
 function parseArgs(argv) {
   if (argv.length === 1 && argv[0] === '--fixture') return { fixture: true };
-  const values = { fixture: false, seal: '' };
+  const values = { fixture: false, seal: '', sealSha256: '' };
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
@@ -34,9 +34,10 @@ function parseArgs(argv) {
     else if (flag === '--ai') values.ai = value;
     else if (flag === '--ml') values.ml = value;
     else if (flag === '--seal') values.seal = value;
+    else if (flag === '--seal-sha256') values.sealSha256 = value;
     else throw new EvidenceError(`unknown argument: ${flag}`);
   }
-  for (const key of ['plan', 'planSha256', 'evidence', 'ai', 'ml']) {
+  for (const key of ['plan', 'planSha256', 'evidence', 'ai', 'ml', 'sealSha256']) {
     if (!values[key]) throw new EvidenceError(`missing --${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`);
   }
   return values;
@@ -51,18 +52,54 @@ function readJson(path, label) {
 }
 
 function validateSeal(seal, planSha256) {
-  if (seal.schemaVersion !== 1) throw new EvidenceError('seal schemaVersion must be 1');
+  if (seal.schemaVersion !== 2) throw new EvidenceError('seal schemaVersion must be 2');
   if (seal.approvedPlanSha256 !== planSha256) throw new EvidenceError('seal approved-plan binding mismatch');
-  for (const [name, record] of Object.entries({ ai: seal.ai, ml: seal.ml })) {
+  for (const [name, record, repository] of [
+    ['ai', seal.ai, 'SeniorAILab/eldercare-fall-ai'],
+    ['ml', seal.ml, 'SeniorAILab/eldercare-fall-ml-v2'],
+  ]) {
     if (!record || typeof record !== 'object') throw new EvidenceError(`seal ${name} record is missing`);
     if (!GIT_SHA.test(record.sha ?? '')) throw new EvidenceError(`seal ${name} SHA is invalid`);
+    if (!GIT_SHA.test(record.tree ?? '')) throw new EvidenceError(`seal ${name} tree is invalid`);
+    if (record.repository !== repository) throw new EvidenceError(`seal ${name} repository identity is invalid`);
   }
-  for (const [label, image] of [
-    ['AI backend', seal.ai.backendImage], ['AI front', seal.ai.frontImage],
-    ['ML API', seal.ml.apiImage], ['ML worker', seal.ml.workerImage],
+  for (const [label, image, revision, repository] of [
+    ['AI backend', seal.ai.backendImage, seal.ai.sha, seal.ai.repository],
+    ['AI front', seal.ai.frontImage, seal.ai.sha, seal.ai.repository],
+    ['ML API', seal.ml.apiImage, seal.ml.sha, seal.ml.repository],
+    ['ML worker', seal.ml.workerImage, seal.ml.sha, seal.ml.repository],
   ]) {
-    if (!IMAGE_DIGEST.test(image ?? '')) throw new EvidenceError(`${label} image is not digest-pinned`);
+    if (!image || typeof image !== 'object') throw new EvidenceError(`${label} image record is missing`);
+    if (!IMAGE_DIGEST.test(image.ref ?? '')) throw new EvidenceError(`${label} image is not digest-pinned`);
+    if (!/^sha256:[a-f0-9]{64}$/.test(image.imageId ?? '')) throw new EvidenceError(`${label} image ID is invalid`);
+    if (!/^linux\/(?:amd64|arm64)$/.test(image.platform ?? '')) throw new EvidenceError(`${label} platform is invalid`);
+    if (image.revision !== revision || image.repository !== repository) throw new EvidenceError(`${label} source provenance mismatch`);
   }
+}
+
+function repositoryIdentity(path) {
+  const remote = execFileSync('git', ['-C', path, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
+  const match = remote.match(/SeniorAILab\/(eldercare-fall-(?:ai|ml-v2))(?:\.git)?$/);
+  if (!match) throw new EvidenceError(`unrecognized repository origin: ${remote}`);
+  return `SeniorAILab/${match[1]}`;
+}
+
+function verifyRepository(path, record, label) {
+  execFileSync('git', ['-C', path, 'cat-file', '-e', `${record.sha}^{commit}`]);
+  if (gitHead(path) !== record.sha) throw new EvidenceError(`${label} worktree is not at sealed SHA`);
+  const tree = execFileSync('git', ['-C', path, 'rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
+  if (tree !== record.tree) throw new EvidenceError(`${label} commit tree mismatch`);
+  if (repositoryIdentity(path) !== record.repository) throw new EvidenceError(`${label} repository origin mismatch`);
+}
+
+function verifyImage(image, label) {
+  const raw = execFileSync('docker', ['image', 'inspect', image.ref], { encoding: 'utf8' });
+  const [inspected] = JSON.parse(raw);
+  if (!inspected || inspected.Id !== image.imageId) throw new EvidenceError(`${label} image ID mismatch`);
+  if (`${inspected.Os}/${inspected.Architecture}` !== image.platform) throw new EvidenceError(`${label} platform mismatch`);
+  const labels = inspected.Config?.Labels ?? {};
+  if (labels['org.opencontainers.image.revision'] !== image.revision) throw new EvidenceError(`${label} revision label mismatch`);
+  if (labels['org.opencontainers.image.source'] !== image.repository) throw new EvidenceError(`${label} source label mismatch`);
 }
 
 function assertRedacted(path) {
@@ -85,17 +122,21 @@ function fixture() {
     writeFileSync(plan, 'approved fixture plan\n');
     const planDigest = sha256(plan);
     const seal = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       approvedPlanSha256: planDigest,
       ai: {
+        repository: 'SeniorAILab/eldercare-fall-ai',
         sha: 'a'.repeat(40),
-        backendImage: `local/backend@sha256:${'b'.repeat(64)}`,
-        frontImage: `local/front@sha256:${'c'.repeat(64)}`,
+        tree: '1'.repeat(40),
+        backendImage: { ref: `local/backend@sha256:${'b'.repeat(64)}`, imageId: `sha256:${'3'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ai' },
+        frontImage: { ref: `local/front@sha256:${'c'.repeat(64)}`, imageId: `sha256:${'4'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ai' },
       },
       ml: {
+        repository: 'SeniorAILab/eldercare-fall-ml-v2',
         sha: 'd'.repeat(40),
-        apiImage: `local/api@sha256:${'e'.repeat(64)}`,
-        workerImage: `local/worker@sha256:${'f'.repeat(64)}`,
+        tree: '2'.repeat(40),
+        apiImage: { ref: `local/api@sha256:${'e'.repeat(64)}`, imageId: `sha256:${'5'.repeat(64)}`, platform: 'linux/arm64', revision: 'd'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ml-v2' },
+        workerImage: { ref: `local/worker@sha256:${'f'.repeat(64)}`, imageId: `sha256:${'6'.repeat(64)}`, platform: 'linux/amd64', revision: 'd'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ml-v2' },
       },
     };
     validateSeal(seal, planDigest);
@@ -104,7 +145,9 @@ function fixture() {
     for (const invalid of [
       { ...seal, approvedPlanSha256: '0'.repeat(64) },
       { ...seal, ai: { ...seal.ai, sha: 'short' } },
-      { ...seal, ml: { ...seal.ml, workerImage: 'mutable:latest' } },
+      { ...seal, ml: { ...seal.ml, workerImage: { ...seal.ml.workerImage, ref: 'mutable:latest' } } },
+      { ...seal, ai: { ...seal.ai, repository: 'attacker/repository' } },
+      { ...seal, ml: { ...seal.ml, apiImage: { ...seal.ml.apiImage, revision: '0'.repeat(40) } } },
     ]) {
       let rejected = false;
       try { validateSeal(invalid, planDigest); } catch (error) {
@@ -132,12 +175,18 @@ function verify(options) {
   const ai = resolve(options.ai);
   const ml = resolve(options.ml);
   if (!SHA256.test(options.planSha256)) throw new EvidenceError('approved plan SHA-256 is invalid');
+  if (!SHA256.test(options.sealSha256)) throw new EvidenceError('sealed RC SHA-256 anchor is invalid');
   if (sha256(plan) !== options.planSha256) throw new EvidenceError('approved plan content changed');
   const sealPath = resolve(options.seal || join(evidence, 'final-rc-seal.json'));
+  if (sha256(sealPath) !== options.sealSha256) throw new EvidenceError('sealed RC content-address mismatch');
   const seal = readJson(sealPath, 'final RC seal');
   validateSeal(seal, options.planSha256);
-  if (gitHead(ai) !== seal.ai.sha) throw new EvidenceError('AI worktree is not at sealed SHA');
-  if (gitHead(ml) !== seal.ml.sha) throw new EvidenceError('ML worktree is not at sealed SHA');
+  verifyRepository(ai, seal.ai, 'AI');
+  verifyRepository(ml, seal.ml, 'ML');
+  verifyImage(seal.ai.backendImage, 'AI backend');
+  verifyImage(seal.ai.frontImage, 'AI front');
+  verifyImage(seal.ml.apiImage, 'ML API');
+  verifyImage(seal.ml.workerImage, 'ML worker');
   for (let task = 1; task <= 20; task += 1) {
     const path = join(evidence, `task-${task}-edge-driven-facility-provisioning.txt`);
     assertRedacted(path);
