@@ -99,12 +99,76 @@ enum MediaAccessOutcome {
   FAILED
 }
 
+enum EdgeCredentialLifecycle {
+  ACTIVE
+  GRACE
+  REVOKED
+  EXPIRED
+}
+
+enum EdgeInstallationState {
+  PENDING_CLAIM
+  CLAIMED
+  REPLACED
+  DEACTIVATED
+}
+
+enum EdgeOperationStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+}
+
+enum EdgeTopologySnapshotStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+enum EdgeOmissionPreviewStatus {
+  PENDING
+  CONFIRMED
+  EXPIRED
+  INVALIDATED
+}
+
+enum EdgeTopologyEntityKind {
+  FLOOR
+  ROOM
+  CAMERA
+}
+
+enum ProvisioningSource {
+  PRODUCT
+  EDGE
+}
+
+enum EdgeValidationGrantStatus {
+  ACTIVE
+  CLOSED
+  EXPIRED
+}
+
+enum MediaDownloadAuditState {
+  STARTED
+  COMPLETED
+  ABORTED
+}
+
+enum MediaDownloadOutboxState {
+  PENDING
+  COMPLETED
+}
+
 // ─── Root/auth tables (not tenant-domain list/query surfaces) ────────────────
 
 /// Root tenant. Not RLS-protected (gated by app-layer membership check).
 model Facility {
   id                         String   @id @default(cuid())
   name                       String
+  edgeCode                   String?  @unique @map("edge_code") @db.VarChar(13)
+  topologyRevision           Int      @default(0) @map("topology_revision")
   businessRegistrationNumber String?  @map("business_registration_number")
   address                    String?  @map("address")
   phone                      String?  @map("phone")
@@ -124,6 +188,17 @@ model Facility {
 
   mediaClips MediaClip[]
   mlConfig   MlFacilityConfig?
+
+  edgeInstallations       EdgeInstallation[]
+  edgeAdminOperations     EdgeAdminOperation[]
+  edgeTopologySnapshots   EdgeTopologySnapshot[]
+  edgeOmissionPreviews    EdgeOmissionPreview[]
+  edgeTopologyAliases     EdgeTopologyAlias[]
+  edgeOwnershipTransfers  EdgeOwnershipTransfer[]
+  edgeValidationGrants    EdgeValidationGrant[]
+  edgeProvisioningAudits  EdgeProvisioningAudit[]
+  mediaDownloadAudits     MediaDownloadAudit[]
+  mediaDownloadOutboxJobs MediaDownloadOutboxJob[]
 
   @@map("facilities")
 }
@@ -149,10 +224,12 @@ model MlFacilityConfig {
 /// must access users by authenticated user/session only, then bind facilityId before
 /// tenant-domain data queries. No tenant data list/detail route may query User.
 model User {
-  id         String  @id @default(cuid())
+  id                 String  @id @default(cuid())
   /// Null until onboarding binds the user to a facility (see model doc).
-  facilityId String? @map("facility_id")
-  email      String? @unique
+  facilityId         String? @map("facility_id")
+  email              String? @unique
+  /// Null for ordinary users; set once for a host-managed bootstrap identity.
+  managedIdentityKey String? @unique @map("managed_identity_key")
 
   passwordHash       String?  @map("password_hash")
   phone              String?  @map("phone")
@@ -179,18 +256,24 @@ model User {
 /// Camera. Composite unique (facilityId, id) supports composite FK
 /// references from Alert and Event rows.
 model Camera {
-  id         String    @id @default(cuid())
-  facilityId String    @map("facility_id")
-  spaceId    String    @map("space_id")
-  label      String
-  rtspUrl    String?   @map("rtsp_url")
-  lastSeenAt DateTime? @map("last_seen_at")
-  online     Boolean   @default(false)
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id                 String             @id @default(cuid())
+  facilityId         String             @map("facility_id")
+  spaceId            String             @map("space_id")
+  label              String
+  rtspUrl            String?            @map("rtsp_url")
+  lastSeenAt         DateTime?          @map("last_seen_at")
+  online             Boolean            @default(false)
+  isActive           Boolean            @default(true) @map("is_active")
+  provisioningSource ProvisioningSource @default(PRODUCT) @map("provisioning_source")
+  /// Null while the camera remains product-owned.
+  edgeInstallationId String?            @map("edge_installation_id") @db.Uuid
+  edgeRef            String?            @map("edge_ref") @db.VarChar(64)
+  createdAt          DateTime           @default(now()) @map("created_at")
 
-  facility Facility @relation(fields: [facilityId], references: [id])
-  space    Space    @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  alerts   Alert[]
+  facility         Facility          @relation(fields: [facilityId], references: [id])
+  space            Space             @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  edgeInstallation EdgeInstallation? @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id])
+  alerts           Alert[]
 
   events     Event[]
   mediaClips MediaClip[]
@@ -198,6 +281,7 @@ model Camera {
   @@unique([facilityId, id])
   @@unique([facilityId, label])
   @@unique([facilityId, spaceId])
+  @@unique([facilityId, edgeInstallationId, edgeRef])
   @@map("cameras")
 }
 
@@ -446,43 +530,352 @@ model MediaAccessLog {
 /// Facility floor. RLS-protected. Composite unique (facilityId, id) supports
 /// composite child FKs from spaces.
 model Floor {
-  id         String   @id @default(cuid())
-  facilityId String   @map("facility_id")
-  name       String
-  orderIndex Int      @map("order_index")
-  isActive   Boolean  @default(true) @map("is_active")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id                 String             @id @default(cuid())
+  facilityId         String             @map("facility_id")
+  name               String
+  orderIndex         Int                @map("order_index")
+  isActive           Boolean            @default(true) @map("is_active")
+  provisioningSource ProvisioningSource @default(PRODUCT) @map("provisioning_source")
+  /// Null while the floor remains product-owned.
+  edgeInstallationId String?            @map("edge_installation_id") @db.Uuid
+  edgeRef            String?            @map("edge_ref") @db.VarChar(64)
+  createdAt          DateTime           @default(now()) @map("created_at")
 
-  facility Facility @relation(fields: [facilityId], references: [id])
-  spaces   Space[]
+  facility         Facility          @relation(fields: [facilityId], references: [id])
+  edgeInstallation EdgeInstallation? @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id])
+  spaces           Space[]
 
   @@unique([facilityId, name])
   @@unique([facilityId, id])
+  @@unique([facilityId, edgeInstallationId, edgeRef])
   @@map("floors")
 }
 
 /// Facility space/room.
 model Space {
-  id            String    @id @default(cuid())
-  facilityId    String    @map("facility_id")
-  floorId       String    @map("floor_id")
-  name          String
-  type          SpaceType
-  capacity      Int
-  isActive      Boolean   @default(true) @map("is_active")
-  assignedStaff String?   @map("assigned_staff")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  id                 String             @id @default(cuid())
+  facilityId         String             @map("facility_id")
+  floorId            String             @map("floor_id")
+  name               String
+  type               SpaceType
+  capacity           Int
+  isActive           Boolean            @default(true) @map("is_active")
+  provisioningSource ProvisioningSource @default(PRODUCT) @map("provisioning_source")
+  /// Null while the room remains product-owned.
+  edgeInstallationId String?            @map("edge_installation_id") @db.Uuid
+  edgeRef            String?            @map("edge_ref") @db.VarChar(64)
+  assignedStaff      String?            @map("assigned_staff")
+  createdAt          DateTime           @default(now()) @map("created_at")
 
-  facility Facility @relation(fields: [facilityId], references: [id])
-  floor    Floor    @relation(fields: [facilityId, floorId], references: [facilityId, id])
-  camera   Camera?
-  alerts   Alert[]
+  facility         Facility          @relation(fields: [facilityId], references: [id])
+  floor            Floor             @relation(fields: [facilityId, floorId], references: [facilityId, id])
+  edgeInstallation EdgeInstallation? @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id])
+  camera           Camera?
+  alerts           Alert[]
 
   events Event[]
 
   @@unique([facilityId, floorId, name])
   @@unique([facilityId, id])
+  @@unique([facilityId, edgeInstallationId, edgeRef])
   @@map("spaces")
+}
+
+model EdgeInstallation {
+  id                String    @id @db.Uuid
+  facilityId        String    @map("facility_id")
+  currentGeneration Int       @default(1) @map("current_generation")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deactivatedAt     DateTime? @map("deactivated_at")
+
+  facility           Facility                     @relation(fields: [facilityId], references: [id])
+  generations        EdgeInstallationGeneration[]
+  floors             Floor[]
+  spaces             Space[]
+  cameras            Camera[]
+  provisioningAudits EdgeProvisioningAudit[]
+
+  @@unique([facilityId, id])
+  @@map("edge_installations")
+}
+
+model EdgeInstallationGeneration {
+  id                     String                @id @default(cuid())
+  facilityId             String                @map("facility_id")
+  edgeInstallationId     String                @map("edge_installation_id") @db.Uuid
+  generation             Int                   @map("enrollment_generation")
+  state                  EdgeInstallationState @default(PENDING_CLAIM)
+  /// Null until the first successful compare-and-swap enrollment claim.
+  clientInstallationRef  String?               @map("client_installation_ref") @db.Uuid
+  acceptedClientRevision Int                   @default(0) @map("accepted_client_revision")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  claimedAt              DateTime?             @map("claimed_at")
+  replacedAt             DateTime?             @map("replaced_at")
+  deactivatedAt          DateTime?             @map("deactivated_at")
+
+  installation       EdgeInstallation        @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id], onDelete: Cascade)
+  credentials        EdgeCredential[]
+  snapshots          EdgeTopologySnapshot[]
+  omissionPreviews   EdgeOmissionPreview[]
+  aliases            EdgeTopologyAlias[]
+  ownershipTransfers EdgeOwnershipTransfer[]
+  validationGrants   EdgeValidationGrant[]
+
+  @@unique([facilityId, edgeInstallationId, generation])
+  @@unique([facilityId, clientInstallationRef])
+  @@map("edge_installation_generations")
+}
+
+model EdgeCredential {
+  tokenId              String                  @id @map("token_id") @db.Char(12)
+  facilityId           String                  @map("facility_id")
+  edgeInstallationId   String                  @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration Int                     @map("enrollment_generation")
+  tokenDigest          String                  @unique @map("token_digest") @db.Char(64)
+  tokenPrefix          String                  @map("token_prefix") @db.VarChar(64)
+  lifecycle            EdgeCredentialLifecycle @default(ACTIVE)
+  issuedAt             DateTime                @default(now()) @map("issued_at")
+  expiresAt            DateTime?               @map("expires_at")
+  graceExpiresAt       DateTime?               @map("grace_expires_at")
+  revokedAt            DateTime?               @map("revoked_at")
+  revokedReason        String?                 @map("revoked_reason") @db.VarChar(64)
+
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+
+  @@index([facilityId, lifecycle, expiresAt])
+  @@index([edgeInstallationId, enrollmentGeneration])
+  @@map("edge_credentials")
+}
+
+model EdgeAdminOperation {
+  id             String              @id @db.Uuid
+  facilityId     String              @map("facility_id")
+  idempotencyKey String              @unique @map("idempotency_key") @db.Uuid
+  operationType  String              @map("operation_type") @db.VarChar(64)
+  bodyHash       String              @map("body_hash") @db.Char(64)
+  status         EdgeOperationStatus @default(PENDING)
+  redactedResult Json?               @map("redacted_result")
+  errorCode      String?             @map("error_code") @db.VarChar(64)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  completedAt    DateTime?           @map("completed_at")
+
+  facility Facility @relation(fields: [facilityId], references: [id])
+
+  @@index([facilityId, createdAt])
+  @@map("edge_admin_operations")
+}
+
+model EdgeTopologySnapshot {
+  id                     String                     @id @db.Uuid
+  facilityId             String                     @map("facility_id")
+  edgeInstallationId     String                     @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration   Int                        @map("enrollment_generation")
+  clientRevision         Int                        @map("client_revision")
+  expectedServerRevision Int                        @map("expected_server_revision")
+  serverRevision         Int?                       @map("server_revision")
+  bodyHash               String                     @map("body_hash") @db.Char(64)
+  canonicalBody          Json                       @map("canonical_body")
+  status                 EdgeTopologySnapshotStatus @default(PENDING)
+  result                 Json?
+  createdAt              DateTime                   @default(now()) @map("created_at")
+  completedAt            DateTime?                  @map("completed_at")
+
+  facility               Facility                   @relation(fields: [facilityId], references: [id])
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+  omissionPreview        EdgeOmissionPreview?
+
+  @@unique([facilityId, id])
+  @@unique([facilityId, edgeInstallationId, enrollmentGeneration, clientRevision])
+  @@index([facilityId, createdAt])
+  @@map("edge_topology_snapshots")
+}
+
+model EdgeOmissionPreview {
+  id                   String                    @id @map("confirmation_id") @db.Uuid
+  snapshotId           String                    @unique @map("snapshot_id") @db.Uuid
+  facilityId           String                    @map("facility_id")
+  edgeInstallationId   String                    @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration Int                       @map("enrollment_generation")
+  serverRevision       Int                       @map("server_revision")
+  digest               String                    @db.Char(64)
+  omittedFloorRefs     Json                      @map("omitted_floor_refs")
+  omittedRoomRefs      Json                      @map("omitted_room_refs")
+  omittedCameraRefs    Json                      @map("omitted_camera_refs")
+  status               EdgeOmissionPreviewStatus @default(PENDING)
+  result               Json?
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  expiresAt            DateTime                  @map("expires_at")
+  confirmedAt          DateTime?                 @map("confirmed_at")
+  invalidatedAt        DateTime?                 @map("invalidated_at")
+
+  facility               Facility                   @relation(fields: [facilityId], references: [id])
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+  snapshot               EdgeTopologySnapshot       @relation(fields: [facilityId, snapshotId], references: [facilityId, id])
+
+  @@unique([facilityId, id])
+  @@unique([facilityId, snapshotId])
+  @@index([facilityId, status, expiresAt])
+  @@map("edge_omission_previews")
+}
+
+model EdgeTopologyAlias {
+  id                   String                 @id @default(cuid())
+  facilityId           String                 @map("facility_id")
+  edgeInstallationId   String                 @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration Int                    @map("enrollment_generation")
+  kind                 EdgeTopologyEntityKind
+  edgeRef              String                 @map("edge_ref") @db.VarChar(64)
+  canonicalId          String                 @map("canonical_id")
+  /// Null only for floor aliases; room/camera aliases persist their canonical parent.
+  parentCanonicalId    String?                @map("parent_canonical_id")
+  createdAt            DateTime               @default(now()) @map("created_at")
+
+  facility               Facility                   @relation(fields: [facilityId], references: [id])
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+
+  @@unique([facilityId, edgeInstallationId, enrollmentGeneration, kind, edgeRef], map: "edge_topology_alias_edge_ref_key")
+  @@unique([facilityId, edgeInstallationId, enrollmentGeneration, kind, canonicalId], map: "edge_topology_alias_canonical_id_key")
+  @@index([facilityId, canonicalId])
+  @@map("edge_topology_aliases")
+}
+
+model EdgeOwnershipTransfer {
+  id                     String              @id @db.Uuid
+  facilityId             String              @map("facility_id")
+  edgeInstallationId     String              @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration   Int                 @map("enrollment_generation")
+  expectedServerRevision Int                 @map("expected_server_revision")
+  manifestDigest         String              @map("manifest_digest") @db.Char(64)
+  manifest               Json
+  status                 EdgeOperationStatus @default(PENDING)
+  result                 Json?
+  appliedServerRevision  Int?                @map("applied_server_revision")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  appliedAt              DateTime?           @map("applied_at")
+
+  facility               Facility                   @relation(fields: [facilityId], references: [id])
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+
+  @@unique([facilityId, edgeInstallationId, enrollmentGeneration, manifestDigest])
+  @@index([facilityId, createdAt])
+  @@map("edge_ownership_transfers")
+}
+
+model EdgeValidationGrant {
+  id                   String                    @id @db.Uuid
+  facilityId           String                    @map("facility_id")
+  edgeInstallationId   String                    @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration Int                       @map("enrollment_generation")
+  status               EdgeValidationGrantStatus @default(ACTIVE)
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  expiresAt            DateTime                  @map("expires_at")
+  closedAt             DateTime?                 @map("closed_at")
+
+  facility               Facility                   @relation(fields: [facilityId], references: [id])
+  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+
+  @@index([facilityId, status, expiresAt])
+  @@map("edge_validation_grants")
+}
+
+model EdgeProvisioningAudit {
+  id                   BigInt   @id @default(autoincrement())
+  facilityId           String   @map("facility_id")
+  /// Null when an administrative action is facility-scoped before installation creation.
+  edgeInstallationId   String?  @map("edge_installation_id") @db.Uuid
+  enrollmentGeneration Int?     @map("enrollment_generation")
+  /// Null for machine-originated provisioning actions.
+  actorUserId          String?  @map("actor_user_id")
+  action               String   @db.VarChar(64)
+  outcome              String   @db.VarChar(32)
+  requestId            String   @map("request_id") @db.VarChar(64)
+  /// Null when the audit action is not tied to an idempotent admin mutation.
+  operationId          String?  @map("operation_id") @db.Uuid
+  detail               Json?
+  occurredAt           DateTime @default(now()) @map("occurred_at")
+
+  facility     Facility          @relation(fields: [facilityId], references: [id])
+  installation EdgeInstallation? @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id])
+
+  @@index([facilityId, occurredAt])
+  @@index([operationId])
+  @@map("edge_provisioning_audit_history")
+}
+
+model MediaDownloadProcessHeartbeat {
+  processId      String    @id @map("process_id") @db.Uuid
+  startedAt      DateTime  @default(now()) @map("started_at")
+  heartbeatAt    DateTime  @map("heartbeat_at")
+  leaseExpiresAt DateTime  @map("lease_expires_at")
+  stoppedAt      DateTime? @map("stopped_at")
+
+  audits     MediaDownloadAudit[]
+  lockedJobs MediaDownloadOutboxJob[]
+
+  @@index([leaseExpiresAt])
+  @@map("media_download_process_heartbeats")
+}
+
+model MediaDownloadAudit {
+  id                   String                  @id @db.Uuid
+  facilityId           String                  @map("facility_id")
+  clipId               String                  @map("clip_id")
+  alertId              String                  @map("alert_id")
+  actorUserId          String                  @map("actor_user_id")
+  actorRole            Role                    @map("actor_role")
+  state                MediaDownloadAuditState @default(STARTED)
+  requestId            String                  @map("request_id") @db.VarChar(64)
+  httpStatus           Int                     @map("http_status")
+  rangeStart           BigInt?                 @map("range_start")
+  rangeEnd             BigInt?                 @map("range_end")
+  bytesPlanned         BigInt?                 @map("bytes_planned")
+  bytesActual          BigInt?                 @map("bytes_actual")
+  processId            String                  @map("process_id") @db.Uuid
+  leaseVersion         Int                     @default(1) @map("lease_version")
+  streamLeaseExpiresAt DateTime                @map("stream_lease_expires_at")
+  startedAt            DateTime                @default(now()) @map("started_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  completedAt          DateTime?               @map("completed_at")
+  abortedAt            DateTime?               @map("aborted_at")
+  abortReason          String?                 @map("abort_reason") @db.VarChar(128)
+
+  facility  Facility                      @relation(fields: [facilityId], references: [id])
+  process   MediaDownloadProcessHeartbeat @relation(fields: [processId], references: [processId])
+  outboxJob MediaDownloadOutboxJob?
+
+  @@unique([facilityId, id])
+  @@index([facilityId, startedAt])
+  @@index([state, streamLeaseExpiresAt])
+  @@map("media_download_audits")
+}
+
+model MediaDownloadOutboxJob {
+  auditId           String                   @id @map("audit_id") @db.Uuid
+  facilityId        String                   @map("facility_id")
+  state             MediaDownloadOutboxState @default(PENDING)
+  leaseVersion      Int                      @default(1) @map("lease_version")
+  attemptCount      Int                      @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime                 @default(now()) @map("next_attempt_at")
+  /// Null until a recovery worker claims the pending job.
+  lockedByProcessId String?                  @map("locked_by_process_id") @db.Uuid
+  lockedAt          DateTime?                @map("locked_at")
+  recoveryStartedAt DateTime?                @map("recovery_started_at")
+  recoveredAt       DateTime?                @map("recovered_at")
+  completedAt       DateTime?                @map("completed_at")
+  lastError         String?                  @map("last_error") @db.VarChar(500)
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime                 @updatedAt @map("updated_at")
+
+  facility Facility                       @relation(fields: [facilityId], references: [id])
+  audit    MediaDownloadAudit             @relation(fields: [facilityId, auditId], references: [facilityId, id])
+  lockedBy MediaDownloadProcessHeartbeat? @relation(fields: [lockedByProcessId], references: [processId])
+
+  @@unique([facilityId, auditId])
+  @@index([facilityId, state, nextAttemptAt])
+  @@map("media_download_outbox_jobs")
 }
 
 // ─── Backend-owned alert outbox (issue #29) ─────────────────────────────────
