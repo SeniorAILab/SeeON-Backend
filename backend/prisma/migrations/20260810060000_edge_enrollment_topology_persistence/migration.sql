@@ -482,7 +482,16 @@ ALTER TABLE "edge_topology_snapshots" ADD CONSTRAINT "edge_topology_snapshots_bo
 ALTER TABLE "edge_omission_previews" ADD CONSTRAINT "edge_omission_previews_digest_check"
   CHECK ("digest" ~ '^[0-9a-f]{64}$' AND "server_revision" >= 0 AND "expires_at" > "created_at");
 ALTER TABLE "edge_ownership_transfers" ADD CONSTRAINT "edge_ownership_transfers_manifest_check"
-  CHECK ("manifest_digest" ~ '^[0-9a-f]{64}$' AND "expected_server_revision" >= 0 AND jsonb_typeof("manifest") = 'array' AND jsonb_array_length("manifest") > 0);
+  CHECK (
+    "manifest_digest" ~ '^[0-9a-f]{64}$'
+    AND "expected_server_revision" >= 0
+    AND jsonb_typeof("manifest") = 'array'
+    AND jsonb_array_length("manifest") > 0
+    AND (
+      ("status" = 'SUCCEEDED' AND "result" IS NOT NULL AND "applied_at" IS NOT NULL AND "applied_server_revision" = "expected_server_revision" + 1)
+      OR ("status" <> 'SUCCEEDED' AND "applied_at" IS NULL AND "applied_server_revision" IS NULL)
+    )
+  );
 ALTER TABLE "edge_validation_grants" ADD CONSTRAINT "edge_validation_grants_expiry_check"
   CHECK ("expires_at" > "created_at");
 
@@ -553,26 +562,33 @@ CREATE TRIGGER "edge_topology_alias_parent_guard"
 
 CREATE FUNCTION "validate_edge_transfer_manifest"() RETURNS trigger
 LANGUAGE plpgsql AS $$
-DECLARE
-  manifest_count integer;
-  matched_count integer;
 BEGIN
-  SELECT count(*) INTO manifest_count FROM jsonb_array_elements(NEW."manifest");
-  SELECT count(*) INTO matched_count
-  FROM jsonb_array_elements(NEW."manifest") item
-  JOIN "edge_topology_aliases" alias
-    ON alias."facility_id" = NEW."facility_id"
-   AND alias."edge_installation_id" = NEW."edge_installation_id"
-   AND alias."enrollment_generation" = NEW."enrollment_generation"
-   AND alias."kind"::text = item->>'kind'
-   AND alias."edge_ref" = item->>'edgeRef'
-   AND alias."canonical_id" = item->>'canonicalId'
-   AND alias."parent_canonical_id" IS NOT DISTINCT FROM item->>'parentCanonicalId';
-  IF manifest_count <> matched_count OR manifest_count <> (
-    SELECT count(*) FROM "edge_topology_aliases"
-    WHERE "facility_id" = NEW."facility_id"
-      AND "edge_installation_id" = NEW."edge_installation_id"
-      AND "enrollment_generation" = NEW."enrollment_generation"
+  IF (
+    SELECT count(*) <> count(DISTINCT (
+      item->>'kind',
+      item->>'edgeRef',
+      item->>'canonicalId',
+      item->>'parentCanonicalId'
+    ))
+    FROM jsonb_array_elements(NEW."manifest") item
+  ) OR EXISTS (
+    SELECT alias."kind"::text, alias."edge_ref", alias."canonical_id", alias."parent_canonical_id"
+    FROM "edge_topology_aliases" alias
+    WHERE alias."facility_id" = NEW."facility_id"
+      AND alias."edge_installation_id" = NEW."edge_installation_id"
+      AND alias."enrollment_generation" = NEW."enrollment_generation"
+    EXCEPT
+    SELECT item->>'kind', item->>'edgeRef', item->>'canonicalId', item->>'parentCanonicalId'
+    FROM jsonb_array_elements(NEW."manifest") item
+  ) OR EXISTS (
+    SELECT item->>'kind', item->>'edgeRef', item->>'canonicalId', item->>'parentCanonicalId'
+    FROM jsonb_array_elements(NEW."manifest") item
+    EXCEPT
+    SELECT alias."kind"::text, alias."edge_ref", alias."canonical_id", alias."parent_canonical_id"
+    FROM "edge_topology_aliases" alias
+    WHERE alias."facility_id" = NEW."facility_id"
+      AND alias."edge_installation_id" = NEW."edge_installation_id"
+      AND alias."enrollment_generation" = NEW."enrollment_generation"
   ) THEN
     RAISE EXCEPTION 'ownership transfer manifest must exactly match persisted aliases';
   END IF;
@@ -586,18 +602,39 @@ CREATE FUNCTION "require_edge_ownership_transfer"() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
   entity_kind text;
+  entity_parent_id text;
 BEGIN
   IF OLD."provisioning_source" = 'PRODUCT' AND NEW."provisioning_source" = 'EDGE' THEN
-    entity_kind := CASE TG_TABLE_NAME WHEN 'floors' THEN 'FLOOR' WHEN 'spaces' THEN 'ROOM' ELSE 'CAMERA' END;
+    IF TG_TABLE_NAME = 'floors' THEN
+      entity_kind := 'FLOOR';
+      entity_parent_id := NULL;
+    ELSIF TG_TABLE_NAME = 'spaces' THEN
+      entity_kind := 'ROOM';
+      entity_parent_id := NEW."floor_id";
+    ELSE
+      entity_kind := 'CAMERA';
+      entity_parent_id := NEW."space_id";
+    END IF;
     IF NOT EXISTS (
       SELECT 1
-      FROM "edge_ownership_transfers" transfer,
-           jsonb_array_elements(transfer."manifest") item
+      FROM "edge_ownership_transfers" transfer
+      JOIN "edge_installations" installation
+        ON installation."facility_id" = transfer."facility_id"
+       AND installation."id" = transfer."edge_installation_id"
+       AND installation."current_generation" = transfer."enrollment_generation"
+      JOIN "facilities" facility ON facility."id" = transfer."facility_id"
+      CROSS JOIN jsonb_array_elements(transfer."manifest") item
       WHERE transfer."facility_id" = NEW."facility_id"
         AND transfer."edge_installation_id" = NEW."edge_installation_id"
+        AND transfer."status" = 'SUCCEEDED'
+        AND transfer."result" IS NOT NULL
+        AND transfer."applied_at" IS NOT NULL
+        AND transfer."applied_server_revision" = transfer."expected_server_revision" + 1
+        AND facility."topology_revision" = transfer."applied_server_revision"
         AND item->>'kind' = entity_kind
         AND item->>'canonicalId' = NEW."id"
         AND item->>'edgeRef' = NEW."edge_ref"
+        AND item->>'parentCanonicalId' IS NOT DISTINCT FROM entity_parent_id
     ) THEN RAISE EXCEPTION 'PRODUCT ownership requires an explicit transfer manifest'; END IF;
   END IF;
   RETURN NEW;
@@ -612,29 +649,41 @@ CREATE TRIGGER "cameras_edge_ownership_transfer_guard" BEFORE UPDATE ON "cameras
 CREATE FUNCTION "prevent_edge_immutable_changes"() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_TABLE_NAME = 'edge_admin_operations' AND (
-    NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
-    OR NEW."idempotency_key" IS DISTINCT FROM OLD."idempotency_key"
-    OR NEW."operation_type" IS DISTINCT FROM OLD."operation_type"
-    OR NEW."body_hash" IS DISTINCT FROM OLD."body_hash"
-  ) THEN RAISE EXCEPTION 'edge operation identity is immutable'; END IF;
-  IF TG_TABLE_NAME = 'edge_topology_snapshots' AND (
-    NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
-    OR NEW."edge_installation_id" IS DISTINCT FROM OLD."edge_installation_id"
-    OR NEW."enrollment_generation" IS DISTINCT FROM OLD."enrollment_generation"
-    OR NEW."client_revision" IS DISTINCT FROM OLD."client_revision"
-    OR NEW."expected_server_revision" IS DISTINCT FROM OLD."expected_server_revision"
-    OR NEW."body_hash" IS DISTINCT FROM OLD."body_hash"
-    OR NEW."canonical_body" IS DISTINCT FROM OLD."canonical_body"
-  ) THEN RAISE EXCEPTION 'topology snapshot request is immutable'; END IF;
-  IF TG_TABLE_NAME = 'edge_ownership_transfers' AND (
-    NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
-    OR NEW."edge_installation_id" IS DISTINCT FROM OLD."edge_installation_id"
-    OR NEW."enrollment_generation" IS DISTINCT FROM OLD."enrollment_generation"
-    OR NEW."expected_server_revision" IS DISTINCT FROM OLD."expected_server_revision"
-    OR NEW."manifest_digest" IS DISTINCT FROM OLD."manifest_digest"
-    OR NEW."manifest" IS DISTINCT FROM OLD."manifest"
-  ) THEN RAISE EXCEPTION 'ownership transfer manifest is immutable'; END IF;
+  IF TG_TABLE_NAME = 'edge_admin_operations' THEN
+    IF NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
+       OR NEW."idempotency_key" IS DISTINCT FROM OLD."idempotency_key"
+       OR NEW."operation_type" IS DISTINCT FROM OLD."operation_type"
+       OR NEW."body_hash" IS DISTINCT FROM OLD."body_hash" THEN
+      RAISE EXCEPTION 'edge operation identity is immutable';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'edge_topology_snapshots' THEN
+    IF NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
+       OR NEW."edge_installation_id" IS DISTINCT FROM OLD."edge_installation_id"
+       OR NEW."enrollment_generation" IS DISTINCT FROM OLD."enrollment_generation"
+       OR NEW."client_revision" IS DISTINCT FROM OLD."client_revision"
+       OR NEW."expected_server_revision" IS DISTINCT FROM OLD."expected_server_revision"
+       OR NEW."body_hash" IS DISTINCT FROM OLD."body_hash"
+       OR NEW."canonical_body" IS DISTINCT FROM OLD."canonical_body" THEN
+      RAISE EXCEPTION 'topology snapshot request is immutable';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'edge_ownership_transfers' THEN
+    IF NEW."facility_id" IS DISTINCT FROM OLD."facility_id"
+       OR NEW."edge_installation_id" IS DISTINCT FROM OLD."edge_installation_id"
+       OR NEW."enrollment_generation" IS DISTINCT FROM OLD."enrollment_generation"
+       OR NEW."expected_server_revision" IS DISTINCT FROM OLD."expected_server_revision"
+       OR NEW."manifest_digest" IS DISTINCT FROM OLD."manifest_digest"
+       OR NEW."manifest" IS DISTINCT FROM OLD."manifest" THEN
+      RAISE EXCEPTION 'ownership transfer manifest is immutable';
+    END IF;
+    IF OLD."status" IN ('SUCCEEDED', 'FAILED', 'UNKNOWN') AND (
+      NEW."status" IS DISTINCT FROM OLD."status"
+      OR NEW."result" IS DISTINCT FROM OLD."result"
+      OR NEW."applied_server_revision" IS DISTINCT FROM OLD."applied_server_revision"
+      OR NEW."applied_at" IS DISTINCT FROM OLD."applied_at"
+    ) THEN
+      RAISE EXCEPTION 'ownership transfer terminal result is immutable';
+    END IF;
+  END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER "edge_admin_operation_identity_immutable" BEFORE UPDATE ON "edge_admin_operations"

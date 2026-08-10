@@ -25,6 +25,26 @@ const installationA = '11111111-1111-4111-8111-111111111111';
 const installationB = '22222222-2222-4222-8222-222222222222';
 const processId = '33333333-3333-4333-8333-333333333333';
 const downloadId = '44444444-4444-4444-8444-444444444444';
+const completeTransferManifest = [
+  {
+    kind: 'FLOOR',
+    edgeRef: 'floor-1',
+    canonicalId: 'floor-a',
+    parentCanonicalId: null,
+  },
+  {
+    kind: 'ROOM',
+    edgeRef: 'room-1',
+    canonicalId: 'space-a',
+    parentCanonicalId: 'floor-a',
+  },
+  {
+    kind: 'CAMERA',
+    edgeRef: 'camera-1',
+    canonicalId: 'camera-a',
+    parentCanonicalId: 'space-a',
+  },
+] as const;
 const setupStatements = [
   `INSERT INTO facilities (id,name) VALUES ('${facilityA}','A'),('${facilityB}','B')`,
   `INSERT INTO floors (id,facility_id,name,order_index) VALUES ('floor-a','${facilityA}','1F',1),('floor-b','${facilityB}','1F',1)`,
@@ -213,8 +233,15 @@ describe('edge provisioning persistence migration', () => {
         `INSERT INTO cameras (id,facility_id,space_id,label) VALUES ('camera-a2','${facilityA}','space-a','A2')`,
       ),
     ).rejects.toThrow();
-    await sql(direct, transferSql());
-    await transferFloor();
+    const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de810';
+    await sql(direct, transferSql({ id: transferId, status: 'PENDING' }));
+    await direct.$transaction(async (tx) => {
+      await executeAll(tx, [
+        `UPDATE edge_ownership_transfers SET status='SUCCEEDED',result='{"status":"SUCCEEDED"}'::jsonb,applied_server_revision=1,applied_at=now() WHERE id='${transferId}'`,
+        `UPDATE facilities SET topology_revision=1 WHERE id='${facilityA}'`,
+        `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+      ]);
+    });
 
     // Then: failed transactions leave no audit, and the explicit complete manifest is immutable.
     const audit = await direct.$queryRaw<
@@ -224,7 +251,142 @@ describe('edge provisioning persistence migration', () => {
     await expect(
       sql(
         direct,
-        `UPDATE edge_ownership_transfers SET manifest='[]'::jsonb WHERE id='0197f671-3a31-7a6c-a6e4-83ed412de810'`,
+        `UPDATE edge_ownership_transfers SET manifest='[]'::jsonb WHERE id='${transferId}'`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      sql(
+        direct,
+        `UPDATE edge_ownership_transfers SET result='{"status":"replayed"}'::jsonb WHERE id='${transferId}'`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it.each([
+    ['PENDING', '0197f671-3a31-7a6c-a6e4-83ed412de811'],
+    ['FAILED', '0197f671-3a31-7a6c-a6e4-83ed412de812'],
+    ['UNKNOWN', '0197f671-3a31-7a6c-a6e4-83ed412de813'],
+  ] as const)(
+    'rejects %s ownership transfers without topology or audit writes',
+    async (status, transferId) => {
+      // Given: a complete manifest whose transfer has not reached the applied terminal state.
+      await seedFacilityAAliases(direct);
+      await sql(direct, transferSql({ id: transferId, status }));
+
+      // When: the transfer attempts to claim PRODUCT topology in one transaction.
+      await expect(
+        direct.$transaction(async (tx) => {
+          await executeAll(tx, [
+            `INSERT INTO edge_provisioning_audit_history (facility_id,action,outcome,request_id) VALUES ('${facilityA}','TRANSFER','STARTED','${transferId}')`,
+            `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+          ]);
+        }),
+      ).rejects.toThrow();
+
+      // Then: PostgreSQL rolls back the attempted topology and audit writes.
+      await expect(transferState(direct, transferId)).resolves.toEqual([
+        {
+          provisioning_source: 'PRODUCT',
+          audit_count: 0,
+          result: status === 'PENDING' ? null : { status },
+        },
+      ]);
+    },
+  );
+
+  it('rejects an applied transfer from a stale enrollment generation', async () => {
+    // Given: a valid applied transfer for generation one after the installation advances to generation two.
+    const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de814';
+    await seedFacilityAAliases(direct);
+    await sql(direct, transferSql({ id: transferId, status: 'SUCCEEDED' }));
+    await direct.$transaction(async (tx) => {
+      await executeAll(tx, [
+        `INSERT INTO edge_installation_generations (id,facility_id,edge_installation_id,enrollment_generation,updated_at) VALUES ('generation-a-2','${facilityA}','${installationA}',2,now())`,
+        `UPDATE edge_installations SET current_generation=2 WHERE id='${installationA}'`,
+        `UPDATE facilities SET topology_revision=1 WHERE id='${facilityA}'`,
+      ]);
+    });
+
+    // When: the stale generation attempts to claim PRODUCT topology.
+    await expect(transferFloorWithAudit(direct, transferId)).rejects.toThrow();
+
+    // Then: no topology or audit write survives.
+    await expect(transferState(direct, transferId)).resolves.toEqual([
+      {
+        provisioning_source: 'PRODUCT',
+        audit_count: 0,
+        result: { status: 'SUCCEEDED' },
+      },
+    ]);
+  });
+
+  it('rejects an applied transfer whose revision evidence is stale', async () => {
+    // Given: a transfer applied at revision one while the facility is already at revision two.
+    const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de815';
+    await seedFacilityAAliases(direct);
+    await sql(direct, transferSql({ id: transferId, status: 'SUCCEEDED' }));
+    await sql(
+      direct,
+      `UPDATE facilities SET topology_revision=2 WHERE id='${facilityA}'`,
+    );
+
+    // When: stale revision evidence attempts to claim PRODUCT topology.
+    await expect(transferFloorWithAudit(direct, transferId)).rejects.toThrow();
+
+    // Then: no topology or audit write survives.
+    await expect(transferState(direct, transferId)).resolves.toEqual([
+      {
+        provisioning_source: 'PRODUCT',
+        audit_count: 0,
+        result: { status: 'SUCCEEDED' },
+      },
+    ]);
+  });
+
+  it('rejects a duplicate manifest entry that hides an omitted persisted alias', async () => {
+    // Given: three persisted aliases and a three-item manifest duplicating the floor while omitting the camera.
+    const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de816';
+    await seedFacilityAAliases(direct);
+    const duplicateWithOmission = [
+      completeTransferManifest[0],
+      completeTransferManifest[0],
+      completeTransferManifest[1],
+    ];
+
+    // When/Then: multiplicity cannot disguise unequal identity sets.
+    await expect(
+      sql(
+        direct,
+        transferSql({
+          id: transferId,
+          status: 'PENDING',
+          manifest: duplicateWithOmission,
+        }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      sql(
+        direct,
+        transferSql({
+          id: '0197f671-3a31-7a6c-a6e4-83ed412de817',
+          status: 'PENDING',
+          manifest: [...completeTransferManifest, completeTransferManifest[0]],
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('keeps UNKNOWN transfer replay evidence immutable', async () => {
+    // Given: an UNKNOWN transfer with a complete persisted alias manifest.
+    const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de818';
+    await seedFacilityAAliases(direct);
+    await sql(direct, transferSql({ id: transferId, status: 'UNKNOWN' }));
+
+    // When/Then: replay cannot rewrite the terminal result or status.
+    await expect(
+      sql(
+        direct,
+        `UPDATE edge_ownership_transfers SET status='PENDING',result=NULL WHERE id='${transferId}'`,
       ),
     ).rejects.toThrow();
   });
@@ -277,6 +439,25 @@ describe('edge provisioning persistence migration', () => {
 });
 
 type SqlClient = Pick<PrismaClient, '$executeRawUnsafe'>;
+type TransferManifestItem = {
+  readonly kind: string;
+  readonly edgeRef: string;
+  readonly canonicalId: string;
+  readonly parentCanonicalId: string | null;
+};
+type TransferFixture = {
+  readonly id: string;
+  readonly status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN';
+  readonly generation?: number;
+  readonly expectedRevision?: number;
+  readonly appliedRevision?: number;
+  readonly manifest?: readonly TransferManifestItem[];
+};
+type TransferState = {
+  readonly provisioning_source: string;
+  readonly audit_count: number;
+  readonly result: unknown;
+};
 const sql = (db: SqlClient, statement: string): Promise<number> =>
   db.$executeRawUnsafe(statement);
 async function executeAll(
@@ -295,8 +476,69 @@ const aliasSql = (
   parent: string | null,
 ): string =>
   `INSERT INTO edge_topology_aliases (id,facility_id,edge_installation_id,enrollment_generation,kind,edge_ref,canonical_id,parent_canonical_id) VALUES ('${id}','${facility}','${installation}',1,'${kind}','${edgeRef}','${canonical}',${parent === null ? 'NULL' : `'${parent}'`})`;
-const transferSql = (): string =>
-  `INSERT INTO edge_ownership_transfers (id,facility_id,edge_installation_id,enrollment_generation,expected_server_revision,manifest_digest,manifest) VALUES ('0197f671-3a31-7a6c-a6e4-83ed412de810','${facilityA}','${installationA}',1,0,'${'a'.repeat(64)}','[{"kind":"FLOOR","edgeRef":"floor-1","canonicalId":"floor-a","parentCanonicalId":null},{"kind":"ROOM","edgeRef":"room-1","canonicalId":"space-a","parentCanonicalId":"floor-a"},{"kind":"CAMERA","edgeRef":"camera-1","canonicalId":"camera-a","parentCanonicalId":"space-a"}]')`;
+const transferSql = ({
+  id,
+  status,
+  generation = 1,
+  expectedRevision = 0,
+  appliedRevision = expectedRevision + 1,
+  manifest = completeTransferManifest,
+}: TransferFixture): string =>
+  `INSERT INTO edge_ownership_transfers (id,facility_id,edge_installation_id,enrollment_generation,expected_server_revision,manifest_digest,manifest,status,result,applied_server_revision,applied_at) VALUES ('${id}','${facilityA}','${installationA}',${generation},${expectedRevision},'${'a'.repeat(64)}','${JSON.stringify(manifest)}','${status}',${status === 'PENDING' ? 'NULL' : `'${JSON.stringify({ status })}'::jsonb`},${status === 'SUCCEEDED' ? appliedRevision : 'NULL'},${status === 'SUCCEEDED' ? 'now()' : 'NULL'})`;
+async function seedFacilityAAliases(db: SqlClient): Promise<void> {
+  await executeAll(db, [
+    aliasSql(
+      'transfer-floor-a',
+      facilityA,
+      installationA,
+      'FLOOR',
+      'floor-1',
+      'floor-a',
+      null,
+    ),
+    aliasSql(
+      'transfer-room-a',
+      facilityA,
+      installationA,
+      'ROOM',
+      'room-1',
+      'space-a',
+      'floor-a',
+    ),
+    aliasSql(
+      'transfer-camera-a',
+      facilityA,
+      installationA,
+      'CAMERA',
+      'camera-1',
+      'camera-a',
+      'space-a',
+    ),
+  ]);
+}
+const transferFloorWithAudit = (
+  db: PrismaClient,
+  transferId: string,
+): Promise<unknown> =>
+  db.$transaction(async (tx) => {
+    await executeAll(tx, [
+      `INSERT INTO edge_provisioning_audit_history (facility_id,action,outcome,request_id) VALUES ('${facilityA}','TRANSFER','STARTED','${transferId}')`,
+      `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+    ]);
+  });
+const transferState = (
+  db: PrismaClient,
+  transferId: string,
+): Promise<TransferState[]> =>
+  db.$queryRawUnsafe<TransferState[]>(
+    `SELECT floor.provisioning_source::text, count(audit.id)::int AS audit_count, transfer.result
+     FROM floors floor
+     JOIN edge_ownership_transfers transfer ON transfer.id=$1::uuid
+     LEFT JOIN edge_provisioning_audit_history audit ON audit.request_id=$1
+     WHERE floor.id='floor-a'
+     GROUP BY floor.provisioning_source,transfer.result`,
+    transferId,
+  );
 const downloadSql = (): string =>
   `INSERT INTO media_download_audits (id,facility_id,clip_id,alert_id,actor_user_id,actor_role,request_id,http_status,process_id,lease_version,stream_lease_expires_at,updated_at) VALUES ('${downloadId}','${facilityA}','clip-a','alert-a','managed-user','ADMIN','request',200,'${processId}',1,now()+interval '120 seconds',now())`;
 
