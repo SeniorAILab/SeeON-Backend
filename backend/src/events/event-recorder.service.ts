@@ -26,6 +26,8 @@ export interface RecordEventInput {
   clockSource?: string;
   clipId?: string;
   edgeEventId?: string;
+  facilityId?: string;
+  validationRunId?: string;
 }
 
 export interface RecordedEventResult {
@@ -57,6 +59,12 @@ export class EventRecorderService {
     }
 
     const camera = await this.cameras.resolveForEventIngest(cameraId);
+    if (
+      input.facilityId !== undefined &&
+      input.facilityId !== camera.facilityId
+    ) {
+      throw new NotFoundException('unknown_camera');
+    }
     const detectedAt = input.detectedAt;
     const dedupKey = edgeEventId
       ? buildEdgeEventDedupKey(edgeEventId)
@@ -86,6 +94,7 @@ export class EventRecorderService {
               snapshotKey: null,
               clockSource: input.clockSource ?? null,
               edgeEventId,
+              validationRunId: input.validationRunId ?? null,
             },
           }),
       );
@@ -125,12 +134,22 @@ export class EventRecorderService {
 
   async resolveForSnapshot(
     eventId: string,
+    validationRunId: string | null = null,
   ): Promise<{ id: string; facilityId: string }> {
     const rows = await this.prisma.$queryRaw<
       { id: string; facilityId: string }[]
     >`SELECT id, facility_id AS "facilityId" FROM get_event_for_snapshot(${eventId})`;
 
-    const event = rows.at(0);
+    const candidate = rows.at(0);
+    if (!candidate) throw new NotFoundException('unknown_event');
+    const event = await this.prisma.withFacilityContext(
+      candidate.facilityId,
+      (tx) =>
+        tx.event.findFirst({
+          where: { id: candidate.id, validationRunId },
+          select: { id: true, facilityId: true },
+        }),
+    );
     if (!event) throw new NotFoundException('unknown_event');
 
     return event;
@@ -163,14 +182,17 @@ export class EventRecorderService {
       if (!cursor) throw new BadRequestException('invalid cursor');
     }
 
-    const where: Prisma.EventWhereInput | undefined = cursor
-      ? {
-          OR: [
-            { detectedAt: { lt: cursor.detectedAt } },
-            { detectedAt: cursor.detectedAt, id: { lt: cursor.id } },
-          ],
-        }
-      : undefined;
+    const where: Prisma.EventWhereInput = {
+      validationRunId: null,
+      ...(cursor
+        ? {
+            OR: [
+              { detectedAt: { lt: cursor.detectedAt } },
+              { detectedAt: cursor.detectedAt, id: { lt: cursor.id } },
+            ],
+          }
+        : {}),
+    };
     const rows = await this.prisma.withFacilityContext(
       facilityId,
       (tx: Prisma.TransactionClient) =>
@@ -228,7 +250,8 @@ function sameEdgeEvent(
     event.detectorVersion === (input.detectorVersion ?? null) &&
     event.operatingThreshold === (input.operatingThreshold ?? null) &&
     event.clockSource === (input.clockSource ?? null) &&
-    event.clipId === (input.clipId ?? null)
+    event.clipId === (input.clipId ?? null) &&
+    event.validationRunId === (input.validationRunId ?? null)
   );
 }
 

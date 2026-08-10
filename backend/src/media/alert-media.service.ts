@@ -54,6 +54,7 @@ export type AlertMediaMetadata =
 
 export type OpenedAlertMedia = {
   readonly handle: FileHandle;
+  readonly clipId: string;
   readonly sizeBytes: number;
   readonly sha256: string;
   readonly readyAt: Date;
@@ -164,6 +165,7 @@ export class AlertMediaService {
       });
       return {
         handle: file.handle,
+        clipId: clip.id,
         sizeBytes: file.sizeBytes,
         sha256: clip.sha256,
         readyAt: clip.readyAt,

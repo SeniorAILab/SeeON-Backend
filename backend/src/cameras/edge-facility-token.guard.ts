@@ -3,32 +3,41 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
+import type { EdgeAuthenticatedRequest } from '../edge-credentials/edge-credential.types.js';
+import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
 
 export const EDGE_RELAY_TOKEN_HEADER = 'x-edge-relay-token';
 export const EDGE_FACILITY_HEADER = 'x-facility-id';
 
-export interface EdgeFacilityRequest {
-  readonly headers: Record<string, string | string[] | undefined>;
-  edgeFacilityId?: string;
-}
+export type EdgeFacilityRequest = EdgeAuthenticatedRequest;
 
 @Injectable()
 export class EdgeFacilityTokenGuard implements CanActivate {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly authenticator?: EdgeCredentialAuthenticator,
+    @Optional() private readonly metrics?: LegacyEdgeMetrics,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  canActivate(context: ExecutionContext): boolean | Promise<boolean> {
     const request = context.switchToHttp().getRequest<EdgeFacilityRequest>();
-    const expected = this.expectedToken();
     const token = requestToken(request);
 
     if (token === null) {
       throw new UnauthorizedException('edge facility token required');
     }
+    if (token.startsWith('eft_v1.')) return this.activateV1(request, token);
+    if (configString(this.config, 'EDGE_LEGACY_COMPAT_ENABLED') === 'false') {
+      throw new ForbiddenException('edge facility token mismatch');
+    }
+    const expected = this.expectedToken();
     if (!tokensMatch(token, expected)) {
       throw new ForbiddenException('edge facility token mismatch');
     }
@@ -39,6 +48,25 @@ export class EdgeFacilityTokenGuard implements CanActivate {
     }
 
     request.edgeFacilityId = facilityId;
+    this.metrics?.increment('edge.cameras');
+    return true;
+  }
+
+  private async activateV1(
+    request: EdgeFacilityRequest,
+    token: string,
+  ): Promise<boolean> {
+    if (this.authenticator === undefined) {
+      throw new ServiceUnavailableException(
+        'edge authentication is unavailable',
+      );
+    }
+    const principal = await this.authenticator.authenticate(token);
+    request.edgePrincipal = await this.authenticator.bindRequest(
+      request,
+      principal,
+    );
+    request.edgeFacilityId = request.edgePrincipal.facilityId;
     return true;
   }
 

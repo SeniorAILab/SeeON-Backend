@@ -1,0 +1,3808 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Eldercare Edge Enrollment and Topology API",
+    "version": "1.0.0",
+    "description": "Canonical frozen v1 contract for edge credential administration, installation enrollment, edge-authored topology reconciliation, machine ingest/config access, and audited clip download. Server-derived facility, installation, and enrollment-generation identity is authoritative on every edge-bearer request."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin API server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Edge credential administration"
+    },
+    {
+      "name": "Edge enrollment"
+    },
+    {
+      "name": "Edge topology"
+    },
+    {
+      "name": "Machine API"
+    },
+    {
+      "name": "Media download"
+    }
+  ],
+  "x-contract-rules": {
+    "identityAuthority": "The authenticated eft_v1 principal supplies facilityId, edgeInstallationId, and enrollmentGeneration. New v1 requests never derive facility identity from a header, topology body, worker configuration, or environment variable.",
+    "timestampFormat": "All wire timestamps are server-authoritative RFC 3339 UTC values with exactly millisecond precision and a trailing Z.",
+    "strictJsonIngress": "Enrollment, topology, confirmation, and admin edge-mutation bodies reject duplicate keys at every nesting depth, invalid Unicode, non-finite numbers, unknown fields, and malformed UTF-8 before DTO transformation.",
+    "canonicalHash": "Topology semantic bodies are validated, arrays are sorted by edgeRef, canonicalized with RFC 8785 JSON Canonicalization Scheme, and hashed as lowercase SHA-256 hex.",
+    "authFailureDisclosure": "Credential lookup, facility-code selection, inactive lifecycle, installation generation, and foreign-record failures use generic envelopes and one timing class. Messages do not reveal whether a facility, token, installation, snapshot, alias, or clip exists.",
+    "retryability": "Only HTTP 429, HTTP 503, and client-observed network or timeout failures are retryable. HTTP 409 requires state refresh or operator action and must not be blindly retried.",
+    "credentialStorage": "The server persists only tokenId, a non-secret prefix, HMAC-SHA-256 digest, lifecycle, binding, and timestamps. Raw bearer values are displayed once and are never recoverable from storage.",
+    "rotationGraceSeconds": 86400,
+    "omissionConfirmationTtlSeconds": 900
+  },
+  "x-error-status-map": {
+    "400": ["INVALID_SCHEMA", "INVALID_TOPOLOGY"],
+    "401": ["EDGE_CREDENTIAL_REQUIRED", "EDGE_CREDENTIAL_INVALID"],
+    "403": ["EDGE_CREDENTIAL_INACTIVE", "FACILITY_BINDING_MISMATCH"],
+    "409": [
+      "INSTALLATION_CONFLICT",
+      "IDEMPOTENCY_CONFLICT",
+      "CLIENT_REVISION_OUT_OF_SEQUENCE",
+      "STALE_SERVER_REVISION",
+      "STALE_ENROLLMENT_GENERATION",
+      "TOPOLOGY_CONFLICT",
+      "TOPOLOGY_TRANSFER_CONFLICT",
+      "LEGACY_MAPPING_REQUIRED",
+      "CONFIRMATION_STALE"
+    ],
+    "410": ["CONFIRMATION_EXPIRED"],
+    "429": ["ENROLLMENT_RATE_LIMITED"],
+    "503": ["EDGE_AUTH_NOT_CONFIGURED"]
+  },
+  "x-legacy-compatibility": {
+    "authorizationBoundary": "Legacy acceptance exists only for previously deployed shared edge credentials during the rollback window. It does not authorize a shared credential as an eft_v1 principal, does not apply to enrollment or topology routes, and is not an alternative in any v1 security requirement below.",
+    "observability": "Every accepted legacy request increments a route-only compatibility counter without credential, facility, camera, event, clip, or location labels.",
+    "routes": [
+      {
+        "method": "PUT",
+        "path": "/api/v1/edge/cameras",
+        "facilitySource": "legacy x-facility-id header",
+        "newCredentialBehavior": "Header identity is rejected; the eft_v1 principal is authoritative."
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/events",
+        "facilitySource": "server-owned camera mapping; historical payload identity is ignored or rejected for eft_v1"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/events/heartbeat",
+        "facilitySource": "server-owned camera mapping"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/v1/events/{eventId}/snapshot",
+        "facilitySource": "server-owned event mapping"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/ml-config/{facilityId}",
+        "facilitySource": "legacy path parameter; eft_v1 requires an exact principal match"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/events/capabilities",
+        "facilitySource": "server-owned camera mapping"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/v1/events/clips/{clipId}",
+        "facilitySource": "server-owned camera and event metadata"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/v1/events/clips/{clipId}/state",
+        "facilitySource": "server-owned camera and event metadata"
+      }
+    ]
+  },
+  "x-existing-inline-playback": {
+    "path": "/api/v1/alerts/{alertId}/media/content",
+    "contentDisposition": "inline",
+    "change": "none",
+    "note": "The attachment operation in this contract is separate and does not alter existing inline playback behavior."
+  },
+  "paths": {
+    "/api/v1/admin/edge-credentials": {
+      "post": {
+        "operationId": "issueEdgeCredential",
+        "tags": ["Edge credential administration"],
+        "summary": "Issue an installation-bound edge credential",
+        "description": "Precreates a PENDING_CLAIM installation at enrollment generation 1, binds the new credential to that installation and generation with clientInstallationRef null, and displays the raw bearer exactly once. The facility code is a selector, not an authenticator. A replay after the initial secret-bearing response returns only the persisted redacted result.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credential issued; the bearer is present only in this initial response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueCredentialResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact idempotent replay; redacted terminal result only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listEdgeCredentials",
+        "tags": ["Edge credential administration"],
+        "summary": "List redacted edge credentials and installation bindings",
+        "description": "Returns metadata only. Raw bearer values and recoverable secret material are never returned.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "name": "facilityId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Uuid"
+            },
+            "description": "Optional administrative filter; it is not accepted from an edge client."
+          },
+          {
+            "name": "lifecycle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CredentialLifecycle"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted credential inventory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCredentialsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-credentials/{tokenId}/rotate": {
+      "post": {
+        "operationId": "rotateEdgeCredential",
+        "tags": ["Edge credential administration"],
+        "summary": "Rotate an active edge credential",
+        "description": "Issues a one-time replacement for the same installation and enrollment generation. The prior ACTIVE credential enters GRACE for exactly 24 hours, then becomes EXPIRED. Rotation never changes installation identity or generation.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "x-grace-seconds": 86400,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TokenId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Replacement issued and displayed once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateCredentialResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact replay with a redacted terminal result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-credentials/{tokenId}/revoke": {
+      "post": {
+        "operationId": "revokeEdgeCredential",
+        "tags": ["Edge credential administration"],
+        "summary": "Revoke an edge credential immediately",
+        "description": "Transitions the selected credential to REVOKED at request start. Revocation has no grace period and is enforced on every v1 route.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TokenId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential revoked or exact terminal replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-installations/{edgeInstallationId}/replace": {
+      "post": {
+        "operationId": "replaceEdgeInstallation",
+        "tags": ["Edge credential administration"],
+        "summary": "Replace an edge installation generation",
+        "description": "CASes the expected generation, increments generation once, resets acceptedClientRevision to 0, preserves the facility server revision, invalidates pending omission previews, revokes all old-generation credentials, and returns a one-time pending replacement credential. The new client installation reference remains claimable only by that credential.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EdgeInstallationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceInstallationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Replacement generation and one-time credential created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplaceInstallationResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact replay with a redacted terminal result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-operations/{operationId}/recover-secret": {
+      "post": {
+        "operationId": "recoverLostEdgeCredentialDisplay",
+        "tags": ["Edge credential administration"],
+        "summary": "Replace a credential whose one-time display outcome was lost",
+        "description": "Uses a new idempotency key and expected tokenId. A successful CAS immediately revokes the lost token without grace and displays a one-time replacement bound to the same installation and generation. It never recovers stored plaintext. A replay of the recovery operation is redacted; another replacement requires another explicit operation.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OperationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Lost credential revoked and replacement displayed once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverCredentialResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact recovery replay; redacted terminal result only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-installations/{edgeInstallationId}/transfers": {
+      "post": {
+        "operationId": "approveTopologyOwnershipTransfer",
+        "tags": ["Edge credential administration"],
+        "summary": "Approve a persisted alias ownership-transfer manifest",
+        "description": "CASes installation generation and facility server revision against a complete immutable parent-child manifest generated from persisted aliases. A transfer changes only provisioning ownership and stable edge references; it never changes names, placement, activity, history, or append-only records. A nonempty transfer increments serverRevision exactly once. Mismatch is a zero-write conflict.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EdgeInstallationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnershipTransferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer applied or exact stored result replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipTransferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs": {
+      "post": {
+        "operationId": "createEdgeValidationRun",
+        "tags": ["Edge credential administration"],
+        "summary": "Create an isolated live-validation grant",
+        "description": "Creates a bounded validation-only grant for the expected installation generation. Validation events remain excluded from ordinary event, alert, dashboard, SSE, email, outbox, and search surfaces; only validation endpoints may read them.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EdgeInstallationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateValidationRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Validation grant created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationRunResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact terminal operation replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/edge/enrollments/verify": {
+      "post": {
+        "operationId": "verifyEdgeEnrollment",
+        "tags": ["Edge enrollment"],
+        "summary": "Verify and claim an edge installation",
+        "description": "Authenticates the bearer, selects its bound facility with the non-authenticating facility code, and CAS-claims a null clientInstallationRef. Exact replay returns the binding; another reference returns INSTALLATION_CONFLICT. All credential, facility-code, and binding failures use a generic response and equivalent timing class.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "x-rate-limit": {
+          "sourceIp": "5 attempts per rolling minute",
+          "facilityCode": "20 attempts per rolling hour",
+          "failureDisclosure": "All limit and authentication failures preserve generic non-disclosure."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Installation claimed or exact claim replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/EnrollmentRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/edge/topology-snapshots/{snapshotId}": {
+      "put": {
+        "operationId": "putEdgeTopologySnapshot",
+        "tags": ["Edge topology"],
+        "summary": "Reconcile an edge-authored topology snapshot",
+        "description": "Uses snapshotId as a UUIDv7 idempotency key. Changed snapshots must advance clientRevision by exactly one and CAS expectedServerRevision. Exact snapshotId plus semantic JCS hash replays the stored response; the same ID with another hash conflicts. Semantically identical next revisions advance acceptedClientRevision without changing serverRevision. Reappearing EDGE identities reactivate existing rows; omissions are previewed and never hard-deleted.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SnapshotId"
+          }
+        ],
+        "x-forbidden-request-headers": ["x-facility-id", "facility-id"],
+        "x-idempotency": {
+          "key": "snapshotId",
+          "hash": "SHA-256(RFC8785(validated semantic body with arrays sorted by edgeRef))",
+          "exactReplay": "Returns the immutable stored status and body without another write.",
+          "changedReplay": "409 IDEMPOTENCY_CONFLICT with zero writes."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopologySnapshotRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot accepted, including semantic no-op or exact replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidTopology"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/edge/topology-snapshots/{snapshotId}/confirm": {
+      "post": {
+        "operationId": "confirmEdgeTopologyOmissions",
+        "tags": ["Edge topology"],
+        "summary": "Confirm a stored topology omission preview",
+        "description": "Compares confirmationId, digest, expectedServerRevision, generation, expiry, and the stored omission set before any write. A successful nonempty confirmation soft-deactivates only provisioningSource EDGE rows owned by this installation and increments serverRevision once. Product-owned rows and historical append-only records are never candidates. Exact replay returns the stored result without another increment.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SnapshotId"
+          }
+        ],
+        "x-forbidden-request-headers": ["x-facility-id", "facility-id"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmOmissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Omissions soft-deactivated or exact confirmation replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/ConfirmationExpired"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "post": {
+        "operationId": "createMachineEvent",
+        "tags": ["Machine API"],
+        "summary": "Record an ML event",
+        "description": "The eft_v1 principal supplies facility, installation, and generation. Camera ownership is resolved server-side. Facility identity fields are not part of the v1 body. Previously deployed shared-token clients remain a separately metered compatibility path and do not gain eft_v1 authority.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordEventRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Event created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordEventResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/events/heartbeat": {
+      "post": {
+        "operationId": "recordMachineHeartbeat",
+        "tags": ["Machine API"],
+        "summary": "Record a camera heartbeat",
+        "description": "Marks the server-resolved camera online under the authenticated edge principal. No facility header or body field is accepted for eft_v1.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Heartbeat recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}/snapshot": {
+      "put": {
+        "operationId": "uploadMachineEventSnapshot",
+        "tags": ["Machine API"],
+        "summary": "Upload immutable event snapshot bytes",
+        "description": "Resolves event ownership under the authenticated edge principal and stores bytes under a server-derived key. Client-supplied snapshot keys and facility identity headers are rejected.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "contentEncoding": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "contentEncoding": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "contentEncoding": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Immutable snapshot created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotUploadResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact bytes already stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/ml-config/{facilityId}": {
+      "get": {
+        "operationId": "getMachineMlConfig",
+        "tags": ["Machine API"],
+        "summary": "Read facility ML runtime configuration",
+        "description": "For eft_v1, facilityId must exactly match the authenticated principal. A mismatch is rejected without disclosing either facility. The path identity remains only for old-client compatibility; it never overrides the v1 principal.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "facilityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current runtime configuration for the authenticated facility.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/edge/cameras": {
+      "put": {
+        "operationId": "upsertEdgeCameraMapping",
+        "tags": ["Machine API"],
+        "summary": "Upsert a legacy-overlap edge camera mapping",
+        "description": "Maps an edge-local camera reference to one canonical room and camera. For eft_v1, facility, installation, and generation come only from the authenticated principal; facility identity in a header or body is rejected. The separately metered legacy overlap may continue to use x-facility-id during the rollback window.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "x-legacy-overlap": {
+          "authentication": "previously deployed shared edge credential",
+          "facilitySource": "x-facility-id",
+          "newCredentialBehavior": "reject header identity and use the eft_v1 principal"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeCameraMappingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Camera mapping created or updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeCameraMappingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/events/capabilities": {
+      "get": {
+        "operationId": "getMachineEventCapabilities",
+        "tags": ["Machine API"],
+        "summary": "Read event and clip-export capabilities for a camera",
+        "description": "Resolves camera ownership server-side. For eft_v1, the camera must belong to the authenticated facility and installation scope; no facility identity parameter is accepted.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current capability bits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeMediaCapabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/MachineResourceUnavailable"
+          },
+          "503": {
+            "$ref": "#/components/responses/AuthNotConfigured"
+          }
+        }
+      }
+    },
+    "/api/v1/events/clips/{clipId}": {
+      "put": {
+        "operationId": "uploadMachineEventClip",
+        "tags": ["Machine API"],
+        "summary": "Upload immutable MP4 clip bytes and metadata",
+        "description": "Uploads a READY clip using the executable legacy-overlap header contract. Camera and event ownership are resolved server-side and must match the eft_v1 principal. The request never accepts facility identity, a connection URL, or camera authentication material.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClipId"
+          },
+          {
+            "name": "X-Edge-Camera-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Edge-Event-Refs",
+            "in": "header",
+            "required": true,
+            "description": "JSON-encoded nonempty ordered array of unique lowercase UUIDv4 event IDs.",
+            "schema": {
+              "type": "string",
+              "contentMediaType": "application/json"
+            }
+          },
+          {
+            "name": "X-Clip-Start-At",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Rfc3339MillisUtc"
+            }
+          },
+          {
+            "name": "X-Clip-End-At",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Rfc3339MillisUtc"
+            }
+          },
+          {
+            "name": "X-Clip-Finalized-At",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Rfc3339MillisUtc"
+            }
+          },
+          {
+            "name": "X-Clip-Sha256",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Sha256Hex"
+            }
+          },
+          {
+            "name": "X-Clip-Size-Bytes",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "X-Clip-Duration-Ms",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120000
+            }
+          },
+          {
+            "name": "X-Clip-State-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483646
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "video/mp4": {
+              "schema": {
+                "type": "string",
+                "contentEncoding": "binary",
+                "contentMediaType": "video/mp4"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Immutable terminal clip receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClipReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidMachineMedia"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/MachineResourceUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/MachineMediaConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/MachineMediaTooLarge"
+          },
+          "422": {
+            "$ref": "#/components/responses/MachineMediaUnprocessable"
+          },
+          "503": {
+            "$ref": "#/components/responses/MachineMediaUnavailable"
+          },
+          "507": {
+            "$ref": "#/components/responses/MachineMediaInsufficientStorage"
+          }
+        }
+      }
+    },
+    "/api/v1/events/clips/{clipId}/state": {
+      "put": {
+        "operationId": "reportMachineEventClipUnavailable",
+        "tags": ["Machine API"],
+        "summary": "Report a terminal unavailable clip state",
+        "description": "Reports that clip export could not produce usable bytes. Camera and event ownership are resolved server-side and must match the eft_v1 principal. Facility identity is not accepted in the path, headers, or body.",
+        "security": [
+          {
+            "edgeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClipId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnavailableClipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal UNAVAILABLE receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnavailableClipReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidMachineMedia"
+          },
+          "401": {
+            "$ref": "#/components/responses/EdgeUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/EdgeForbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/MachineResourceUnavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/MachineMediaConflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/MachineMediaUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{alertId}/media/download": {
+      "get": {
+        "operationId": "downloadAlertMediaAttachment",
+        "tags": ["Media download"],
+        "summary": "Download authorized alert media as an attachment",
+        "description": "Separate facility-admin attachment route with tenant isolation, descriptor-contained access, Range and ETag behavior, private no-store caching, retention and hold enforcement, and a sanitized filename. The existing inline playback route remains unchanged.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-capability": "facilityAdmin",
+        "x-download-audit": {
+          "successfulGet": "One server-generated operation row starts after authorized file-descriptor open and becomes COMPLETED on clean finish or ABORTED on disconnect.",
+          "noAudit": "HEAD, 304, 416, denied, disabled, unavailable, expired, deleted, or foreign requests create no download row.",
+          "clientRequestId": "Correlation only; never audit deduplication."
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AlertId"
+          },
+          {
+            "$ref": "#/components/parameters/DownloadRange"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/IfRange"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ClipDownload"
+          },
+          "206": {
+            "$ref": "#/components/responses/ClipPartialDownload"
+          },
+          "304": {
+            "$ref": "#/components/responses/ClipNotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilityAdminRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/MediaUnavailable"
+          },
+          "410": {
+            "$ref": "#/components/responses/MediaUnavailable"
+          },
+          "416": {
+            "$ref": "#/components/responses/ClipRangeNotSatisfiable"
+          }
+        }
+      },
+      "head": {
+        "operationId": "headAlertMediaAttachment",
+        "tags": ["Media download"],
+        "summary": "Read authorized attachment headers without a body",
+        "description": "Returns the same attachment, Range, ETag, cache, and containment metadata as GET without opening a download audit lifecycle or returning media bytes.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-capability": "facilityAdmin",
+        "x-download-audit": "No download audit row is created.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AlertId"
+          },
+          {
+            "$ref": "#/components/parameters/DownloadRange"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/IfRange"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ClipDownloadHead"
+          },
+          "206": {
+            "$ref": "#/components/responses/ClipPartialDownloadHead"
+          },
+          "304": {
+            "$ref": "#/components/responses/ClipNotModified"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilityAdminRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/MediaUnavailable"
+          },
+          "410": {
+            "$ref": "#/components/responses/MediaUnavailable"
+          },
+          "416": {
+            "$ref": "#/components/responses/ClipRangeNotSatisfiable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "app_session",
+        "description": "HttpOnly product session. Operation metadata further restricts the required role or capability."
+      },
+      "edgeBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "eft_v1.{tokenId}.{one-time-value}",
+        "description": "Installation- and enrollment-generation-bound v1 edge principal. A legacy shared token is not authorized by this security scheme."
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "UUIDv7 operation key. The server persists its canonical body hash and operation status. Exact non-secret terminal results replay; a changed body returns IDEMPOTENCY_CONFLICT. Unknown client outcomes are resolved from operation status, never guessed compensation.",
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "TokenId": {
+        "name": "tokenId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+        }
+      },
+      "OperationId": {
+        "name": "operationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "EdgeInstallationId": {
+        "name": "edgeInstallationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Uuid"
+        }
+      },
+      "SnapshotId": {
+        "name": "snapshotId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "ClipId": {
+        "name": "clipId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/ClipId"
+        }
+      },
+      "AlertId": {
+        "name": "alertId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Uuid"
+        }
+      },
+      "DownloadRange": {
+        "name": "Range",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes=[0-9]*-[0-9]*$"
+        }
+      },
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IfRange": {
+        "name": "If-Range",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "headers": {
+      "RequestId": {
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "RetryAfter": {
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "PrivateNoStore": {
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "private, no-store, no-transform"
+        }
+      },
+      "AttachmentDisposition": {
+        "required": true,
+        "description": "Sanitized generic attachment filename without location or identity data.",
+        "schema": {
+          "type": "string",
+          "pattern": "^attachment; filename=\"[a-zA-Z0-9._-]+\\.mp4\"$",
+          "example": "attachment; filename=\"incident-clip.mp4\""
+        }
+      },
+      "AcceptRanges": {
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "bytes"
+        }
+      },
+      "ETag": {
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^\"sha256-[a-f0-9]{64}\"$"
+        }
+      }
+    },
+    "responses": {
+      "InvalidSchema": {
+        "description": "Malformed or unsupported request. Code is INVALID_SCHEMA and retryable is false.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "InvalidTopology": {
+        "description": "INVALID_SCHEMA or INVALID_TOPOLOGY. Includes missing/wrong schemaVersion, duplicate keys or refs, unknown fields, invalid refs, secret-shaped fields, facility identity, RTSP fields, more than one camera per room, or invalid revisions. Retryable is false.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "EdgeUnauthorized": {
+        "description": "Generic EDGE_CREDENTIAL_REQUIRED or EDGE_CREDENTIAL_INVALID response with equivalent timing and no record disclosure. Retryable is false.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "EdgeForbidden": {
+        "description": "Generic EDGE_CREDENTIAL_INACTIVE or FACILITY_BINDING_MISMATCH response. This includes revoked, expired, stale-generation, and foreign-scope principals where disclosure would expose state. Retryable is false.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "State or idempotency conflict. Permitted codes are INSTALLATION_CONFLICT, IDEMPOTENCY_CONFLICT, CLIENT_REVISION_OUT_OF_SEQUENCE, STALE_SERVER_REVISION, STALE_ENROLLMENT_GENERATION, TOPOLOGY_CONFLICT, TOPOLOGY_TRANSFER_CONFLICT, LEGACY_MAPPING_REQUIRED, or CONFIRMATION_STALE. Retryable is false; refresh state or take explicit operator action.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ConfirmationExpired": {
+        "description": "CONFIRMATION_EXPIRED. Obtain a new preview; retryable is false.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "EnrollmentRateLimited": {
+        "description": "ENROLLMENT_RATE_LIMITED. Generic failure timing and non-disclosure are preserved. Retryable is true after Retry-After.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          },
+          "RateLimit-Limit": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "RateLimit-Remaining": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "RateLimit-Reset": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "AuthNotConfigured": {
+        "description": "EDGE_AUTH_NOT_CONFIGURED. The host token verifier is unavailable or has no pepper; retryable is true.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "AdminSessionRequired": {
+        "description": "Authenticated product session required. No administrative or tenant record existence is disclosed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionErrorEnvelope"
+            }
+          }
+        }
+      },
+      "SuperAdminRequired": {
+        "description": "SUPER_ADMIN role required. No credential, facility, installation, or operation existence is disclosed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionErrorEnvelope"
+            }
+          }
+        }
+      },
+      "FacilityAdminRequired": {
+        "description": "Facility-admin capability and matching tenant session required. Foreign and unauthorized clips are non-disclosing.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MediaUnavailable": {
+        "description": "Generic missing, foreign, disabled, unavailable, expired, or deleted media response. No download audit row is created.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MediaErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ClipDownload": {
+        "description": "Full attachment. Creates one STARTED audit row after contained open, then terminally updates it on stream outcome.",
+        "headers": {
+          "Content-Disposition": {
+            "$ref": "#/components/headers/AttachmentDisposition"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Content-Length": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "content": {
+          "video/mp4": {
+            "schema": {
+              "type": "string",
+              "contentEncoding": "binary",
+              "contentMediaType": "video/mp4"
+            }
+          }
+        }
+      },
+      "ClipPartialDownload": {
+        "description": "Single byte range attachment. Uses the same one-row audit lifecycle as a full GET.",
+        "headers": {
+          "Content-Disposition": {
+            "$ref": "#/components/headers/AttachmentDisposition"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Content-Range": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
+            }
+          },
+          "Content-Length": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "video/mp4": {
+            "schema": {
+              "type": "string",
+              "contentEncoding": "binary",
+              "contentMediaType": "video/mp4"
+            }
+          }
+        }
+      },
+      "ClipDownloadHead": {
+        "description": "Full attachment metadata without a response body or download audit row.",
+        "headers": {
+          "Content-Disposition": {
+            "$ref": "#/components/headers/AttachmentDisposition"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Content-Length": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "ClipPartialDownloadHead": {
+        "description": "Single byte range attachment metadata without a response body or download audit row.",
+        "headers": {
+          "Content-Disposition": {
+            "$ref": "#/components/headers/AttachmentDisposition"
+          },
+          "Accept-Ranges": {
+            "$ref": "#/components/headers/AcceptRanges"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Content-Range": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
+            }
+          },
+          "Content-Length": {
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "ClipNotModified": {
+        "description": "Attachment is unchanged; no body and no download audit row.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          }
+        }
+      },
+      "ClipRangeNotSatisfiable": {
+        "description": "Unsatisfiable byte range; no body and no download audit row.",
+        "headers": {
+          "Content-Range": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/PrivateNoStore"
+          }
+        }
+      },
+      "InvalidMachineMedia": {
+        "description": "Malformed clip identifier, metadata header, timestamp ordering, state transition request, or JSON body.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineResourceUnavailable": {
+        "description": "Generic missing, foreign, disabled, or unavailable machine resource response.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineMediaConflict": {
+        "description": "Event ownership, immutable bytes, or state transition conflict; refresh state rather than retrying blindly.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineMediaTooLarge": {
+        "description": "Clip exceeds the configured immutable upload size limit.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineMediaUnprocessable": {
+        "description": "Checksum, length, duration, or media-type contract mismatch.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineMediaUnavailable": {
+        "description": "Clip storage is temporarily unavailable or lock acquisition timed out.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "MachineMediaInsufficientStorage": {
+        "description": "The server cannot safely accept the declared clip bytes.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "FacilityCode": {
+        "type": "string",
+        "pattern": "^NH-[0-9A-HJKMNP-TV-Z]{10}$",
+        "description": "Server-generated selector: NH- plus 10 uppercase Crockford Base32 characters, excluding I, L, O, and U. It is not an authenticator.",
+        "example": "NH-7H2K9M4QXP"
+      },
+      "EdgeBearerToken": {
+        "type": "string",
+        "pattern": "^eft_v1\\.[0-9A-HJKMNP-TV-Z]{12}\\.[A-Za-z0-9_-]{43}$",
+        "description": "One-time bearer display only. The final segment encodes 32 random bytes as unpadded base64url. No raw example is published.",
+        "writeOnly": true,
+        "x-redacted-example": "eft_v1.<token-id>.<one-time-display-only>"
+      },
+      "UuidV7": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "description": "Lowercase UUID version 7.",
+        "example": "0197f671-3a31-7a6c-a6e4-83ed412de81a"
+      },
+      "Rfc3339MillisUtc": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+        "description": "RFC 3339 UTC timestamp with exactly millisecond precision.",
+        "example": "2026-01-01T00:00:00.000Z"
+      },
+      "CredentialLifecycle": {
+        "type": "string",
+        "enum": ["ACTIVE", "GRACE", "REVOKED", "EXPIRED"],
+        "description": "ACTIVE is usable; GRACE is usable only until its exact 24-hour grace expiry; REVOKED is immediately unusable; EXPIRED is unusable at request start."
+      },
+      "EdgeErrorCode": {
+        "type": "string",
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_TOPOLOGY",
+          "EDGE_CREDENTIAL_REQUIRED",
+          "EDGE_CREDENTIAL_INVALID",
+          "EDGE_CREDENTIAL_INACTIVE",
+          "FACILITY_BINDING_MISMATCH",
+          "INSTALLATION_CONFLICT",
+          "IDEMPOTENCY_CONFLICT",
+          "CLIENT_REVISION_OUT_OF_SEQUENCE",
+          "STALE_SERVER_REVISION",
+          "STALE_ENROLLMENT_GENERATION",
+          "TOPOLOGY_CONFLICT",
+          "TOPOLOGY_TRANSFER_CONFLICT",
+          "LEGACY_MAPPING_REQUIRED",
+          "CONFIRMATION_STALE",
+          "CONFIRMATION_EXPIRED",
+          "ENROLLMENT_RATE_LIMITED",
+          "EDGE_AUTH_NOT_CONFIGURED"
+        ]
+      },
+      "SuccessEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "snapshotId",
+          "clientRevision",
+          "serverRevision",
+          "result",
+          "omissions"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "snapshotId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "clientRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "serverRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "result": {
+            "$ref": "#/components/schemas/TopologyMutationResult"
+          },
+          "omissions": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OmissionPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownershipTransferRequired": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OwnershipTransferPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present for validated revision-1 aliases that still require explicit SUPER_ADMIN transfer. Alias persistence alone never changes ownership."
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "error"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "error": {
+            "$ref": "#/components/schemas/EdgeError"
+          }
+        }
+      },
+      "EdgeError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "retryable", "requestId"],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/EdgeErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Generic, non-disclosing message."
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "True only for ENROLLMENT_RATE_LIMITED and EDGE_AUTH_NOT_CONFIGURED server responses. Client-observed network/timeouts are separately retryable transport failures."
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["code"],
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ENROLLMENT_RATE_LIMITED",
+                    "EDGE_AUTH_NOT_CONFIGURED"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "retryable": {
+                  "const": true
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "retryable": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Uuid": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "example": "a5ff4ed1-7e63-4a4f-9ef0-42e807d74a64"
+      },
+      "PositiveRevision": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "NonnegativeRevision": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "EdgeRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$",
+        "description": "Stable UTF-8 edge-owned reference. Unique within its entity kind for the complete snapshot."
+      },
+      "Sha256Hex": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "OperationStatus": {
+        "type": "string",
+        "enum": ["PENDING", "SUCCEEDED", "FAILED", "UNKNOWN"],
+        "description": "Clients resolve uncertain mutation outcomes from this durable status. UNKNOWN never authorizes guessed compensation."
+      },
+      "OperationSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationId", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "operationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "IssueCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "facilityId"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "facilityId": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "RotateCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "expectedLifecycle"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedLifecycle": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "RevokeCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "expectedLifecycle"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedLifecycle": {
+            "type": "string",
+            "enum": ["ACTIVE", "GRACE"]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "ADMIN_REVOKED",
+              "INSTALLATION_REPLACED",
+              "DISPLAY_OUTCOME_LOST",
+              "VALIDATION_CLEANUP"
+            ]
+          }
+        }
+      },
+      "ReplaceInstallationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "expectedEnrollmentGeneration",
+          "newClientInstallationRef"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedEnrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "newClientInstallationRef": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "RecoverCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "expectedTokenId"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedTokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          }
+        }
+      },
+      "CredentialSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokenId",
+          "tokenPrefix",
+          "facilityId",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "lifecycle",
+          "issuedAt",
+          "expiresAt",
+          "graceExpiresAt",
+          "revokedAt"
+        ],
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "tokenPrefix": {
+            "type": "string",
+            "pattern": "^eft_v1\\.[0-9A-HJKMNP-TV-Z]{12}\\.\\[redacted\\]$",
+            "example": "eft_v1.7H2K9M4QXP3D.[redacted]"
+          },
+          "facilityId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/CredentialLifecycle"
+          },
+          "issuedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "expiresAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "graceExpiresAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exactly 24 hours after rotation for a GRACE credential."
+          },
+          "revokedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InstallationSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "edgeInstallationId",
+          "facilityId",
+          "enrollmentGeneration",
+          "state",
+          "clientInstallationRef",
+          "acceptedClientRevision",
+          "serverRevision"
+        ],
+        "properties": {
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "facilityId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING_CLAIM", "CLAIMED", "REPLACED", "DEACTIVATED"]
+          },
+          "clientInstallationRef": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acceptedClientRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          },
+          "serverRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          }
+        }
+      },
+      "OneTimeCredentialDisplay": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["redacted", "tokenId", "prefix"],
+        "properties": {
+          "redacted": {
+            "type": "boolean",
+            "description": "True in canonical fixtures and redacted replays; false only in the initial in-memory delivery."
+          },
+          "tokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Persistable non-secret display prefix."
+          },
+          "value": {
+            "$ref": "#/components/schemas/EdgeBearerToken"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["redacted"],
+              "properties": {
+                "redacted": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": ["value"]
+              }
+            },
+            "else": {
+              "required": ["value"]
+            }
+          }
+        ]
+      },
+      "IssueCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operationId",
+          "facilityCode",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "lifecycle",
+          "oneTimeDisplay",
+          "createdAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "facilityCode": {
+            "$ref": "#/components/schemas/FacilityCode"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "type": "integer",
+            "const": 1
+          },
+          "lifecycle": {
+            "type": "string",
+            "const": "ACTIVE"
+          },
+          "oneTimeDisplay": {
+            "$ref": "#/components/schemas/OneTimeCredentialDisplay"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "CredentialListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokenId",
+          "prefix",
+          "lifecycle",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "createdAt",
+          "valueState"
+        ],
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/CredentialLifecycle"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "valueState": {
+            "type": "string",
+            "const": "not-returned"
+          }
+        }
+      },
+      "ListCredentialsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "items"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialListItem"
+            }
+          }
+        }
+      },
+      "RotateCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operationId",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "prior",
+          "replacement",
+          "oneTimeDisplay"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "prior": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tokenId", "lifecycle", "graceEndsAt"],
+            "properties": {
+              "tokenId": {
+                "type": "string",
+                "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+              },
+              "lifecycle": {
+                "type": "string",
+                "const": "GRACE"
+              },
+              "graceEndsAt": {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              }
+            }
+          },
+          "replacement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lifecycle"],
+            "properties": {
+              "lifecycle": {
+                "type": "string",
+                "const": "ACTIVE"
+              }
+            }
+          },
+          "oneTimeDisplay": {
+            "$ref": "#/components/schemas/OneTimeCredentialDisplay"
+          }
+        }
+      },
+      "RevokeCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operationId",
+          "tokenId",
+          "lifecycle",
+          "revokedAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "tokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "lifecycle": {
+            "type": "string",
+            "const": "REVOKED"
+          },
+          "revokedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "ReplaceInstallationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "edgeInstallationId",
+          "previousEnrollmentGeneration",
+          "enrollmentGeneration",
+          "installationState",
+          "oneTimeDisplay"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "previousEnrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "installationState": {
+            "type": "string",
+            "const": "PENDING_CLAIM"
+          },
+          "oneTimeDisplay": {
+            "$ref": "#/components/schemas/OneTimeCredentialDisplay"
+          }
+        }
+      },
+      "RecoveredCredentialSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tokenId", "prefix", "lifecycle"],
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "lifecycle": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "RecoverCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "revokedTokenId",
+          "replacement",
+          "oneTimeDisplay",
+          "replay"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "revokedTokenId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
+          },
+          "replacement": {
+            "$ref": "#/components/schemas/RecoveredCredentialSummary"
+          },
+          "oneTimeDisplay": {
+            "$ref": "#/components/schemas/OneTimeCredentialDisplay"
+          },
+          "replay": {
+            "$ref": "#/components/schemas/OneTimeCredentialDisplay",
+            "description": "Always redacted on operation replay."
+          }
+        }
+      },
+      "CredentialOperationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "credential",
+          "installation",
+          "secretDisplay"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/CredentialSummary"
+          },
+          "installation": {
+            "$ref": "#/components/schemas/InstallationSummary"
+          },
+          "secretDisplay": {
+            "type": "string",
+            "const": "NOT_AVAILABLE",
+            "description": "A redacted replay marker; no credential value is persisted or returned."
+          }
+        }
+      },
+      "CredentialListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "items"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["credential", "installation"],
+              "properties": {
+                "credential": {
+                  "$ref": "#/components/schemas/CredentialSummary"
+                },
+                "installation": {
+                  "$ref": "#/components/schemas/InstallationSummary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "EnrollmentVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "facilityCode", "clientInstallationRef"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "facilityCode": {
+            "$ref": "#/components/schemas/FacilityCode"
+          },
+          "clientInstallationRef": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "EnrollmentVerificationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "facility",
+          "serverRevision"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "facility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "displayName"],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "example": "Test Facility"
+              }
+            }
+          },
+          "serverRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          }
+        }
+      },
+      "TopologyCamera": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edgeRef", "label"],
+        "properties": {
+          "edgeRef": {
+            "$ref": "#/components/schemas/EdgeRef"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "description": "Contains topology identity and display metadata only. Connection URLs, camera authentication material, and secret-shaped fields are forbidden by additionalProperties false."
+      },
+      "TopologyRoom": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edgeRef", "name", "cameras"],
+        "properties": {
+          "edgeRef": {
+            "$ref": "#/components/schemas/EdgeRef"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "type": {
+            "type": "string",
+            "const": "ROOM",
+            "default": "ROOM"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "legacyCanonicalSpaceId": {
+            "$ref": "#/components/schemas/Uuid",
+            "description": "Optional only for a validated first-generation revision-1 alias claim. It never transfers ownership by itself."
+          },
+          "cameras": {
+            "type": "array",
+            "maxItems": 1,
+            "x-unique-by": "edgeRef",
+            "x-canonical-order": "edgeRef ascending by UTF-8 code units before RFC 8785 serialization",
+            "items": {
+              "$ref": "#/components/schemas/TopologyCamera"
+            },
+            "description": "Frozen v1 cardinality: at most one camera per room."
+          }
+        }
+      },
+      "TopologyFloor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edgeRef", "name", "orderIndex", "rooms"],
+        "properties": {
+          "edgeRef": {
+            "$ref": "#/components/schemas/EdgeRef"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "orderIndex": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rooms": {
+            "type": "array",
+            "x-unique-by": "edgeRef",
+            "x-canonical-order": "edgeRef ascending by UTF-8 code units before RFC 8785 serialization",
+            "items": {
+              "$ref": "#/components/schemas/TopologyRoom"
+            }
+          }
+        }
+      },
+      "TopologySnapshotRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "clientRevision",
+          "expectedServerRevision",
+          "floors"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid",
+            "description": "Must match the edge bearer principal; it is not facility identity."
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "clientRevision": {
+            "$ref": "#/components/schemas/PositiveRevision",
+            "description": "Starts at 1 for each generation and advances exactly by one for each changed registry snapshot. Exact retries reuse the revision, path snapshotId, and body."
+          },
+          "expectedServerRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision",
+            "description": "Facility topology CAS value returned by the server."
+          },
+          "floors": {
+            "type": "array",
+            "x-unique-by": "edgeRef",
+            "x-canonical-order": "edgeRef ascending by UTF-8 code units before RFC 8785 serialization",
+            "items": {
+              "$ref": "#/components/schemas/TopologyFloor"
+            },
+            "description": "Complete topology. Client serialization and server semantic hashing sort floors, rooms, and cameras by edgeRef."
+          }
+        },
+        "description": "Facility identity, expiry timestamps, connection URLs, camera authentication material, and secret-shaped fields are forbidden. Duplicate edgeRef values are invalid within each entity kind."
+      },
+      "EntityMutationCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["created", "updated", "unchanged"],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reactivated": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Existing EDGE identities restored after reappearance; IDs and history are preserved."
+          },
+          "deactivated": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Soft deactivations applied only by a confirmed, non-stale omission preview."
+          }
+        }
+      },
+      "TopologyMutationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["floors", "rooms", "cameras"],
+        "properties": {
+          "floors": {
+            "$ref": "#/components/schemas/EntityMutationCounts"
+          },
+          "rooms": {
+            "$ref": "#/components/schemas/EntityMutationCounts"
+          },
+          "cameras": {
+            "$ref": "#/components/schemas/EntityMutationCounts"
+          }
+        }
+      },
+      "OmissionPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "confirmationId",
+          "digest",
+          "expiresAt",
+          "cameras",
+          "rooms",
+          "floors"
+        ],
+        "properties": {
+          "confirmationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "digest": {
+            "$ref": "#/components/schemas/Sha256Hex",
+            "description": "SHA-256(RFC8785({facilityId, edgeInstallationId, enrollmentGeneration, serverRevision, sortedOmittedEdgeRefs, expiresAt}))."
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc",
+            "description": "Server-generated and exactly 15 minutes after preview creation."
+          },
+          "cameras": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EdgeRef"
+            }
+          },
+          "rooms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EdgeRef"
+            }
+          },
+          "floors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EdgeRef"
+            }
+          }
+        },
+        "description": "Contains only active EDGE rows owned by the same installation. Product-owned rows are never omission candidates."
+      },
+      "ConfirmOmissionsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "confirmationId",
+          "digest",
+          "expectedServerRevision"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "confirmationId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "digest": {
+            "$ref": "#/components/schemas/Sha256Hex"
+          },
+          "expectedServerRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          }
+        }
+      },
+      "OwnershipTransferManifestItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "edgeRef", "canonicalId", "parentCanonicalId"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["FLOOR", "ROOM", "CAMERA"]
+          },
+          "edgeRef": {
+            "$ref": "#/components/schemas/EdgeRef"
+          },
+          "canonicalId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "parentCanonicalId": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "OwnershipTransferRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "expectedEnrollmentGeneration",
+          "expectedServerRevision",
+          "manifestDigest",
+          "manifest"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedEnrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "expectedServerRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          },
+          "manifestDigest": {
+            "$ref": "#/components/schemas/Sha256Hex"
+          },
+          "manifest": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/OwnershipTransferManifestItem"
+            },
+            "description": "Exact complete parent-child set generated from persisted same-facility aliases at the current revision."
+          }
+        }
+      },
+      "OwnershipTransferPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["manifestDigest", "items"],
+        "properties": {
+          "manifestDigest": {
+            "$ref": "#/components/schemas/Sha256Hex"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnershipTransferManifestItem"
+            }
+          }
+        }
+      },
+      "OwnershipTransferResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "serverRevision",
+          "transferred",
+          "appliedAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "serverRevision": {
+            "$ref": "#/components/schemas/NonnegativeRevision"
+          },
+          "transferred": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["floors", "rooms", "cameras"],
+            "properties": {
+              "floors": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rooms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cameras": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "appliedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "CreateValidationRunRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "expectedEnrollmentGeneration",
+          "durationSeconds"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedEnrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600
+          }
+        }
+      },
+      "ValidationRunResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "validationRunId",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "status",
+          "createdAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "validationRunId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ACTIVE", "CLOSED", "EXPIRED"]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "RecordEventRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["camera_id", "type", "detected_at"],
+        "properties": {
+          "camera_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "config_version": {
+            "type": "number",
+            "minimum": 0
+          },
+          "model_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "detector_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "operating_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "snapshot_key": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "clock_source": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "edge_event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "description": "No facility identifier, connection URL, camera authentication material, or secret-shaped field is accepted."
+      },
+      "RecordEventResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status"],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["created", "duplicate"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "event_id", "edge_event_id", "status"],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              "event_id": {
+                "$ref": "#/components/schemas/Uuid"
+              },
+              "edge_event_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "const": "accepted"
+              }
+            }
+          }
+        ]
+      },
+      "HeartbeatRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["camera_id"],
+        "properties": {
+          "camera_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "HeartbeatResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok"],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "SnapshotUploadResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["snapshotKey"],
+        "properties": {
+          "snapshotKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "readOnly": true,
+            "description": "Opaque server-derived storage key."
+          }
+        }
+      },
+      "MlConfigResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["configVersion", "nightWindow", "cameras"],
+        "properties": {
+          "configVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nightWindow": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end", "tz"],
+            "properties": {
+              "start": {
+                "type": "string",
+                "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                "example": "22:00"
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                "example": "06:00"
+              },
+              "tz": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "example": "Etc/UTC"
+              }
+            }
+          },
+          "cameras": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MlConfigCamera"
+            }
+          }
+        }
+      },
+      "MlConfigCamera": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "spaceId",
+          "label",
+          "rtspUrl",
+          "online",
+          "spaceName",
+          "floorName",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "spaceId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rtspUrl": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "description": "Sensitive machine-only connection value. No example is published and it must never appear in logs, topology payloads, fixtures, or browser responses."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "writeOnly": true
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "spaceName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "floorName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "ClipId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "pattern": "^[A-Za-z0-9._-]{1,200}$",
+        "not": {
+          "enum": [".", ".."]
+        }
+      },
+      "UuidV4": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      },
+      "EdgeCameraMappingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edge_camera_ref", "label", "spaceId"],
+        "properties": {
+          "edge_camera_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "spaceId": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        },
+        "description": "Legacy-overlap mapping body. Facility identity, connection URLs, camera authentication material, and secret-shaped fields are not accepted."
+      },
+      "EdgeCameraMappingResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cameraId", "spaceId", "facilityId"],
+        "properties": {
+          "cameraId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "spaceId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "facilityId": {
+            "$ref": "#/components/schemas/Uuid",
+            "readOnly": true,
+            "description": "Server-derived facility scope."
+          }
+        }
+      },
+      "EdgeMediaCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_idempotency", "clip_export"],
+        "properties": {
+          "event_idempotency": {
+            "type": "integer",
+            "const": 1
+          },
+          "clip_export": {
+            "type": "integer",
+            "enum": [0, 1]
+          }
+        }
+      },
+      "UnavailableClipRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["camera_id", "event_refs", "state_version", "reason"],
+        "properties": {
+          "camera_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "event_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/UuidV4"
+            }
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "CAPTURE_FAILED",
+              "QUEUE_FULL",
+              "CORRUPT",
+              "UPLOAD_TIMEOUT"
+            ]
+          }
+        }
+      },
+      "ReadyClipReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "clip_id",
+          "state",
+          "state_version",
+          "sha256",
+          "size_bytes"
+        ],
+        "properties": {
+          "clip_id": {
+            "$ref": "#/components/schemas/ClipId"
+          },
+          "state": {
+            "type": "string",
+            "const": "READY"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "sha256": {
+            "$ref": "#/components/schemas/Sha256Hex"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      },
+      "UnavailableClipReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clip_id", "state", "state_version"],
+        "properties": {
+          "clip_id": {
+            "$ref": "#/components/schemas/ClipId"
+          },
+          "state": {
+            "type": "string",
+            "const": "UNAVAILABLE"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "ExpiredClipReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clip_id", "state", "state_version"],
+        "properties": {
+          "clip_id": {
+            "$ref": "#/components/schemas/ClipId"
+          },
+          "state": {
+            "type": "string",
+            "const": "EXPIRED"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "ClipReceipt": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ReadyClipReceipt"
+          },
+          {
+            "$ref": "#/components/schemas/UnavailableClipReceipt"
+          },
+          {
+            "$ref": "#/components/schemas/ExpiredClipReceipt"
+          }
+        ]
+      },
+      "MachineErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statusCode", "message"],
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [400, 404, 409, 413, 422, 503, 507]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Generic machine-media failure without foreign-record disclosure."
+          },
+          "error": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "SessionErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statusCode", "message", "requestId"],
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [401, 403]
+          },
+          "message": {
+            "type": "string",
+            "description": "Generic non-disclosing session or capability failure."
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "MediaErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statusCode", "code", "message", "requestId"],
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [404, 410]
+          },
+          "code": {
+            "type": "string",
+            "const": "MEDIA_UNAVAILABLE"
+          },
+          "message": {
+            "type": "string",
+            "description": "Generic response shared by missing, foreign, disabled, unavailable, expired, and deleted media."
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  }
+}

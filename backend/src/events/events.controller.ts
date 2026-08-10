@@ -23,6 +23,7 @@ import { FacilityContextInterceptor } from '../auth/facility-context.interceptor
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
+import type { EdgeIngestRequest } from './edge-ingest-token.guard.js';
 import {
   type EventResponseDto,
   ListEventsQueryDto,
@@ -64,6 +65,7 @@ export class EventsController {
   @Post()
   @UseGuards(EdgeIngestTokenGuard)
   async record(
+    @Req() request: EdgeIngestRequest,
     @Body() body: RecordEventRequestDto,
   ): Promise<RecordEventResponseDto> {
     // camera_id trim/blank checks, type canonicalization + enum membership,
@@ -83,6 +85,8 @@ export class EventsController {
       clockSource: body.clock_source,
       clipId: optionalTrimmedString(body.clip_id),
       edgeEventId: body.edge_event_id,
+      facilityId: request.edgePrincipal?.facilityId,
+      validationRunId: request.edgePrincipal?.validationRunId,
     });
     if (result.event.edgeEventId) {
       return {
@@ -124,7 +128,7 @@ export class EventsController {
   @HttpCode(201)
   @UseGuards(EdgeIngestTokenGuard)
   async uploadSnapshot(
-    @Req() req: RequestWithAuth,
+    @Req() req: RequestWithAuth & EdgeIngestRequest,
     @Param('eventId') eventId: string,
     @Res({ passthrough: true }) response?: Response,
   ) {
@@ -139,7 +143,10 @@ export class EventsController {
       throw new BadRequestException('Unsupported snapshot content type');
     }
 
-    const event = await this.recorder.resolveForSnapshot(eventId);
+    const event = await this.recorder.resolveForSnapshot(
+      eventId,
+      req.edgePrincipal?.validationRunId ?? null,
+    );
     const body = await readRequestBody(req, MAX_SNAPSHOT_BYTES);
     if (body.length === 0) throw new BadRequestException('Snapshot is empty');
 

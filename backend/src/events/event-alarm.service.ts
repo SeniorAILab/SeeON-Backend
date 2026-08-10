@@ -21,6 +21,8 @@ export class EventAlarmService {
   async record(input: RecordEventInput): Promise<RecordEventWithAlarmResult> {
     const result = await this.recorder.record(input);
 
+    if (result.event.validationRunId !== null) return result;
+
     if (result.event.type === AlertEventTypes.detectionLost) {
       await this.cameras.recordOffline(
         result.event.facilityId,
