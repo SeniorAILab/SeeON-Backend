@@ -234,14 +234,10 @@ async function main(): Promise<void> {
     `Facility: ${nokyangFacility.name} (${facilityId}) Admin=${NOKYANG_ADMIN_EMAIL} Staff=${NOKYANG_STAFF_EMAIL} role=STAFF Floors=${nokyangFloors.length} Spaces=${nokyangSpaces.length} Cameras=${nokyangCameras.length}`,
   );
   const superAdminConfig = readSuperAdminConfig();
-  if (superAdminConfig.skip) {
-    console.log(`Skipping super-admin bootstrap: ${superAdminConfig.reason}.`);
-  } else {
-    const action = await bootstrapSuperAdmin(prisma, superAdminConfig);
-    console.log(
-      `Super-admin bootstrap ${action}: email=${superAdminConfig.email} role=SUPER_ADMIN facility=${superAdminConfig.facilityId ?? '<none>'}`,
-    );
-  }
+  const action = await bootstrapSuperAdmin(prisma, superAdminConfig);
+  console.log(
+    `Managed SUPER_ADMIN bootstrap action=${action} managedKey=${superAdminConfig.managedIdentityKey}`,
+  );
   console.log('Seed complete.');
 }
 

@@ -1,238 +1,74 @@
-import { hashPassword } from '../auth/password';
 import {
-  bootstrapSuperAdmin,
-  decideSuperAdminAction,
+  createManagedAdminPrismaClient,
   readSuperAdminConfig,
-  type ExistingSuperAdmin,
-  type SuperAdminPrisma,
 } from '../../prisma/seed-super-admin';
-const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
 
-describe('super-admin bootstrap config', () => {
-  it('skips when SUPER_ADMIN_PASSWORD is unset or empty', () => {
-    expect(readSuperAdminConfig({})).toEqual({
-      skip: true,
-      reason: 'SUPER_ADMIN_PASSWORD is not set',
-    });
-    expect(readSuperAdminConfig({ SUPER_ADMIN_PASSWORD: '' })).toEqual({
-      skip: true,
-      reason: 'SUPER_ADMIN_PASSWORD is not set',
-    });
-  });
+const MANAGED_KEY = 'senior-ai-lab-primary';
+const SOURCE_EMAIL = 'previous-admin@example.test';
+const TARGET_EMAIL = 'managed-admin@example.test';
+const PASSWORD = 'fixture-password';
 
-  it('skips when SUPER_ADMIN_EMAIL is unset or blank', () => {
-    expect(readSuperAdminConfig({ SUPER_ADMIN_PASSWORD: 'pw' })).toEqual({
-      skip: true,
-      reason: 'SUPER_ADMIN_EMAIL is not set',
-    });
+const MANAGED_ENV = {
+  SUPER_ADMIN_MANAGED_KEY: MANAGED_KEY,
+  SUPER_ADMIN_EMAIL: TARGET_EMAIL,
+  SUPER_ADMIN_PASSWORD: PASSWORD,
+  SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL: SOURCE_EMAIL,
+};
+
+describe('managed super-admin bootstrap config', () => {
+  it('parses exactly the four managed identity inputs', () => {
     expect(
       readSuperAdminConfig({
-        SUPER_ADMIN_PASSWORD: 'pw',
-        SUPER_ADMIN_EMAIL: '   ',
+        ...MANAGED_ENV,
+        SUPER_ADMIN_NICKNAME: 'must-be-ignored',
+        SUPER_ADMIN_FACILITY_ID: 'must-be-ignored',
       }),
     ).toEqual({
-      skip: true,
-      reason: 'SUPER_ADMIN_EMAIL is not set',
+      managedIdentityKey: MANAGED_KEY,
+      email: TARGET_EMAIL,
+      password: PASSWORD,
+      bootstrapSourceEmail: SOURCE_EMAIL,
     });
   });
 
-  it('defaults nickname when only password and email are set', () => {
+  it.each([
+    'SUPER_ADMIN_MANAGED_KEY',
+    'SUPER_ADMIN_EMAIL',
+    'SUPER_ADMIN_PASSWORD',
+    'SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL',
+  ] as const)('fails closed when %s is absent', (missingKey) => {
+    const env = { ...MANAGED_ENV };
+    delete env[missingKey];
+
+    expect(() => readSuperAdminConfig(env)).toThrow(missingKey);
+  });
+
+  it('rejects a managed key other than the immutable product key', () => {
+    expect(() =>
+      readSuperAdminConfig({
+        ...MANAGED_ENV,
+        SUPER_ADMIN_MANAGED_KEY: 'another-managed-key',
+      }),
+    ).toThrow(MANAGED_KEY);
+  });
+
+  it('normalizes identity emails without trimming the password', () => {
     expect(
       readSuperAdminConfig({
-        SUPER_ADMIN_PASSWORD: 'pw',
-        SUPER_ADMIN_EMAIL: 'admin@example.com',
+        ...MANAGED_ENV,
+        SUPER_ADMIN_EMAIL: `  ${TARGET_EMAIL.toUpperCase()}  `,
+        SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL: `  ${SOURCE_EMAIL.toUpperCase()}  `,
+        SUPER_ADMIN_PASSWORD: ` ${PASSWORD} `,
       }),
     ).toEqual({
-      skip: false,
-      email: 'admin@example.com',
-      password: 'pw',
-      nickname: 'Senior AI Lab',
-      facilityId: null,
+      managedIdentityKey: MANAGED_KEY,
+      email: TARGET_EMAIL,
+      password: ` ${PASSWORD} `,
+      bootstrapSourceEmail: SOURCE_EMAIL,
     });
   });
 
-  it('uses and trims explicit overrides', () => {
-    expect(
-      readSuperAdminConfig({
-        SUPER_ADMIN_PASSWORD: 'pw',
-        SUPER_ADMIN_EMAIL: '  admin@example.com  ',
-        SUPER_ADMIN_NICKNAME: '  Boss  ',
-        SUPER_ADMIN_FACILITY_ID: `  ${SCOPED_FACILITY_ID}  `,
-      }),
-    ).toEqual({
-      skip: false,
-      email: 'admin@example.com',
-      password: 'pw',
-      nickname: 'Boss',
-      facilityId: SCOPED_FACILITY_ID,
-    });
-  });
-});
-
-describe('super-admin action decision', () => {
-  it('creates when no user exists', () => {
-    expect(decideSuperAdminAction(null, false, null)).toBe('create');
-  });
-
-  it('no-ops only when already SUPER_ADMIN with a matching password and facility binding', () => {
-    expect(
-      decideSuperAdminAction(
-        {
-          id: 'u1',
-          role: 'SUPER_ADMIN',
-          passwordHash: 'hash',
-          facilityId: null,
-        },
-        true,
-        null,
-      ),
-    ).toBe('noop');
-  });
-
-  it('updates an existing non-super-admin, password mismatch, or facility mismatch', () => {
-    const cases: {
-      existing: ExistingSuperAdmin;
-      matches: boolean;
-      facilityId: string | null;
-    }[] = [
-      {
-        existing: {
-          id: 'u1',
-          role: 'ADMIN',
-          passwordHash: 'hash',
-          facilityId: SCOPED_FACILITY_ID,
-        },
-        matches: true,
-        facilityId: null,
-      },
-      {
-        existing: {
-          id: 'u1',
-          role: 'SUPER_ADMIN',
-          passwordHash: 'hash',
-          facilityId: null,
-        },
-        matches: false,
-        facilityId: null,
-      },
-      {
-        existing: {
-          id: 'u1',
-          role: 'SUPER_ADMIN',
-          passwordHash: null,
-          facilityId: null,
-        },
-        matches: false,
-        facilityId: null,
-      },
-      {
-        existing: {
-          id: 'u1',
-          role: 'SUPER_ADMIN',
-          passwordHash: 'hash',
-          facilityId: SCOPED_FACILITY_ID,
-        },
-        matches: true,
-        facilityId: null,
-      },
-    ];
-    for (const { existing, matches, facilityId } of cases) {
-      expect(decideSuperAdminAction(existing, matches, facilityId)).toBe(
-        'update',
-      );
-    }
-  });
-});
-
-describe('bootstrapSuperAdmin wiring', () => {
-  const config = {
-    skip: false as const,
-    email: 'admin@example.com',
-    password: 's3cret-pass',
-    nickname: 'Senior AI Lab',
-    facilityId: null,
-  };
-
-  function makePrisma(existing: ExistingSuperAdmin): {
-    prisma: SuperAdminPrisma;
-    create: jest.Mock;
-    update: jest.Mock;
-  } {
-    const create = jest.fn().mockResolvedValue({});
-    const update = jest.fn().mockResolvedValue({});
-    const prisma: SuperAdminPrisma = {
-      user: {
-        findUnique: jest.fn().mockResolvedValue(existing),
-        create,
-        update,
-      },
-    };
-    return { prisma, create, update };
-  }
-
-  it('creates a SUPER_ADMIN when the account is absent', async () => {
-    const { prisma, create, update } = makePrisma(null);
-    await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('create');
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(update).not.toHaveBeenCalled();
-    const [arg] = create.mock.calls[0] as [
-      Parameters<SuperAdminPrisma['user']['create']>[0],
-    ];
-    expect(arg.data.email).toBe(config.email);
-    expect(arg.data.role).toBe('SUPER_ADMIN');
-    expect(arg.data.facilityId).toBeNull();
-    expect(arg.data.nickname).toBe(config.nickname);
-    expect(arg.data.passwordHash).toMatch(/^scrypt\$/);
-  });
-
-  it('promotes and resets an existing ADMIN, bumping sessionVersion', async () => {
-    const { prisma, create, update } = makePrisma({
-      id: 'user_nokyang_admin',
-      role: 'ADMIN',
-      passwordHash: await hashPassword('old-password'),
-      facilityId: SCOPED_FACILITY_ID,
-    });
-    await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
-    expect(create).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledTimes(1);
-    const [arg] = update.mock.calls[0] as [
-      Parameters<SuperAdminPrisma['user']['update']>[0],
-    ];
-    expect(arg.where).toEqual({ id: 'user_nokyang_admin' });
-    expect(arg.data.role).toBe('SUPER_ADMIN');
-    expect(arg.data.facilityId).toBeNull();
-    expect(arg.data.sessionVersion).toEqual({ increment: 1 });
-    expect(arg.data.passwordHash).toMatch(/^scrypt\$/);
-  });
-
-  it('clears facility binding from an existing matching SUPER_ADMIN', async () => {
-    const { prisma, create, update } = makePrisma({
-      id: 'user-super',
-      role: 'SUPER_ADMIN',
-      passwordHash: await hashPassword(config.password),
-      facilityId: SCOPED_FACILITY_ID,
-    });
-    await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('update');
-    expect(create).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledTimes(1);
-    const [arg] = update.mock.calls[0] as [
-      Parameters<SuperAdminPrisma['user']['update']>[0],
-    ];
-    expect(arg.where).toEqual({ id: 'user-super' });
-    expect(arg.data.facilityId).toBeNull();
-    expect(arg.data.role).toBe('SUPER_ADMIN');
-    expect(arg.data.sessionVersion).toEqual({ increment: 1 });
-  });
-
-  it('is a no-op when the SUPER_ADMIN password already matches', async () => {
-    const { prisma, create, update } = makePrisma({
-      id: 'user_nokyang_admin',
-      role: 'SUPER_ADMIN',
-      passwordHash: await hashPassword(config.password),
-      facilityId: null,
-    });
-    await expect(bootstrapSuperAdmin(prisma, config)).resolves.toBe('noop');
-    expect(create).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalled();
+  it('requires direct database access before privileged reconciliation', () => {
+    expect(() => createManagedAdminPrismaClient({})).toThrow('DIRECT_URL');
   });
 });
