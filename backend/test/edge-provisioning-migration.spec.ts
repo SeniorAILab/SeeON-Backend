@@ -19,10 +19,23 @@ const schema = readFileSync(
 const migration = existsSync(migrationPath)
   ? readFileSync(migrationPath, 'utf8')
   : '';
+const validationLinkMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260810120000_event_validation_grant_link',
+  'migration.sql',
+);
+const validationLinkMigration = existsSync(validationLinkMigrationPath)
+  ? readFileSync(validationLinkMigrationPath, 'utf8')
+  : '';
 const facilityA = 'edge-migration-facility-a';
 const facilityB = 'edge-migration-facility-b';
 const installationA = '11111111-1111-4111-8111-111111111111';
 const installationB = '22222222-2222-4222-8222-222222222222';
+const validationRunA = '55555555-5555-4555-8555-555555555555';
+const validationRunB = '66666666-6666-4666-8666-666666666666';
 const processId = '33333333-3333-4333-8333-333333333333';
 const downloadId = '44444444-4444-4444-8444-444444444444';
 const completeTransferManifest = [
@@ -60,6 +73,7 @@ const cleanupTables = [
   'media_download_outbox_jobs',
   'media_download_audits',
   'edge_provisioning_audit_history',
+  'events',
   'edge_validation_grants',
   'edge_omission_previews',
   'edge_topology_snapshots',
@@ -67,7 +81,6 @@ const cleanupTables = [
   'edge_topology_aliases',
   'edge_credentials',
   'media_clips',
-  'events',
   'cameras',
   'spaces',
   'floors',
@@ -129,6 +142,79 @@ describe('edge provisioning persistence migration', () => {
       'PRODUCT ownership requires an explicit transfer manifest',
     );
     expect(migration).toContain('media_download_audit_requires_outbox');
+  });
+
+  it('adds an additive facility-safe validation grant discriminator', () => {
+    // Given: validation events need durable ownership without changing historical rows.
+    // When: the Prisma model and follow-up migration are inspected.
+    // Then: the nullable discriminator has a same-facility FK and supporting index.
+    expect(schema).toMatch(
+      /validationRunId\s+String\?\s+@map\("validation_run_id"\)\s+@db\.Uuid/,
+    );
+    expect(schema).toMatch(
+      /validationGrant\s+EdgeValidationGrant\?\s+@relation\(fields:\s*\[facilityId,\s*validationRunId\],\s*references:\s*\[facilityId,\s*id\],\s*onDelete:\s*Restrict,\s*onUpdate:\s*Cascade\)/,
+    );
+    expect(schema).toMatch(/events\s+Event\[\]/);
+    expect(schema).toContain('@@unique([facilityId, id])');
+    expect(schema).toContain('@@index([facilityId, validationRunId])');
+    expect(validationLinkMigration).toContain(
+      'ALTER TABLE "events" ADD COLUMN "validation_run_id" UUID;',
+    );
+    expect(validationLinkMigration).toContain(
+      'edge_validation_grants_facility_id_id_key',
+    );
+    expect(validationLinkMigration).toContain(
+      'events_facility_id_validation_run_id_idx',
+    );
+    expect(validationLinkMigration).toContain(
+      'events_facility_id_validation_run_id_fkey',
+    );
+    expect(validationLinkMigration).not.toMatch(
+      /\bDROP\s+(?:TABLE|COLUMN|POLICY)\b/i,
+    );
+    expect(validationLinkMigration).not.toMatch(/\bREVOKE\b/i);
+  });
+
+  it('keeps ordinary events null while validation events resolve only to same-facility grants', async () => {
+    // Given: one validation grant per fixture facility and one historical ordinary event.
+    await executeAll(direct, [
+      `INSERT INTO edge_validation_grants (id,facility_id,edge_installation_id,enrollment_generation,expires_at) VALUES ('${validationRunA}','${facilityA}','${installationA}',1,now()+interval '15 minutes')`,
+      `INSERT INTO edge_validation_grants (id,facility_id,edge_installation_id,enrollment_generation,expires_at) VALUES ('${validationRunB}','${facilityB}','${installationB}',1,now()+interval '15 minutes')`,
+    ]);
+
+    // When: a post-v1 event links its grant and a cross-facility link is attempted.
+    await sql(
+      direct,
+      `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key,validation_run_id) VALUES ('validation-event-a','${facilityA}','camera-a','space-a','fall',now(),now(),'validation-event-a','${validationRunA}')`,
+    );
+    await expect(
+      sql(
+        direct,
+        `UPDATE events SET validation_run_id='${validationRunB}' WHERE id='event-a'`,
+      ),
+    ).rejects.toThrow();
+
+    // Then: null retains historical semantics and the linked event joins its owning grant.
+    const rows = await direct.$queryRaw<
+      Array<{
+        event_id: string;
+        validation_run_id: string | null;
+        grant_id: string | null;
+      }>
+    >`SELECT event_row.id AS event_id,event_row.validation_run_id,grant_row.id AS grant_id
+      FROM events event_row
+      LEFT JOIN edge_validation_grants grant_row
+        ON grant_row.facility_id=event_row.facility_id AND grant_row.id=event_row.validation_run_id
+      WHERE event_row.id IN ('event-a','validation-event-a')
+      ORDER BY event_row.id`;
+    expect(rows).toEqual([
+      { event_id: 'event-a', validation_run_id: null, grant_id: null },
+      {
+        event_id: 'validation-event-a',
+        validation_run_id: validationRunA,
+        grant_id: validationRunA,
+      },
+    ]);
   });
 
   it('scopes refs and requires an exact manifest for PRODUCT ownership transfer', async () => {

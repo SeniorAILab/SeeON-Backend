@@ -380,11 +380,14 @@ model Event {
   clipId             String?  @map("clip_id")
   /// Edge-generated event UUID for ingest dedup; null when the edge did not supply one.
   edgeEventId        String?  @map("edge_event_id") @db.Uuid
+  /// Null for ordinary events; set only for accepted validation-run events.
+  validationRunId    String?  @map("validation_run_id") @db.Uuid
 
-  facility          Facility           @relation(fields: [facilityId], references: [id])
-  camera            Camera             @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  originAlerts      Alert[]            @relation("AlertOriginEvent")
+  facility          Facility              @relation(fields: [facilityId], references: [id])
+  camera            Camera                @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space             Space                 @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  validationGrant   EdgeValidationGrant?  @relation(fields: [facilityId, validationRunId], references: [facilityId, id], onDelete: Restrict, onUpdate: Cascade)
+  originAlerts      Alert[]               @relation("AlertOriginEvent")
   dashboardReceipts DashboardReceipt[]
 
   mediaBinding EventMediaBinding?
@@ -394,6 +397,7 @@ model Event {
   @@unique([facilityId, edgeEventId])
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
+  @@index([facilityId, validationRunId])
   @@map("events")
 }
 
@@ -776,7 +780,9 @@ model EdgeValidationGrant {
 
   facility               Facility                   @relation(fields: [facilityId], references: [id])
   installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
+  events                 Event[]
 
+  @@unique([facilityId, id])
   @@index([facilityId, status, expiresAt])
   @@map("edge_validation_grants")
 }
