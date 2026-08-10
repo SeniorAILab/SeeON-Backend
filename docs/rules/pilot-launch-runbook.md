@@ -20,9 +20,10 @@ The integration workspace must contain:
 - a pinned `known_hosts` entry and a SHA-256 baseline of the selected edge
   machine ID
 
-The final seal has `schemaVersion: 1` and binds the approved plan SHA-256 to the
-exact AI and ML Git SHAs plus four built image digests. Image references contain
-`@sha256:`; mutable tags such as `latest` or `dev` are not release identities.
+The final seal has `schemaVersion: 2` and binds the approved plan SHA-256 to the
+exact AI and ML repository identities, commit trees, Git SHAs, and four built
+images. Every image record includes its digest reference, image ID, platform,
+repository, and OCI source-revision label. Mutable tags are not release identities.
 Any source change after sealing invalidates the seal and all review receipts.
 Build new images, write a new seal, and rerun every review and gate.
 
@@ -32,6 +33,8 @@ Before any production command, export pointers, never credential values:
 export EDGE_PROVISIONING_PLAN="$WS/.omo/plans/edge-driven-facility-provisioning.md"
 export EDGE_PROVISIONING_DRAFT="$WS/.omo/drafts/edge-driven-facility-provisioning.md"
 export EDGE_PROVISIONING_SEAL="$WS/.omo/evidence/edge-driven-facility-provisioning/final-rc-seal.json"
+export EDGE_PROVISIONING_APPROVED_PLAN_SHA256='<independently approved plan digest>'
+export EDGE_PROVISIONING_SEAL_SHA256='<independently recorded seal digest>'
 ```
 
 ## Local release-candidate gate
@@ -107,10 +110,17 @@ or media mutation.
 7. Keep `EDGE_TOKEN_PEPPER`, managed-admin inputs, and media secrets in the
    existing host secret store. Never print the host environment.
 
-The read-only smoke consumes a redacted API-derived receipt:
+The read-only smoke consumes a redacted execution receipt only after its digest
+is independently recorded. Schema 2 receipts contain sequenced command results,
+timestamps, exit codes, and evidence hashes. A full lifecycle receipt includes
+credential issue, enrollment, topology, heartbeat, event/clip download, rotation,
+timeout retry, restart, and rollback-dry-run executions. The post-restart section
+must have a newer generation and revalidate every lock, queue, volume, backup,
+schema, scope, capacity, database, and compatibility predicate.
 
 ```sh
 export EDGE_PROVISIONING_AI_READBACK="$EVIDENCE/ai-rollout-readback.json"
+export EDGE_PROVISIONING_AI_READBACK_SHA256='<independently recorded receipt digest>'
 sh scripts/deploy/edge-provisioning-smoke.sh --production --ai-only
 ```
 
@@ -197,7 +207,8 @@ node "$AI_RC/scripts/deploy/verify-edge-provisioning-evidence.mjs" \
   --plan-sha256 "$APPROVED_PLAN_SHA256" \
   --evidence "$EVIDENCE" \
   --ai "$AI_RC" \
-  --ml "$ML_RC"
+  --ml "$ML_RC" \
+  --seal-sha256 "$EDGE_PROVISIONING_SEAL_SHA256"
 ```
 
 Proceed only on `PLAN_COMPLIANCE_OK`. A failed or partially completed smoke is a
