@@ -1,181 +1,197 @@
-// Production super-admin bootstrap.
-//
-// This is a different layer from the Nokyang demo dataset composed by
-// prisma/seed.ts.
-//
-// Here we idempotently guarantee that one email/password SUPER_ADMIN exists so a
-// freshly migrated production database is operable. It runs after `prisma migrate
-// deploy` in the safe deploy path (ADR) and is driven entirely by runtime env —
-// no credentials or account identities are committed. If SUPER_ADMIN_PASSWORD or
-// SUPER_ADMIN_EMAIL is unset the bootstrap is a no-op, so deploys without a
-// configured super admin are never blocked.
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import { hashPassword, verifyPassword } from '../src/auth/password';
 
-const DEFAULT_NICKNAME = 'Senior AI Lab';
+export const MANAGED_SUPER_ADMIN_KEY = 'senior-ai-lab-primary' as const;
 
-type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
+export type SuperAdminConfig = {
+  readonly managedIdentityKey: typeof MANAGED_SUPER_ADMIN_KEY;
+  readonly email: string;
+  readonly password: string;
+  readonly bootstrapSourceEmail: string;
+};
 
-export type SuperAdminConfig =
-  | { readonly skip: true; readonly reason: string }
-  | {
-      readonly skip: false;
-      readonly email: string;
-      readonly password: string;
-      readonly nickname: string;
-      readonly facilityId: string | null;
-    };
+type ManagedSuperAdmin = {
+  readonly id: string;
+  readonly email: string | null;
+  readonly managedIdentityKey: string | null;
+  readonly role: 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
+  readonly passwordHash: string | null;
+  readonly facilityId: string | null;
+};
+
+export type SuperAdminAction = 'update' | 'noop';
+
+export class ManagedSuperAdminConfigError extends Error {
+  readonly name = 'ManagedSuperAdminConfigError';
+}
+
+export class ManagedSuperAdminCollisionError extends Error {
+  readonly name = 'ManagedSuperAdminCollisionError';
+
+  constructor() {
+    super('Managed SUPER_ADMIN identity collision; no rows changed.');
+  }
+}
+
+export class ManagedSuperAdminSourceMissingError extends Error {
+  readonly name = 'ManagedSuperAdminSourceMissingError';
+
+  constructor() {
+    super('Managed SUPER_ADMIN bootstrap source is missing; no rows changed.');
+  }
+}
 
 export function readSuperAdminConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): SuperAdminConfig {
-  const password = env.SUPER_ADMIN_PASSWORD ?? '';
-  if (password.length === 0) {
-    return { skip: true, reason: 'SUPER_ADMIN_PASSWORD is not set' };
+  const managedIdentityKey = requiredInput(env, 'SUPER_ADMIN_MANAGED_KEY');
+  if (managedIdentityKey !== MANAGED_SUPER_ADMIN_KEY) {
+    throw new ManagedSuperAdminConfigError(
+      `SUPER_ADMIN_MANAGED_KEY must be ${MANAGED_SUPER_ADMIN_KEY}.`,
+    );
   }
-  const email = (env.SUPER_ADMIN_EMAIL ?? '').trim();
-  if (email.length === 0) {
-    return { skip: true, reason: 'SUPER_ADMIN_EMAIL is not set' };
-  }
-  const nickname = (env.SUPER_ADMIN_NICKNAME ?? '').trim() || DEFAULT_NICKNAME;
-  const facilityId = (env.SUPER_ADMIN_FACILITY_ID ?? '').trim() || null;
-  return { skip: false, email, password, nickname, facilityId };
-}
 
-export type ExistingSuperAdmin = {
-  readonly id: string;
-  readonly role: Role;
-  readonly passwordHash: string | null;
-  readonly facilityId: string | null;
-} | null;
-
-export type SuperAdminAction = 'create' | 'update' | 'noop';
-
-/// Pure decision: only skip (noop) when the account is already a SUPER_ADMIN whose
-/// stored password already matches the requested one, so repeated deploys neither
-/// rewrite the row nor churn sessionVersion (which would log the super admin out).
-export function decideSuperAdminAction(
-  existing: ExistingSuperAdmin,
-  passwordMatches: boolean,
-  facilityId: string | null,
-): SuperAdminAction {
-  if (existing === null) {
-    return 'create';
-  }
-  if (
-    existing.role === 'SUPER_ADMIN' &&
-    existing.passwordHash !== null &&
-    passwordMatches &&
-    existing.facilityId === facilityId
-  ) {
-    return 'noop';
-  }
-  return 'update';
-}
-
-export type SuperAdminPrisma = {
-  readonly user: {
-    readonly findUnique: (args: {
-      readonly where: { readonly email: string };
-      readonly select: {
-        readonly id: true;
-        readonly role: true;
-        readonly passwordHash: true;
-        readonly facilityId: true;
-      };
-    }) => Promise<ExistingSuperAdmin>;
-    readonly create: (args: {
-      readonly data: {
-        readonly email: string;
-        readonly passwordHash: string;
-        readonly nickname: string;
-        readonly role: 'SUPER_ADMIN';
-        readonly facilityId?: string | null;
-      };
-    }) => Promise<unknown>;
-    readonly update: (args: {
-      readonly where: { readonly id: string };
-      readonly data: {
-        readonly passwordHash: string;
-        readonly nickname: string;
-        readonly role: 'SUPER_ADMIN';
-        readonly sessionVersion: { readonly increment: 1 };
-        readonly facilityId?: string | null;
-      };
-    }) => Promise<unknown>;
+  return {
+    managedIdentityKey,
+    email: requiredEmail(env, 'SUPER_ADMIN_EMAIL'),
+    password: requiredInput(env, 'SUPER_ADMIN_PASSWORD', false),
+    bootstrapSourceEmail: requiredEmail(
+      env,
+      'SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL',
+    ),
   };
-};
+}
+
+export function decideSuperAdminAction(
+  existing: ManagedSuperAdmin,
+  passwordMatches: boolean,
+  config: SuperAdminConfig,
+): SuperAdminAction {
+  return existing.email === config.email &&
+    existing.managedIdentityKey === config.managedIdentityKey &&
+    existing.role === 'SUPER_ADMIN' &&
+    existing.facilityId === null &&
+    passwordMatches
+    ? 'noop'
+    : 'update';
+}
 
 export async function bootstrapSuperAdmin(
-  prisma: SuperAdminPrisma,
-  config: Extract<SuperAdminConfig, { skip: false }>,
+  prisma: PrismaClient,
+  config: SuperAdminConfig,
 ): Promise<SuperAdminAction> {
-  const existing = await prisma.user.findUnique({
-    where: { email: config.email },
-    select: { id: true, role: true, passwordHash: true, facilityId: true },
-  });
-  const passwordMatches =
-    existing?.passwordHash != null
-      ? await verifyPassword(config.password, existing.passwordHash)
-      : false;
-  const action = decideSuperAdminAction(
-    existing,
-    passwordMatches,
-    config.facilityId,
-  );
-  if (action === 'noop') {
-    return 'noop';
-  }
+  return prisma.$transaction(
+    async (transaction) => {
+      const rows = await transaction.user.findMany({
+        where: {
+          OR: [
+            { email: { in: [config.email, config.bootstrapSourceEmail] } },
+            { managedIdentityKey: { not: null } },
+          ],
+        },
+        select: {
+          id: true,
+          email: true,
+          managedIdentityKey: true,
+          role: true,
+          passwordHash: true,
+          facilityId: true,
+        },
+      });
+      const existing = selectManagedSuperAdmin(rows, config);
+      const passwordMatches =
+        existing.passwordHash !== null &&
+        (await verifyPassword(config.password, existing.passwordHash));
+      const action = decideSuperAdminAction(existing, passwordMatches, config);
+      if (action === 'noop') return action;
 
-  const passwordHash = await hashPassword(config.password);
-  if (existing === null) {
-    await prisma.user.create({
-      data: {
-        email: config.email,
-        passwordHash,
-        nickname: config.nickname,
-        role: 'SUPER_ADMIN',
-        facilityId: config.facilityId,
-      },
-    });
-    return 'create';
-  }
-
-  await prisma.user.update({
-    where: { id: existing.id },
-    data: {
-      passwordHash,
-      nickname: config.nickname,
-      role: 'SUPER_ADMIN',
-      sessionVersion: { increment: 1 },
-      facilityId: config.facilityId,
+      await transaction.user.update({
+        where: { id: existing.id },
+        data: {
+          email: config.email,
+          managedIdentityKey: config.managedIdentityKey,
+          role: 'SUPER_ADMIN',
+          facilityId: null,
+          sessionVersion: { increment: 1 },
+          ...(passwordMatches
+            ? {}
+            : { passwordHash: await hashPassword(config.password) }),
+        },
+      });
+      return action;
     },
-  });
-  return 'update';
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
-function createPrismaClient(): PrismaClient {
-  const directUrl = process.env.DIRECT_URL;
+export function createManagedAdminPrismaClient(
+  env: NodeJS.ProcessEnv = process.env,
+): PrismaClient {
+  const directUrl = env.DIRECT_URL;
   if (!directUrl) {
-    throw new Error(
-      'DIRECT_URL must be set for privileged super-admin bootstrap.',
+    throw new ManagedSuperAdminConfigError(
+      'DIRECT_URL must be set for privileged managed SUPER_ADMIN access.',
     );
   }
   return new PrismaClient({ datasources: { db: { url: directUrl } } });
 }
 
+function selectManagedSuperAdmin(
+  rows: readonly ManagedSuperAdmin[],
+  config: SuperAdminConfig,
+): ManagedSuperAdmin {
+  const managedRows = rows.filter((row) => row.managedIdentityKey !== null);
+  if (
+    managedRows.length > 1 ||
+    (managedRows.length === 1 &&
+      managedRows[0].managedIdentityKey !== config.managedIdentityKey)
+  ) {
+    throw new ManagedSuperAdminCollisionError();
+  }
+
+  const managed = managedRows.find(
+    (row) => row.managedIdentityKey === config.managedIdentityKey,
+  );
+  const existing =
+    managed ?? rows.find((row) => row.email === config.bootstrapSourceEmail);
+  if (!existing) throw new ManagedSuperAdminSourceMissingError();
+
+  const target = rows.find((row) => row.email === config.email);
+  if (target && target.id !== existing.id) {
+    throw new ManagedSuperAdminCollisionError();
+  }
+  return existing;
+}
+
+function requiredInput(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  trim = true,
+): string {
+  const raw = env[name] ?? '';
+  const value = trim ? raw.trim() : raw;
+  if (value.length === 0) {
+    throw new ManagedSuperAdminConfigError(`${name} must be set.`);
+  }
+  return value;
+}
+
+function requiredEmail(env: NodeJS.ProcessEnv, name: string): string {
+  const email = requiredInput(env, name).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new ManagedSuperAdminConfigError(`${name} must be a valid email.`);
+  }
+  return email;
+}
+
 async function main(): Promise<void> {
   const config = readSuperAdminConfig();
-  if (config.skip) {
-    console.log(`Skipping super-admin bootstrap: ${config.reason}.`);
-    return;
-  }
-  const prisma = createPrismaClient();
+  const prisma = createManagedAdminPrismaClient();
   try {
     const action = await bootstrapSuperAdmin(prisma, config);
     console.log(
-      `Super-admin bootstrap ${action}: email=${config.email} role=SUPER_ADMIN facility=${config.facilityId ?? '<none>'}`,
+      `Managed SUPER_ADMIN bootstrap action=${action} managedKey=${config.managedIdentityKey}`,
     );
   } finally {
     await prisma.$disconnect();
@@ -184,7 +200,11 @@ async function main(): Promise<void> {
 
 if (require.main === module) {
   main().catch((error: unknown) => {
-    console.error(error);
+    console.error(
+      error instanceof Error
+        ? error.message
+        : 'Managed SUPER_ADMIN bootstrap failed.',
+    );
     process.exit(1);
   });
 }

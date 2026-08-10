@@ -1,54 +1,72 @@
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
+
 import { verifyPassword } from '../src/auth/password';
-import { NOKYANG_ADMIN_EMAIL } from './demo-nokyang.fixture';
+import {
+  createManagedAdminPrismaClient,
+  ManagedSuperAdminCollisionError,
+  readSuperAdminConfig,
+  type SuperAdminConfig,
+} from './seed-super-admin';
+
+export class ManagedSuperAdminDriftError extends Error {
+  readonly name = 'ManagedSuperAdminDriftError';
+
+  constructor() {
+    super('Managed SUPER_ADMIN drift detected.');
+  }
+}
+
+export async function assertManagedSuperAdminDriftFree(
+  prisma: PrismaClient,
+  config: SuperAdminConfig,
+): Promise<void> {
+  const managed = await prisma.user.findMany({
+    where: { managedIdentityKey: { not: null } },
+    select: {
+      email: true,
+      managedIdentityKey: true,
+      passwordHash: true,
+      role: true,
+      facilityId: true,
+    },
+  });
+  if (managed.length !== 1) throw new ManagedSuperAdminCollisionError();
+
+  const [admin] = managed;
+  const passwordMatches =
+    admin.passwordHash !== null &&
+    (await verifyPassword(config.password, admin.passwordHash));
+  if (
+    admin.managedIdentityKey !== config.managedIdentityKey ||
+    admin.email !== config.email ||
+    admin.role !== 'SUPER_ADMIN' ||
+    admin.facilityId !== null ||
+    !passwordMatches
+  ) {
+    throw new ManagedSuperAdminDriftError();
+  }
+}
 
 async function main(): Promise<void> {
-  const directUrl = process.env.DIRECT_URL;
-  const password = (process.env.NOKYANG_ADMIN_PASSWORD ?? '').trim();
-
-  if (!directUrl) {
-    throw new Error(
-      'DIRECT_URL must be set for the Nokyang admin drift check.',
-    );
-  }
-  if (!password) {
-    throw new Error(
-      'NOKYANG_ADMIN_PASSWORD must be set for the Nokyang admin drift check.',
-    );
-  }
-
-  const prisma = new PrismaClient({ datasources: { db: { url: directUrl } } });
+  const config = readSuperAdminConfig();
+  const prisma = createManagedAdminPrismaClient();
   try {
-    const admin = await prisma.user.findUnique({
-      where: { email: NOKYANG_ADMIN_EMAIL },
-      select: { passwordHash: true },
-    });
-
-    if (!admin) {
-      throw new Error(
-        'Nokyang admin is missing; run the seed before this check.',
-      );
-    }
-    if (
-      !admin.passwordHash ||
-      !(await verifyPassword(password, admin.passwordHash))
-    ) {
-      throw new Error(
-        'Nokyang admin password drift detected; re-run the seed with the current NOKYANG_ADMIN_PASSWORD.',
-      );
-    }
-
-    console.log('Nokyang admin password matches NOKYANG_ADMIN_PASSWORD.');
+    await assertManagedSuperAdminDriftFree(prisma, config);
+    console.log(
+      `Managed SUPER_ADMIN drift check passed managedKey=${config.managedIdentityKey}`,
+    );
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(
-    error instanceof Error
-      ? error.message
-      : 'Nokyang admin drift check failed.',
-  );
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error: unknown) => {
+    console.error(
+      error instanceof Error
+        ? error.message
+        : 'Managed SUPER_ADMIN drift check failed.',
+    );
+    process.exit(1);
+  });
+}
