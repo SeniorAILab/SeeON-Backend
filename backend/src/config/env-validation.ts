@@ -7,6 +7,7 @@ const REQUIRED_PROD_ENV = [
   'SMTP_HOST',
   'SMTP_USER',
   'SMTP_PASSWORD',
+  'EDGE_TOKEN_PEPPER',
 ] as const;
 
 const LOCAL_ONLY_VALUES = [

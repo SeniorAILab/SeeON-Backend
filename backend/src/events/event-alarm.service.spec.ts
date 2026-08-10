@@ -87,6 +87,22 @@ describe('EventAlarmService', () => {
       }),
     );
   });
+
+  it('does not write or emit an alert for a validation-linked event', async () => {
+    const validationEvent = {
+      ...event,
+      validationRunId: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
+    };
+    const { service, writeAlert } = setup(validationEvent);
+
+    await service.record({
+      cameraId: 'camera-1',
+      type: 'fall',
+      detectedAt: new Date(),
+    });
+
+    expect(writeAlert).not.toHaveBeenCalled();
+  });
   it('propagates Event.snapshotKey to the derived Alert', async () => {
     const eventWithSnapshot = { ...event, snapshotKey: 'events/event-1.jpg' };
     const { service, writeAlert } = setup(eventWithSnapshot);

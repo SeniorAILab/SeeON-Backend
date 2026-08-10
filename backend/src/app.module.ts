@@ -18,6 +18,7 @@ import { MlConfigModule } from './ml-config/ml-config.module.js';
 import { validateBackendEnv } from './config/env-validation.js';
 import { EventMediaModule } from './media/event-media.module.js';
 import { AlertMediaModule } from './media/alert-media.module.js';
+import { EdgeCredentialsModule } from './edge-credentials/edge-credentials.module.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,
@@ -37,6 +38,7 @@ import { AlertMediaModule } from './media/alert-media.module.js';
     }),
     PrismaModule,
     AuthModule,
+    EdgeCredentialsModule,
     CamerasModule,
     AlertsModule,
     DashboardModule,

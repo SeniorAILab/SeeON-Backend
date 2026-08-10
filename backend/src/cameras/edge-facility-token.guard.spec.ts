@@ -7,6 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 
 import { EdgeFacilityTokenGuard } from './edge-facility-token.guard';
+import type { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
+import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
 
 function contextFor(headers: Record<string, string | undefined>) {
   const request = { headers };
@@ -17,6 +19,72 @@ function contextFor(headers: Record<string, string | undefined>) {
 }
 
 describe('EdgeFacilityTokenGuard', () => {
+  it('injects a token-derived principal and never falls through v1 to legacy', async () => {
+    const principal = {
+      tokenId: '7H2K9M4QXP3R',
+      facilityId: 'facility-1',
+      edgeInstallationId: 'c72bd9a7-3e04-47ba-a8cd-a56e54f98152',
+      enrollmentGeneration: 1,
+    };
+    const authenticator = {
+      authenticate: jest.fn().mockResolvedValue(principal),
+      bindRequest: jest.fn().mockResolvedValue(principal),
+    } as unknown as EdgeCredentialAuthenticator;
+    const metrics = new LegacyEdgeMetrics();
+    const guard = new EdgeFacilityTokenGuard(
+      new ConfigService({ API_EDGE_RELAY_TOKEN: 'legacy' }),
+      authenticator,
+      metrics,
+    );
+    const { context, request } = contextFor({
+      authorization:
+        'Bearer eft_v1.7H2K9M4QXP3R.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request).toHaveProperty('edgePrincipal', principal);
+    expect(request).toHaveProperty('edgeFacilityId', 'facility-1');
+    expect(metrics.count('edge.cameras')).toBe(0);
+  });
+
+  it('never accepts malformed eft_v1 through the legacy shared-token path', async () => {
+    const authenticate = jest
+      .fn()
+      .mockRejectedValue(new UnauthorizedException());
+    const authenticator = {
+      authenticate,
+    } as unknown as EdgeCredentialAuthenticator;
+    const guard = new EdgeFacilityTokenGuard(
+      new ConfigService({ API_EDGE_RELAY_TOKEN: 'eft_v1.invalid' }),
+      authenticator,
+    );
+    await expect(
+      guard.canActivate(
+        contextFor({
+          authorization: 'Bearer eft_v1.invalid',
+          'x-facility-id': 'facility-1',
+        }).context,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(authenticate).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts only successful enumerated legacy camera acceptance', () => {
+    const metrics = new LegacyEdgeMetrics();
+    const guard = new EdgeFacilityTokenGuard(
+      new ConfigService({ API_EDGE_RELAY_TOKEN: 'legacy' }),
+      undefined,
+      metrics,
+    );
+    expect(
+      guard.canActivate(
+        contextFor({
+          authorization: 'Bearer legacy',
+          'x-facility-id': 'facility-1',
+        }).context,
+      ),
+    ).toBe(true);
+    expect(metrics.count('edge.cameras')).toBe(1);
+  });
   it('accepts the configured bearer token and binds facility scope', () => {
     const guard = new EdgeFacilityTokenGuard(
       new ConfigService({ API_EDGE_RELAY_TOKEN: 'edge-token' }),
