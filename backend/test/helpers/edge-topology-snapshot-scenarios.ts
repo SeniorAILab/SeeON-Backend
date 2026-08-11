@@ -48,6 +48,24 @@ export function registerTopologySnapshotTests(
     );
   });
 
+  it('stamps lastSyncedAt on the EdgeInstallation inside the same transaction as the apply', async () => {
+    const before = await harness.admin.edgeInstallation.findUniqueOrThrow({
+      where: { id: INSTALLATION_ID },
+    });
+    expect(before.lastSyncedAt).toBeNull();
+
+    const beforePut = new Date();
+    await harness.put(topologyBody()).expect(200);
+
+    const after = await harness.admin.edgeInstallation.findUniqueOrThrow({
+      where: { id: INSTALLATION_ID },
+    });
+    expect(after.lastSyncedAt).not.toBeNull();
+    expect(after.lastSyncedAt?.getTime() ?? 0).toBeGreaterThanOrEqual(
+      beforePut.getTime(),
+    );
+  });
+
   it('conflicts when a snapshot ID is rebound to another semantic hash', async () => {
     await harness.put(topologyBody()).expect(200);
     const changed = topologyBody();

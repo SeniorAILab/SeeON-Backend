@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProvisioningSource } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import { CamerasService } from './cameras.service';
@@ -29,6 +29,9 @@ type CameraDelegate = {
 type MlFacilityConfigDelegate = {
   upsert: jest.Mock;
 };
+type EdgeInstallationDelegate = {
+  update: jest.Mock;
+};
 
 function setup() {
   const camera: CameraDelegate = {
@@ -41,6 +44,9 @@ function setup() {
   const mlFacilityConfig: MlFacilityConfigDelegate = {
     upsert: jest.fn(),
   };
+  const edgeInstallation: EdgeInstallationDelegate = {
+    update: jest.fn(),
+  };
   const prisma = {
     withFacilityContext: jest.fn(
       (
@@ -48,11 +54,17 @@ function setup() {
         cb: (tx: {
           camera: CameraDelegate;
           mlFacilityConfig: MlFacilityConfigDelegate;
+          edgeInstallation: EdgeInstallationDelegate;
         }) => unknown,
-      ) => cb({ camera, mlFacilityConfig }),
+      ) => cb({ camera, mlFacilityConfig, edgeInstallation }),
     ),
   } as unknown as PrismaService;
-  return { service: new CamerasService(prisma), camera, mlFacilityConfig };
+  return {
+    service: new CamerasService(prisma),
+    camera,
+    mlFacilityConfig,
+    edgeInstallation,
+  };
 }
 
 const fullCamera = {
@@ -62,8 +74,15 @@ const fullCamera = {
   label: 'Room 1',
   lastSeenAt: null,
   online: false,
+  edgeInstallationId: null as string | null,
+  provisioningSource: ProvisioningSource.PRODUCT,
   createdAt: new Date('2026-06-16T00:00:00.000Z'),
   rtspUrl: 'rtsp://example.internal/stream',
+};
+
+const edgeOwnedCamera = {
+  ...fullCamera,
+  provisioningSource: ProvisioningSource.EDGE,
 };
 
 describe('CamerasService', () => {
@@ -177,6 +196,7 @@ describe('CamerasService', () => {
         label: 'Room 1',
         lastSeenAt: null,
         online: false,
+        provisioningSource: ProvisioningSource.PRODUCT,
         createdAt: fullCamera.createdAt,
       },
     ]);
@@ -275,6 +295,91 @@ describe('CamerasService', () => {
       where: { facilityId: 'facility-1' },
       create: { facilityId: 'facility-1', configVersion: 1 },
       update: { configVersion: { increment: 1 } },
+    });
+  });
+
+  describe('recordHeartbeat', () => {
+    it('marks the camera online and stamps lastHeartbeatAt on its linked EdgeInstallation', async () => {
+      const { service, camera, edgeInstallation } = setup();
+      camera.update.mockResolvedValue({
+        ...fullCamera,
+        edgeInstallationId: 'installation-1',
+      });
+
+      await expect(
+        service.recordHeartbeat('facility-1', 'c1'),
+      ).resolves.toBeUndefined();
+
+      expect(camera.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: { lastSeenAt: expect.any(Date) as Date, online: true },
+      });
+      expect(edgeInstallation.update).toHaveBeenCalledWith({
+        where: {
+          facilityId_id: { facilityId: 'facility-1', id: 'installation-1' },
+        },
+        data: { lastHeartbeatAt: expect.any(Date) as Date },
+      });
+    });
+
+    it('is a clean no-op on EdgeInstallation when the camera has none linked', async () => {
+      const { service, camera, edgeInstallation } = setup();
+      camera.update.mockResolvedValue({
+        ...fullCamera,
+        edgeInstallationId: null,
+      });
+
+      await expect(
+        service.recordHeartbeat('facility-1', 'c1'),
+      ).resolves.toBeUndefined();
+
+      expect(edgeInstallation.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Edge ownership lock', () => {
+    it('rejects update on an EDGE-owned camera', async () => {
+      const { service, camera } = setup();
+      camera.findUnique.mockResolvedValue(edgeOwnedCamera);
+
+      await expect(
+        service.update('facility-1', 'c1', { label: 'Renamed' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(camera.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects spaceId reassignment on an EDGE-owned camera', async () => {
+      const { service, camera } = setup();
+      camera.findUnique.mockResolvedValue(edgeOwnedCamera);
+
+      await expect(
+        service.update('facility-1', 'c1', { spaceId: 'space-2' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(camera.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects remove on an EDGE-owned camera', async () => {
+      const { service, camera } = setup();
+      camera.findUnique.mockResolvedValue(edgeOwnedCamera);
+
+      await expect(service.remove('facility-1', 'c1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(camera.delete).not.toHaveBeenCalled();
+    });
+
+    it('still allows update and remove on a PRODUCT-owned camera', async () => {
+      const { service, camera } = setup();
+      camera.findUnique.mockResolvedValue(fullCamera);
+      camera.update.mockResolvedValue(fullCamera);
+      camera.delete.mockResolvedValue(fullCamera);
+
+      await expect(
+        service.update('facility-1', 'c1', { label: 'Renamed' }),
+      ).resolves.toMatchObject({ id: 'c1' });
+      await expect(service.remove('facility-1', 'c1')).resolves.toMatchObject({
+        id: 'c1',
+      });
     });
   });
 });

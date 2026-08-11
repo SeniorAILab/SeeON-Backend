@@ -25,7 +25,13 @@ services:
       ALERT_DASHBOARD_URL: ${ALERT_DASHBOARD_URL:?ALERT_DASHBOARD_URL is required in prod}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
       EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:?EDGE_TOKEN_PEPPER is required in prod}
-      EDGE_LEGACY_COMPAT_ENABLED: ${EDGE_LEGACY_COMPAT_ENABLED:-true}
+      # Fail-closed by default: only the literal string 'true' activates the
+      # deprecated shared-token compatibility path, and only for the
+      # migration window of an Edge that has not yet enrolled eft_v1
+      # credentials. EDGE_LEGACY_FACILITY_ID must be set alongside it — the
+      # legacy path never trusts a client-supplied facility scope.
+      EDGE_LEGACY_COMPAT_ENABLED: ${EDGE_LEGACY_COMPAT_ENABLED:-}
+      EDGE_LEGACY_FACILITY_ID: ${EDGE_LEGACY_FACILITY_ID:-}
       # SMTP_* configures outbound alert email delivery (nodemailer). Host/user/password
       # are required in prod; port/from/secure have sane defaults in the adapter.
       SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required in prod}
@@ -34,8 +40,11 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required in prod}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE-}
-      # Shared bearer token for remote Event API producers.
-      EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:?EDGE_FACILITY_TOKEN is required in prod}
+      # Deprecated shared bearer token for the legacy compatibility path
+      # only (see EDGE_LEGACY_COMPAT_ENABLED above). Not required to boot:
+      # eft_v1 per-installation credentials are the authoritative path and
+      # do not depend on this value.
+      EDGE_FACILITY_TOKEN: ${EDGE_FACILITY_TOKEN:-}
       # 세션 수명. 미설정 시 backend의 DEFAULT_JWT_TTL(30d)로 떨어진다.
       # 요양보호사 TV가 상시 로그인 상태를 유지해야 하므로 짧게 두지 말 것.
       JWT_TTL: ${JWT_TTL:-30d}

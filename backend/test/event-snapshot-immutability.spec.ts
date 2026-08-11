@@ -69,7 +69,15 @@ describe('Event snapshot immutable HTTP contract', () => {
         EdgeIngestTokenGuard,
         {
           provide: ConfigService,
-          useValue: new ConfigService({ EDGE_FACILITY_TOKEN: EDGE_TOKEN }),
+          useValue: new ConfigService({
+            EDGE_FACILITY_TOKEN: EDGE_TOKEN,
+            // Snapshot upload authenticates via the deprecated shared edge
+            // token below, which now requires an explicit opt-in
+            // (fail-closed by default). EdgeIngestTokenGuard resolves
+            // facility scope server-side from the event record, so no
+            // EDGE_LEGACY_FACILITY_ID pin is needed here.
+            EDGE_LEGACY_COMPAT_ENABLED: 'true',
+          }),
         },
         {
           provide: EventRecorderService,

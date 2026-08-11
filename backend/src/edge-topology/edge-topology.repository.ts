@@ -143,6 +143,15 @@ export class EdgeTopologyRepository {
         completedAt: input.now,
       },
     });
+    await tx.edgeInstallation.update({
+      where: {
+        facilityId_id: {
+          facilityId: input.principal.facilityId,
+          id: input.principal.edgeInstallationId,
+        },
+      },
+      data: { lastSyncedAt: input.now },
+    });
     await tx.edgeProvisioningAudit.create({
       data: {
         facilityId: input.principal.facilityId,

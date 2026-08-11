@@ -1,3 +1,5 @@
+import { ConflictException } from '@nestjs/common';
+import { ProvisioningSource } from '@prisma/client';
 import type { FloorsRepository } from '../repositories/floors.repository';
 import { FloorsService } from './floors.service';
 
@@ -8,7 +10,12 @@ describe('FloorsService', () => {
     name: '2F',
     orderIndex: 2,
     isActive: true,
+    provisioningSource: ProvisioningSource.PRODUCT,
     createdAt: new Date('2026-06-21T00:00:00.000Z'),
+  };
+  const edgeOwnedFloor = {
+    ...floor,
+    provisioningSource: ProvisioningSource.EDGE,
   };
 
   function serviceWith(
@@ -46,6 +53,7 @@ describe('FloorsService', () => {
 
   it('rejects hard delete when active child spaces exist', async () => {
     const { service, repository } = serviceWith({
+      findById: jest.fn().mockResolvedValue(floor),
       deleteWithDescendants: jest.fn().mockResolvedValue({
         status: 'active_spaces',
       }),
@@ -66,6 +74,7 @@ describe('FloorsService', () => {
 
   it('rejects hard delete when inactive child spaces have references', async () => {
     const { service } = serviceWith({
+      findById: jest.fn().mockResolvedValue(floor),
       deleteWithDescendants: jest.fn().mockResolvedValue({
         status: 'referenced_spaces',
       }),
@@ -81,8 +90,20 @@ describe('FloorsService', () => {
     });
   });
 
+  it('includes provisioningSource in the presented floor response', async () => {
+    const { service } = serviceWith({
+      create: jest.fn().mockResolvedValue(floor),
+    });
+    await expect(
+      service.create('facility-session', { name: '2F', orderIndex: 2 }),
+    ).resolves.toMatchObject({
+      provisioningSource: ProvisioningSource.PRODUCT,
+    });
+  });
+
   it('cascade-removes eligible soft-deleted child spaces and the floor atomically', async () => {
     const { service, repository } = serviceWith({
+      findById: jest.fn().mockResolvedValue(floor),
       deleteWithDescendants: jest.fn().mockResolvedValue({ status: 'deleted' }),
     });
     await expect(
@@ -92,5 +113,48 @@ describe('FloorsService', () => {
       'facility-session',
       'floor-1',
     );
+  });
+
+  describe('Edge ownership lock', () => {
+    it('rejects update on an EDGE-owned floor', async () => {
+      const { service, repository } = serviceWith({
+        findById: jest.fn().mockResolvedValue(edgeOwnedFloor),
+        update: jest.fn(),
+      });
+
+      await expect(
+        service.update('facility-session', 'floor-1', { name: 'Renamed' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects delete on an EDGE-owned floor', async () => {
+      const { service, repository } = serviceWith({
+        findById: jest.fn().mockResolvedValue(edgeOwnedFloor),
+        deleteWithDescendants: jest.fn(),
+      });
+
+      await expect(
+        service.remove('facility-session', 'floor-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.deleteWithDescendants).not.toHaveBeenCalled();
+    });
+
+    it('still allows update and delete on a PRODUCT-owned floor', async () => {
+      const { service } = serviceWith({
+        findById: jest.fn().mockResolvedValue(floor),
+        update: jest.fn().mockResolvedValue(floor),
+        deleteWithDescendants: jest.fn().mockResolvedValue({
+          status: 'deleted',
+        }),
+      });
+
+      await expect(
+        service.update('facility-session', 'floor-1', { name: 'Renamed' }),
+      ).resolves.toMatchObject({ id: 'floor-1' });
+      await expect(
+        service.remove('facility-session', 'floor-1'),
+      ).resolves.toBeUndefined();
+    });
   });
 });

@@ -57,6 +57,10 @@ export class EventMediaHarness {
       'event-media-test-session-secret-32-characters';
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
     process.env.EDGE_FACILITY_TOKEN = EVENT_MEDIA_EDGE_TOKEN;
+    // The legacy shared-token path is fail-closed by default; this harness
+    // authenticates as an Edge via that shared token, so it must opt in
+    // explicitly.
+    process.env.EDGE_LEGACY_COMPAT_ENABLED = 'true';
     process.env.EVENT_CLIPS_ENABLED = 'false';
     this.canAcceptMaximumClip.mockReset().mockResolvedValue(true);
     this.persist.mockReset().mockImplementation((input) =>

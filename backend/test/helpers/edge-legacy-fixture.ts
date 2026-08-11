@@ -42,6 +42,15 @@ export async function createEdgeLegacyFixture(): Promise<EdgeLegacyFixture> {
     'edge-legacy-compat-session-secret-32-characters';
   process.env.FRONT_ORIGIN = 'http://localhost:3000';
   process.env.EDGE_FACILITY_TOKEN = EDGE_LEGACY_TOKEN;
+  // The guards' legacy shared-token path is fail-closed by default; this
+  // fixture exists specifically to characterize the transition-window
+  // legacy path, so it must opt in explicitly.
+  process.env.EDGE_LEGACY_COMPAT_ENABLED = 'true';
+  // The legacy path never trusts a client-supplied x-facility-id; it is
+  // always pinned server-side. This fixture pins it to the first facility
+  // graph, so any legacy request lands there regardless of what facility id
+  // it claims in headers.
+  process.env.EDGE_LEGACY_FACILITY_ID = graph.first.facilityId;
   process.env.EVENT_CLIPS_ENABLED = 'true';
   const rootDir = await mkdtemp(join(tmpdir(), `${PREFIX}-`));
   process.env.MEDIA_CLIP_DIR = rootDir;

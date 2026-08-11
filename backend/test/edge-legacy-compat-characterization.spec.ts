@@ -120,6 +120,23 @@ describe('edge provisioning fixture contract', () => {
 });
 
 describe('current legacy edge route compatibility', () => {
+  // NOTE: EDGE_LEGACY_COMPAT_ENABLED now defaults to fail-closed (disabled)
+  // in both edge guards — this was an intentional security fix, not a
+  // regression. This suite still exercises the legacy shared-token path
+  // because createEdgeLegacyFixture() explicitly sets
+  // EDGE_LEGACY_COMPAT_ENABLED='true', characterizing the deliberate
+  // transition-window opt-in rather than the (now safe) default. See
+  // edge-facility-token.guard.spec.ts / edge-ingest-token.guard.spec.ts for
+  // coverage of the fail-closed default itself.
+  //
+  // The cameras guard's facility scope is also no longer taken from the
+  // x-facility-id header: createEdgeLegacyFixture() pins
+  // EDGE_LEGACY_FACILITY_ID to the first facility graph, and requests below
+  // that send a foreign x-facility-id (e.g. via mapLegacyCamera, which
+  // always targets `second`) still resolve against the pinned facility.
+  // EdgeIngestTokenGuard (events/heartbeat/snapshot/clip routes) never used
+  // that header — it resolves ownership server-side from camera/event
+  // records — so it is unaffected by the pin.
   let fixture: EdgeLegacyFixture | null = null;
 
   beforeAll(async () => {
@@ -130,28 +147,27 @@ describe('current legacy edge route compatibility', () => {
     if (fixture !== null) await fixture.close();
   });
 
-  it('accepts the shared legacy relay token while deriving edge-camera scope from its header', async () => {
-    // Given: two persisted facility graphs and one shared legacy token.
+  it('binds the shared legacy relay token to the server-pinned facility, ignoring the x-facility-id header', async () => {
+    // Given: two persisted facility graphs, a shared legacy token, and a
+    // server-side pin (EDGE_LEGACY_FACILITY_ID) on the first facility.
+    // mapLegacyCamera always sends x-facility-id naming the *second*
+    // facility — proving that header is never consulted for scope.
     const current = requireFixture(fixture);
-    const mapped = await request(current.app.getHttpServer())
-      .put('/api/v1/edge/cameras')
-      .set('x-edge-relay-token', EDGE_LEGACY_TOKEN)
-      .set('x-facility-id', current.first.facilityId)
-      .send({
-        edge_camera_ref: 'legacy-camera-a',
-        label: 'Legacy Camera A',
-        spaceId: current.first.spaceId,
-      })
-      .expect(200);
+    const mapped = await mapLegacyCamera(current, current.first.spaceId);
 
-    // When: the other facility header targets a foreign or absent space.
-    const foreign = await mapLegacyCamera(current, current.first.spaceId);
+    // When: a space that genuinely belongs to the facility the (ignored)
+    // header names, or no space at all, is referenced.
+    const foreign = await mapLegacyCamera(current, current.second.spaceId);
     const missing = await mapLegacyCamera(
       current,
       `${current.first.spaceId}-missing`,
     );
 
-    // Then: mapping belongs to the header facility and denial is non-disclosing.
+    // Then: mapping belongs to the pinned facility regardless of the
+    // header, and any space outside that pinned facility is a
+    // non-disclosing denial — a foreign facility named only in the header
+    // never gains access.
+    expect(mapped.status).toBe(200);
     expect(mapped.body).toMatchObject({
       facilityId: current.first.facilityId,
       spaceId: current.first.spaceId,

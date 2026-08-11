@@ -32,4 +32,34 @@ export class FacilitiesRepository {
       data,
     });
   }
+
+  /**
+   * Most recently created, still-active (not deactivated) Edge installation
+   * for a facility. EdgeInstallation is not RLS-tenant-guarded (it is not in
+   * PrismaService's TENANT_MODELS set), so this reads via `db` directly and
+   * filters by facilityId explicitly — mirrors edge-admin.repository.ts.
+   */
+  findActiveEdgeInstallation(facilityId: string) {
+    return this.prisma.db.edgeInstallation.findFirst({
+      where: { facilityId, deactivatedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Camera health counts for the facility admin status block. Camera is a
+   * TENANT_MODEL (RLS-guarded), so this must run inside withFacilityContext.
+   * "Healthy" reuses the existing per-camera `online` flag, which is already
+   * kept live by heartbeat ingest (sets true) and detection-lost events
+   * (sets false) — see CamerasService.recordHeartbeat/recordOffline.
+   */
+  getCameraHealthCounts(facilityId: string) {
+    return this.prisma.withFacilityContext(facilityId, async (tx) => {
+      const [healthy, total] = await Promise.all([
+        tx.camera.count({ where: { isActive: true, online: true } }),
+        tx.camera.count({ where: { isActive: true } }),
+      ]);
+      return { healthy, total };
+    });
+  }
 }

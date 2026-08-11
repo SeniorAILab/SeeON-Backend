@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProvisioningSource } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import { CamerasService } from './cameras.service';
@@ -12,11 +12,13 @@ type CameraRecord = {
   rtspUrl: string | null;
   lastSeenAt: null;
   online: boolean;
+  provisioningSource: ProvisioningSource;
   createdAt: Date;
 };
 
 type CameraDelegate = {
   upsert: jest.Mock<Promise<CameraRecord>, [unknown]>;
+  findUnique: jest.Mock<Promise<CameraRecord | null>, [unknown]>;
 };
 
 type MlFacilityConfigDelegate = {
@@ -26,7 +28,9 @@ type MlFacilityConfigDelegate = {
 function setup() {
   const camera: CameraDelegate = {
     upsert: jest.fn<Promise<CameraRecord>, [unknown]>(),
+    findUnique: jest.fn<Promise<CameraRecord | null>, [unknown]>(),
   };
+  camera.findUnique.mockResolvedValue(null);
   const mlFacilityConfig: MlFacilityConfigDelegate = {
     upsert: jest.fn(),
   };
@@ -53,6 +57,7 @@ function cameraRecord(overrides: Partial<CameraRecord> = {}): CameraRecord {
     rtspUrl: null,
     lastSeenAt: null,
     online: false,
+    provisioningSource: ProvisioningSource.PRODUCT,
     createdAt: new Date('2026-07-06T00:00:00.000Z'),
     ...overrides,
   };
@@ -155,5 +160,21 @@ describe('CamerasService edge camera mapping', () => {
         spaceId: 'other-facility-space',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses to overwrite a row already owned by an enrolled Edge installation', async () => {
+    const { service, camera } = setup();
+    camera.findUnique.mockResolvedValue(
+      cameraRecord({ provisioningSource: ProvisioningSource.EDGE }),
+    );
+
+    await expect(
+      service.upsertEdgeCameraMapping('facility-1', {
+        edge_camera_ref: 'edge-local-cam-1',
+        label: 'Attempted overwrite',
+        spaceId: 'space-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(camera.upsert).not.toHaveBeenCalled();
   });
 });

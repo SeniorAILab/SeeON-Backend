@@ -5,9 +5,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
+import { assertProductOwned } from '../common/edge-ownership-guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { bumpMlConfigVersion } from '../ml-config/ml-config.version.js';
 import type {
+  CameraResponseDto,
   CreateCameraRequestDto,
   EdgeCameraMappingRequestDto,
   EdgeCameraMappingResponseDto,
@@ -44,6 +46,10 @@ export class CamerasService {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
         async (tx: Prisma.TransactionClient) => {
+          const existing = await tx.camera.findUnique({
+            where: { facilityId_spaceId: { facilityId, spaceId } },
+          });
+          if (existing) assertProductOwned(existing);
           const camera = await tx.camera.upsert({
             where: { facilityId_spaceId: { facilityId, spaceId } },
             create: { facilityId, label, spaceId },
@@ -112,6 +118,7 @@ export class CamerasService {
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
     );
     if (!existing) throw new NotFoundException('Camera not found');
+    assertProductOwned(existing);
     if (dto.label !== undefined && !dto.label.trim()) {
       throw new ConflictException('label is required');
     }
@@ -150,6 +157,7 @@ export class CamerasService {
       (tx: Prisma.TransactionClient) => tx.camera.findUnique({ where: { id } }),
     );
     if (!existing) throw new NotFoundException('Camera not found');
+    assertProductOwned(existing);
     try {
       const camera = await this.prisma.withFacilityContext(
         facilityId,
@@ -174,11 +182,23 @@ export class CamerasService {
     const now = new Date();
     await this.prisma.withFacilityContext(
       facilityId,
-      (tx: Prisma.TransactionClient) =>
-        tx.camera.update({
+      async (tx: Prisma.TransactionClient) => {
+        const camera = await tx.camera.update({
           where: { id: cameraId },
           data: { lastSeenAt: now, online: true },
-        }),
+        });
+        if (camera.edgeInstallationId !== null) {
+          await tx.edgeInstallation.update({
+            where: {
+              facilityId_id: {
+                facilityId,
+                id: camera.edgeInstallationId,
+              },
+            },
+            data: { lastHeartbeatAt: now },
+          });
+        }
+      },
     );
   }
   async recordOffline(facilityId: string, cameraId: string) {
@@ -193,7 +213,7 @@ export class CamerasService {
   }
 }
 
-function toCameraDto(camera: Camera) {
+function toCameraDto(camera: Camera): CameraResponseDto {
   return {
     id: camera.id,
     facilityId: camera.facilityId,
@@ -201,6 +221,7 @@ function toCameraDto(camera: Camera) {
     label: camera.label,
     lastSeenAt: camera.lastSeenAt,
     online: camera.online,
+    provisioningSource: camera.provisioningSource,
     createdAt: camera.createdAt,
   };
 }

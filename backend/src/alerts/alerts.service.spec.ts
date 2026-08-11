@@ -231,21 +231,12 @@ describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
     expect(resolveAlert).not.toHaveBeenCalled();
   });
 
-  it('조치 기록이 없으면 해결 완료를 거부한다', async () => {
+  it('조치 기록이 없어도 해결 완료가 통과한다', async () => {
+    // 화면에는 텍스트 입력이 없다 — 해결 완료는 메모 유무로 막히지 않는다.
+    // actor+시각은 writer가 별도로 찍으므로(alert-writer.service.ts), 여기서는
+    // resolveAlert가 세션 actor 그대로 호출됐는지만 확인한다.
     const { service, alertNote, resolveAlert } = setup();
     alertNote.count.mockResolvedValue(0);
-
-    await expect(
-      service.resolve('facility-1', 'alert-1', 'user-1'),
-    ).rejects.toThrow(
-      '조치 결과를 먼저 기록해야 해결 완료로 바꿀 수 있습니다.',
-    );
-    expect(resolveAlert).not.toHaveBeenCalled();
-  });
-
-  it('조치 기록이 있으면 해결 완료가 통과한다', async () => {
-    const { service, alertNote, resolveAlert } = setup();
-    alertNote.count.mockResolvedValue(1);
 
     await service.resolve('facility-1', 'alert-1', 'user-1');
 
@@ -256,14 +247,16 @@ describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
     });
   });
 
-  it('메모 개수는 해당 알림으로만 센다', async () => {
-    const { service, alertNote } = setup();
-    alertNote.count.mockResolvedValue(2);
+  it('메모 개수를 조회하지 않는다 — 해결은 더 이상 메모를 조건으로 읽지 않는다', async () => {
+    const { service, alertNote, resolveAlert } = setup();
 
-    await service.resolve('facility-1', 'alert-42', 'user-1');
+    await service.resolve('facility-1', 'alert-1', 'user-1');
 
-    expect(alertNote.count).toHaveBeenCalledWith({
-      where: { alertId: 'alert-42' },
+    expect(alertNote.count).not.toHaveBeenCalled();
+    expect(resolveAlert).toHaveBeenCalledWith({
+      facilityId: 'facility-1',
+      alertId: 'alert-1',
+      actorUserId: 'user-1',
     });
   });
 });

@@ -49,6 +49,21 @@ export class FacilitiesController {
   }
 
   @ApiOperation({
+    summary: 'Get facility Edge status',
+    description:
+      'Compact Edge status block: connection state, last heartbeat, last topology sync, and healthy camera count.',
+  })
+  @Get(':id/edge-status')
+  @UseGuards(RequireFacilityGuard)
+  getEdgeStatus(@Param('id') id: string, @Req() req: RequestWithAuth) {
+    const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
+    if (!facilityId) throw new ForbiddenException('Facility context required');
+    if (id !== facilityId)
+      throw new ForbiddenException('Facility scope mismatch');
+    return this.service.getEdgeStatus(id);
+  }
+
+  @ApiOperation({
     summary: 'Update a facility',
     description:
       'Updates name, address, and phone for the authenticated facility.',

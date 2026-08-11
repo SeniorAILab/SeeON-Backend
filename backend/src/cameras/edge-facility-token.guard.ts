@@ -12,9 +12,17 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
 import type { EdgeAuthenticatedRequest } from '../edge-credentials/edge-credential.types.js';
 import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
+import {
+  configString,
+  isEdgeLegacyCompatEnabled,
+  resolveEdgeLegacyFacilityId,
+  warnLegacyEdgeUsage,
+} from '../edge-credentials/edge-legacy-compat.js';
 
 export const EDGE_RELAY_TOKEN_HEADER = 'x-edge-relay-token';
-export const EDGE_FACILITY_HEADER = 'x-facility-id';
+// x-facility-id is intentionally not read anywhere in this guard: the legacy
+// shared-token path must never trust a client-supplied facility scope. See
+// edge-legacy-compat.ts for how the facility is resolved instead.
 
 export type EdgeFacilityRequest = EdgeAuthenticatedRequest;
 
@@ -34,7 +42,12 @@ export class EdgeFacilityTokenGuard implements CanActivate {
       throw new UnauthorizedException('edge facility token required');
     }
     if (token.startsWith('eft_v1.')) return this.activateV1(request, token);
-    if (configString(this.config, 'EDGE_LEGACY_COMPAT_ENABLED') === 'false') {
+    // Fail-closed default: the legacy shared-token path only activates when
+    // this is explicitly the string 'true'. Unset, empty, mixed case, or any
+    // other value disables it — the transition-window opt-in must be
+    // deliberate, never accidental. See edge-legacy-compat-characterization
+    // spec for the pinned legacy behavior once explicitly enabled.
+    if (!isEdgeLegacyCompatEnabled(this.config)) {
       throw new ForbiddenException('edge facility token mismatch');
     }
     const expected = this.expectedToken();
@@ -42,13 +55,23 @@ export class EdgeFacilityTokenGuard implements CanActivate {
       throw new ForbiddenException('edge facility token mismatch');
     }
 
-    const facilityId = headerValue(request.headers[EDGE_FACILITY_HEADER]);
+    // The facility scope for the legacy path is never taken from a
+    // client-supplied header: any holder of the one static shared token
+    // could otherwise pick any facility it likes by changing x-facility-id.
+    // Instead it is pinned server-side, for the duration of the migration
+    // window only. If no pin is configured, the legacy path cannot
+    // establish a facility scope and must fail closed rather than trust the
+    // header.
+    const facilityId = resolveEdgeLegacyFacilityId(this.config);
     if (facilityId === null) {
-      throw new ForbiddenException('facility scope required');
+      throw new ServiceUnavailableException(
+        'legacy edge facility scope is not configured',
+      );
     }
 
     request.edgeFacilityId = facilityId;
     this.metrics?.increment('edge.cameras');
+    warnLegacyEdgeUsage('edge.cameras', facilityId);
     return true;
   }
 
@@ -71,9 +94,9 @@ export class EdgeFacilityTokenGuard implements CanActivate {
   }
 
   private expectedToken(): string {
-    const token =
-      configString(this.config, 'EDGE_FACILITY_TOKEN') ??
-      configString(this.config, 'API_EDGE_RELAY_TOKEN');
+    // API_EDGE_RELAY_TOKEN is the Edge's internal ml-api<->ml-worker relay
+    // token, not a Hub facility credential — it must never be accepted here.
+    const token = configString(this.config, 'EDGE_FACILITY_TOKEN');
     if (token === null) {
       throw new ServiceUnavailableException(
         'edge facility token is not configured',
@@ -108,10 +131,4 @@ function headerValue(value: string | string[] | undefined): string | null {
   const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== 'string' || !raw.trim()) return null;
   return raw.trim();
-}
-
-function configString(config: ConfigService, key: string): string | null {
-  const value = config.get<string>(key);
-  if (typeof value !== 'string' || !value.trim()) return null;
-  return value.trim();
 }

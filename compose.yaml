@@ -48,7 +48,13 @@ services:
       FRONT_ORIGIN: http://localhost:3000
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
       EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:-}
-      EDGE_LEGACY_COMPAT_ENABLED: ${EDGE_LEGACY_COMPAT_ENABLED:-true}
+      # Fail-closed by default: only the literal string 'true' activates the
+      # deprecated shared-token fallback, and only for the migration window
+      # of an Edge that has not yet enrolled eft_v1 credentials. When
+      # enabled, EDGE_LEGACY_FACILITY_ID must also be set — the legacy path
+      # never trusts a client-supplied facility scope.
+      EDGE_LEGACY_COMPAT_ENABLED: ${EDGE_LEGACY_COMPAT_ENABLED:-}
+      EDGE_LEGACY_FACILITY_ID: ${EDGE_LEGACY_FACILITY_ID:-}
       # SMTP_* configures outbound alert email delivery (nodemailer). Dev placeholders
       # point at a local/dummy SMTP host; override with real Gmail app-password creds in prod.
       SMTP_HOST: ${SMTP_HOST:-}

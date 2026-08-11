@@ -592,6 +592,12 @@ model EdgeInstallation {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   deactivatedAt     DateTime? @map("deactivated_at")
+  /// Last successful camera heartbeat routed through a camera owned by this
+  /// installation (events/heartbeat ingest). Null until the first heartbeat.
+  lastHeartbeatAt   DateTime? @map("last_heartbeat_at")
+  /// Last successful topology snapshot apply for this installation
+  /// (edge/topology-snapshots PUT). Null until the first sync.
+  lastSyncedAt      DateTime? @map("last_synced_at")
 
   facility           Facility                     @relation(fields: [facilityId], references: [id])
   generations        EdgeInstallationGeneration[] @relation("EdgeInstallationGenerations")

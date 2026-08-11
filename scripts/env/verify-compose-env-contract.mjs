@@ -228,12 +228,45 @@ function assertLocalComposeContract(config) {
       'local backend must map EDGE_TOKEN_PEPPER without a default',
     );
   }
-  if (String(backendEnvironment.EDGE_LEGACY_COMPAT_ENABLED) !== 'true') {
+  // Fail-closed by default: the deprecated shared-token compatibility path
+  // must never activate implicitly, only via an explicit opt-in value.
+  if (String(backendEnvironment.EDGE_LEGACY_COMPAT_ENABLED ?? '') === 'true') {
     throw new VerificationError(
-      'local backend must keep EDGE_LEGACY_COMPAT_ENABLED true',
+      'local backend must default EDGE_LEGACY_COMPAT_ENABLED to disabled',
+    );
+  }
+  if (String(backendEnvironment.EDGE_LEGACY_FACILITY_ID ?? '') !== '') {
+    throw new VerificationError(
+      'local backend must default EDGE_LEGACY_FACILITY_ID to unset',
     );
   }
 }
+function assertLegacyEdgeTokenNotRequiredContract(config) {
+  const backendEnvironment = config.services?.backend?.environment;
+  if (
+    backendEnvironment === null ||
+    typeof backendEnvironment !== 'object' ||
+    Array.isArray(backendEnvironment)
+  ) {
+    throw new VerificationError(
+      'host prod no-legacy-edge config has no backend environment map',
+    );
+  }
+  // The Hub must boot without the deprecated shared edge token or an
+  // explicit legacy-compat opt-in: eft_v1 per-installation credentials are
+  // the authoritative path and neither variable may block startup.
+  if (String(backendEnvironment.EDGE_FACILITY_TOKEN ?? '') !== '') {
+    throw new VerificationError(
+      'host prod backend must boot without EDGE_FACILITY_TOKEN set',
+    );
+  }
+  if (String(backendEnvironment.EDGE_LEGACY_COMPAT_ENABLED ?? '') === 'true') {
+    throw new VerificationError(
+      'host prod backend must default EDGE_LEGACY_COMPAT_ENABLED to disabled',
+    );
+  }
+}
+
 function assertSmtpSecureOmissionContract(config) {
   const smtpPort = config.services?.backend?.environment?.SMTP_PORT;
   const smtpSecure = config.services?.backend?.environment?.SMTP_SECURE;
@@ -258,6 +291,7 @@ function withTempEnvFiles(run) {
     const hostEnvPath = join(dir, 'host.env');
     const missingPepperHostEnvPath = join(dir, 'missing-pepper-host.env');
     const implicitSecureHostEnvPath = join(dir, 'implicit-secure-host.env');
+    const noLegacyEdgeHostEnvPath = join(dir, 'no-legacy-edge-host.env');
     writeFileSync(emptyHostEnvPath, '');
     writeFileSync(hostEnvPath, completeHostEnv);
     writeFileSync(
@@ -265,11 +299,18 @@ function withTempEnvFiles(run) {
       completeHostEnv.replace(/^EDGE_TOKEN_PEPPER=.*\n/m, ''),
     );
     writeFileSync(implicitSecureHostEnvPath, implicitSecureHostEnv);
+    writeFileSync(
+      noLegacyEdgeHostEnvPath,
+      completeHostEnv
+        .replace(/^EDGE_LEGACY_COMPAT_ENABLED=.*\n/m, '')
+        .replace(/^EDGE_FACILITY_TOKEN=.*\n/m, ''),
+    );
     run({
       emptyHostEnvPath,
       hostEnvPath,
       missingPepperHostEnvPath,
       implicitSecureHostEnvPath,
+      noLegacyEdgeHostEnvPath,
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -283,6 +324,7 @@ function verify() {
       hostEnvPath,
       missingPepperHostEnvPath,
       implicitSecureHostEnvPath,
+      noLegacyEdgeHostEnvPath,
     }) => {
       const localConfigJson = requireSuccess(
         'local JSON config',
@@ -371,6 +413,27 @@ function verify() {
         ),
       );
 
+      const noLegacyEdgeConfigJson = requireSuccess(
+        'host prod config without legacy edge token or opt-in',
+        [
+          '--profile',
+          'full',
+          '-f',
+          'compose.yaml',
+          '-f',
+          'compose.prod.yaml',
+          'config',
+          '--format',
+          'json',
+        ],
+        noLegacyEdgeHostEnvPath,
+      );
+      assertLegacyEdgeTokenNotRequiredContract(
+        parseComposeJson(
+          'host prod config without legacy edge token or opt-in',
+          noLegacyEdgeConfigJson,
+        ),
+      );
     },
   );
 }

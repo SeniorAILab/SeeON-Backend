@@ -68,6 +68,10 @@ describe('Events API (e2e)', () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
     process.env.EDGE_FACILITY_TOKEN = EDGE_TOKEN;
+    // The legacy shared-token path is fail-closed by default; this suite
+    // authenticates as an Edge via that shared token, so it must opt in
+    // explicitly.
+    process.env.EDGE_LEGACY_COMPAT_ENABLED = 'true';
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },

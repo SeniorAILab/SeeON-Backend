@@ -12,6 +12,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
 import type { EdgeAuthenticatedRequest } from '../edge-credentials/edge-credential.types.js';
 import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
+import {
+  configString,
+  isEdgeLegacyCompatEnabled,
+  warnLegacyEdgeUsage,
+} from '../edge-credentials/edge-legacy-compat.js';
 
 export const EDGE_RELAY_TOKEN_HEADER = 'x-edge-relay-token';
 
@@ -43,8 +48,13 @@ export class EdgeIngestTokenGuard implements CanActivate {
       throw new UnauthorizedException('edge facility token required');
     }
     if (token.startsWith('eft_v1.')) return this.activateV1(request, token);
+    // Fail-closed default: the legacy shared-token path only activates when
+    // this is explicitly the string 'true'. Unset, empty, mixed case, or any
+    // other value disables it — the transition-window opt-in must be
+    // deliberate, never accidental. See edge-legacy-compat-characterization
+    // spec for the pinned legacy behavior once explicitly enabled.
     if (
-      configString(this.config, 'EDGE_LEGACY_COMPAT_ENABLED') === 'false' ||
+      !isEdgeLegacyCompatEnabled(this.config) ||
       requestsValidationRun(request.body)
     ) {
       throw new ForbiddenException('edge facility token mismatch');
@@ -54,7 +64,11 @@ export class EdgeIngestTokenGuard implements CanActivate {
       throw new ForbiddenException('edge facility token mismatch');
     }
 
-    this.metrics?.increment(legacyRoute(request.originalUrl));
+    const route = legacyRoute(request.originalUrl);
+    this.metrics?.increment(route);
+    // Facility scope is resolved downstream from camera/event ownership, not
+    // at guard time, so there is nothing server-side-known to log yet here.
+    warnLegacyEdgeUsage(route, null);
     return true;
   }
 
@@ -77,9 +91,9 @@ export class EdgeIngestTokenGuard implements CanActivate {
   }
 
   private expectedToken(): string {
-    const token =
-      configString(this.config, 'EDGE_FACILITY_TOKEN') ??
-      configString(this.config, 'API_EDGE_RELAY_TOKEN');
+    // API_EDGE_RELAY_TOKEN is the Edge's internal ml-api<->ml-worker relay
+    // token, not a Hub facility credential — it must never be accepted here.
+    const token = configString(this.config, 'EDGE_FACILITY_TOKEN');
     if (token === null) {
       throw new ServiceUnavailableException(
         'edge facility token is not configured',
@@ -131,10 +145,4 @@ function headerValue(value: string | string[] | undefined): string | null {
   const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== 'string' || !raw.trim()) return null;
   return raw.trim();
-}
-
-function configString(config: ConfigService, key: string): string | null {
-  const value = config.get<string>(key);
-  if (typeof value !== 'string' || !value.trim()) return null;
-  return value.trim();
 }

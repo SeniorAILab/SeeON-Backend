@@ -4,8 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Floor } from '@prisma/client';
+import { assertProductOwned } from '../../common/edge-ownership-guard.js';
 import type {
   CreateFloorRequestDto,
+  FloorResponseDto,
   UpdateFloorRequestDto,
 } from '../dto/floor.dto.js';
 import { FloorsRepository } from '../repositories/floors.repository.js';
@@ -38,7 +40,8 @@ export class FloorsService {
         error: 'conflict',
         message: 'name is required',
       });
-    await this.ensureExists(facilityId, id);
+    const existing = await this.requireExisting(facilityId, id);
+    assertProductOwned(existing);
     const floor = await this.floorsRepository.update(facilityId, id, {
       name: dto.name?.trim() ?? undefined,
       orderIndex: dto.orderIndex,
@@ -47,6 +50,8 @@ export class FloorsService {
     return presentFloor(floor);
   }
   async remove(facilityId: string, id: string) {
+    const existing = await this.requireExisting(facilityId, id);
+    assertProductOwned(existing);
     const result = await this.floorsRepository.deleteWithDescendants(
       facilityId,
       id,
@@ -67,22 +72,24 @@ export class FloorsService {
         message: '참조 이력이 있는 공간이 포함된 층은 삭제할 수 없습니다',
       });
   }
-  private async ensureExists(facilityId: string, id: string) {
+  private async requireExisting(facilityId: string, id: string) {
     const floor = await this.floorsRepository.findById(facilityId, id);
     if (!floor)
       throw new NotFoundException({
         error: 'not_found',
         message: 'Floor not found',
       });
+    return floor;
   }
 }
-export function presentFloor(floor: Floor) {
+export function presentFloor(floor: Floor): FloorResponseDto {
   return {
     id: floor.id,
     facilityId: floor.facilityId,
     name: floor.name,
     orderIndex: floor.orderIndex,
     isActive: floor.isActive,
+    provisioningSource: floor.provisioningSource,
     createdAt: floor.createdAt.toISOString(),
   };
 }

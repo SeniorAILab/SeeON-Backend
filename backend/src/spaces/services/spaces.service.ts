@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
+import { assertProductOwned } from '../../common/edge-ownership-guard.js';
 import type {
   CreateSpaceRequestDto,
+  SpaceResponseDto,
   SpaceTypeValue,
   UpdateSpaceRequestDto,
 } from '../dto/space.dto.js';
@@ -82,25 +84,28 @@ export class SpacesService {
   }
 
   async update(facilityId: string, id: string, dto: UpdateSpaceRequestDto) {
-    await this.ensureExists(facilityId, id);
+    const existing = await this.requireExisting(facilityId, id);
+    assertProductOwned(existing);
     const data = normalizeSpaceUpdate(dto);
     const space = await this.spacesRepository.update(facilityId, id, data);
     return presentSpace(space);
   }
 
   async remove(facilityId: string, id: string) {
-    await this.ensureExists(facilityId, id);
+    const existing = await this.requireExisting(facilityId, id);
+    assertProductOwned(existing);
     const space = await this.spacesRepository.softDelete(facilityId, id);
     return presentSpace(space);
   }
 
-  private async ensureExists(facilityId: string, id: string) {
+  private async requireExisting(facilityId: string, id: string) {
     const space = await this.spacesRepository.findById(facilityId, id);
     if (!space)
       throw new NotFoundException({
         error: 'not_found',
         message: 'Space not found',
       });
+    return space;
   }
 }
 
@@ -128,7 +133,7 @@ function normalizeSpaceUpdate(dto: UpdateSpaceRequestDto) {
   };
 }
 
-export function presentSpace(space: Space) {
+export function presentSpace(space: Space): SpaceResponseDto {
   return {
     id: space.id,
     facilityId: space.facilityId,
@@ -138,6 +143,7 @@ export function presentSpace(space: Space) {
     capacity: space.capacity,
     isActive: space.isActive,
     assignedStaff: space.assignedStaff,
+    provisioningSource: space.provisioningSource,
     createdAt: space.createdAt.toISOString(),
   };
 }

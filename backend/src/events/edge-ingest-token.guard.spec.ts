@@ -1,6 +1,7 @@
 import type { ExecutionContext } from '@nestjs/common';
 import {
   ForbiddenException,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -33,7 +34,7 @@ describe('EdgeIngestTokenGuard', () => {
     } as unknown as EdgeCredentialAuthenticator;
     const metrics = new LegacyEdgeMetrics();
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ API_EDGE_RELAY_TOKEN: 'legacy' }),
+      new ConfigService({ EDGE_FACILITY_TOKEN: 'legacy' }),
       authenticator,
       metrics,
     );
@@ -47,7 +48,10 @@ describe('EdgeIngestTokenGuard', () => {
   });
   it('accepts the configured bearer token', () => {
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      new ConfigService({
+        EDGE_FACILITY_TOKEN: 'edge-token',
+        EDGE_LEGACY_COMPAT_ENABLED: 'true',
+      }),
     );
 
     expect(
@@ -59,7 +63,10 @@ describe('EdgeIngestTokenGuard', () => {
 
   it('accepts the edge relay header token', () => {
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      new ConfigService({
+        EDGE_FACILITY_TOKEN: 'edge-token',
+        EDGE_LEGACY_COMPAT_ENABLED: 'true',
+      }),
     );
 
     expect(
@@ -69,21 +76,27 @@ describe('EdgeIngestTokenGuard', () => {
     ).toBe(true);
   });
 
-  it('falls back to API_EDGE_RELAY_TOKEN when EDGE_FACILITY_TOKEN is unset', () => {
+  it('no longer accepts API_EDGE_RELAY_TOKEN as a facility credential fallback', () => {
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ API_EDGE_RELAY_TOKEN: 'edge-token' }),
+      new ConfigService({
+        API_EDGE_RELAY_TOKEN: 'edge-token',
+        EDGE_LEGACY_COMPAT_ENABLED: 'true',
+      }),
     );
 
-    expect(
+    expect(() =>
       guard.canActivate(
         contextFor({ authorization: 'Bearer edge-token' }).context,
       ),
-    ).toBe(true);
+    ).toThrow(ServiceUnavailableException);
   });
 
   it('rejects missing and mismatched tokens without leaking token values', () => {
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      new ConfigService({
+        EDGE_FACILITY_TOKEN: 'edge-token',
+        EDGE_LEGACY_COMPAT_ENABLED: 'true',
+      }),
     );
 
     expect(() => guard.canActivate(contextFor({}).context)).toThrow(
@@ -103,7 +116,10 @@ describe('EdgeIngestTokenGuard', () => {
 
   it('does not require a facility scope header', () => {
     const guard = new EdgeIngestTokenGuard(
-      new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      new ConfigService({
+        EDGE_FACILITY_TOKEN: 'edge-token',
+        EDGE_LEGACY_COMPAT_ENABLED: 'true',
+      }),
     );
 
     expect(
@@ -114,12 +130,100 @@ describe('EdgeIngestTokenGuard', () => {
   });
 
   it('fails closed when the backend edge token is not configured', () => {
-    const guard = new EdgeIngestTokenGuard(new ConfigService({}));
+    const guard = new EdgeIngestTokenGuard(
+      new ConfigService({ EDGE_LEGACY_COMPAT_ENABLED: 'true' }),
+    );
 
     expect(() =>
       guard.canActivate(
         contextFor({ 'x-edge-relay-token': 'edge-token' }).context,
       ),
     ).toThrow(ServiceUnavailableException);
+  });
+
+  describe('EDGE_LEGACY_COMPAT_ENABLED default', () => {
+    it('defaults to disabled when unset, rejecting the shared legacy token', () => {
+      const guard = new EdgeIngestTokenGuard(
+        new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      );
+
+      expect(() =>
+        guard.canActivate(
+          contextFor({ authorization: 'Bearer edge-token' }).context,
+        ),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('treats any non-"true" value as disabled, not just "false"', () => {
+      for (const value of ['false', 'FALSE', 'True', '1', '', 'yes']) {
+        const guard = new EdgeIngestTokenGuard(
+          new ConfigService({
+            EDGE_FACILITY_TOKEN: 'edge-token',
+            EDGE_LEGACY_COMPAT_ENABLED: value,
+          }),
+        );
+
+        expect(() =>
+          guard.canActivate(
+            contextFor({ authorization: 'Bearer edge-token' }).context,
+          ),
+        ).toThrow(ForbiddenException);
+      }
+    });
+
+    it('enables the legacy shared-token path as before, only when explicitly "true"', () => {
+      const guard = new EdgeIngestTokenGuard(
+        new ConfigService({
+          EDGE_FACILITY_TOKEN: 'edge-token',
+          EDGE_LEGACY_COMPAT_ENABLED: 'true',
+        }),
+      );
+
+      expect(
+        guard.canActivate(
+          contextFor({ authorization: 'Bearer edge-token' }).context,
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects a request bearing only the shared static token when legacy is disabled', () => {
+      const guard = new EdgeIngestTokenGuard(
+        new ConfigService({ EDGE_FACILITY_TOKEN: 'edge-token' }),
+      );
+
+      expect(() =>
+        guard.canActivate(
+          contextFor({ authorization: 'Bearer edge-token' }).context,
+        ),
+      ).toThrow(ForbiddenException);
+    });
+  });
+
+  describe('legacy usage logging', () => {
+    it('logs a warning identifying the route, and never the token, when the legacy path is used', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      try {
+        const guard = new EdgeIngestTokenGuard(
+          new ConfigService({
+            EDGE_FACILITY_TOKEN: 'super-secret-edge-token',
+            EDGE_LEGACY_COMPAT_ENABLED: 'true',
+          }),
+        );
+
+        expect(
+          guard.canActivate(
+            contextFor({ authorization: 'Bearer super-secret-edge-token' })
+              .context,
+          ),
+        ).toBe(true);
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const [message] = warn.mock.calls[0] as [string];
+        expect(message).toContain('events.create');
+        expect(message).not.toContain('super-secret-edge-token');
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });

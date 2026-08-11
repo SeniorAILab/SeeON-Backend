@@ -28,6 +28,11 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
     process.env.EDGE_FACILITY_TOKEN = EDGE_TOKEN;
+    // The heartbeat route below authenticates with the deprecated shared
+    // edge token, which now requires an explicit opt-in (fail-closed by
+    // default). EdgeIngestTokenGuard never trusted a client-supplied
+    // x-facility-id, so no EDGE_LEGACY_FACILITY_ID pin is needed here.
+    process.env.EDGE_LEGACY_COMPAT_ENABLED = 'true';
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },
@@ -125,6 +130,48 @@ describe('Facilities and cameras response contracts (e2e)', () => {
     });
   });
 
+  it('GET /facilities/:id/edge-status reports NOT_ENROLLED for a facility with no Edge installation', async () => {
+    const seeded = await seedFacilityGraph('edge-status-not-enrolled');
+    const adminCookie = await seedSessionCookie(
+      seeded.facilityId,
+      'edge-status-not-enrolled-admin',
+      Role.ADMIN,
+    );
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/facilities/${seeded.facilityId}/edge-status`)
+      .set('cookie', adminCookie)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      connectionState: 'NOT_ENROLLED',
+      lastHeartbeatAt: null,
+      lastSyncedAt: null,
+      healthyCameraCount: 0,
+      totalCameraCount: 1,
+    });
+  });
+
+  it('GET /facilities/:id/edge-status denies cross-facility access with 403', async () => {
+    const first = await seedFacilityGraph('edge-status-deny-a');
+    const second = await seedFacilityGraph('edge-status-deny-b');
+    const firstAdminCookie = await seedSessionCookie(
+      first.facilityId,
+      'edge-status-deny-admin',
+      Role.ADMIN,
+    );
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/facilities/${second.facilityId}/edge-status`)
+      .set('cookie', firstAdminCookie)
+      .expect(403);
+    expect(response.body).toEqual({
+      error: 'Forbidden',
+      message: 'Facility scope mismatch',
+      statusCode: 403,
+    });
+  });
+
   it('GET /cameras and /cameras/:id expose online and lastSeenAt across heartbeat transitions', async () => {
     const seeded = await seedFacilityGraph('camera-health');
     const adminCookie = await seedSessionCookie(
@@ -145,6 +192,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
         label: seeded.cameraLabel,
         lastSeenAt: null,
         online: false,
+        provisioningSource: 'PRODUCT',
         createdAt: seeded.cameraCreatedAt.toISOString(),
       },
     ]);
@@ -170,6 +218,7 @@ describe('Facilities and cameras response contracts (e2e)', () => {
       label: seeded.cameraLabel,
       lastSeenAt,
       online: true,
+      provisioningSource: 'PRODUCT',
       createdAt: seeded.cameraCreatedAt.toISOString(),
     });
     expect(Date.parse(lastSeenAt)).not.toBeNaN();
