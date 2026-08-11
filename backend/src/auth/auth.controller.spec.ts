@@ -24,6 +24,7 @@ describe('AuthController', () => {
     createdAt: new Date('2026-06-18T00:00:00.000Z'),
     facilityId,
     email: null,
+    managedIdentityKey: null,
     passwordHash: null,
     phone: null,
     notificationEmail: null,

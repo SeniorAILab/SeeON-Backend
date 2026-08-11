@@ -1,0 +1,1 @@
+-- Schema metadata now models the existing deferred current-generation foreign key.

@@ -3,17 +3,19 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
+import type { EdgeAuthenticatedRequest } from '../edge-credentials/edge-credential.types.js';
+import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
 
 export const EDGE_RELAY_TOKEN_HEADER = 'x-edge-relay-token';
 
-export interface EdgeIngestRequest {
-  readonly headers: Record<string, string | string[] | undefined>;
-}
+export type EdgeIngestRequest = EdgeAuthenticatedRequest;
 
 /**
  * Dedicated variant of cameras/edge-facility-token.guard.ts (issue #552) for the
@@ -27,20 +29,50 @@ export interface EdgeIngestRequest {
  */
 @Injectable()
 export class EdgeIngestTokenGuard implements CanActivate {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly authenticator?: EdgeCredentialAuthenticator,
+    @Optional() private readonly metrics?: LegacyEdgeMetrics,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  canActivate(context: ExecutionContext): boolean | Promise<boolean> {
     const request = context.switchToHttp().getRequest<EdgeIngestRequest>();
-    const expected = this.expectedToken();
     const token = requestToken(request);
 
     if (token === null) {
       throw new UnauthorizedException('edge facility token required');
     }
+    if (token.startsWith('eft_v1.')) return this.activateV1(request, token);
+    if (
+      configString(this.config, 'EDGE_LEGACY_COMPAT_ENABLED') === 'false' ||
+      requestsValidationRun(request.body)
+    ) {
+      throw new ForbiddenException('edge facility token mismatch');
+    }
+    const expected = this.expectedToken();
     if (!tokensMatch(token, expected)) {
       throw new ForbiddenException('edge facility token mismatch');
     }
 
+    this.metrics?.increment(legacyRoute(request.originalUrl));
+    return true;
+  }
+
+  private async activateV1(
+    request: EdgeIngestRequest,
+    token: string,
+  ): Promise<boolean> {
+    if (this.authenticator === undefined) {
+      throw new ServiceUnavailableException(
+        'edge authentication is unavailable',
+      );
+    }
+    const principal = await this.authenticator.authenticate(token);
+    request.edgePrincipal = await this.authenticator.bindRequest(
+      request,
+      principal,
+    );
+    request.edgeFacilityId = request.edgePrincipal.facilityId;
     return true;
   }
 
@@ -55,6 +87,23 @@ export class EdgeIngestTokenGuard implements CanActivate {
     }
     return token;
   }
+}
+
+function legacyRoute(url: string | undefined): string {
+  if (url?.includes('/heartbeat')) return 'events.heartbeat';
+  if (url?.includes('/snapshot')) return 'events.snapshot';
+  if (url?.includes('/ml-config/')) return 'ml-config.get';
+  if (url?.includes('/clips/')) return 'events.clips';
+  if (url?.includes('/capabilities')) return 'events.capabilities';
+  return 'events.create';
+}
+
+function requestsValidationRun(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    ('validationRunId' in body || 'validation_run_id' in body)
+  );
 }
 function tokensMatch(token: string, expected: string): boolean {
   const tokenHash = createHash('sha256').update(token).digest();

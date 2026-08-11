@@ -21,6 +21,13 @@ function recordEventMock(): jest.Mock<
   return jest.fn<Promise<RecordedEventResponse>, [unknown]>();
 }
 
+function edgeRequest(principal?: {
+  facilityId?: string;
+  validationRunId?: string;
+}) {
+  return { edgePrincipal: principal } as never;
+}
+
 describe('EventsController record', () => {
   // Event-type canonicalization (trim+lowercase) and enum-membership
   // rejection now live entirely in EventRecorderService.record() (see
@@ -46,7 +53,7 @@ describe('EventsController record', () => {
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
     await expect(
-      controller.record({
+      controller.record(edgeRequest(), {
         camera_id: 'camera-1',
         type: 'foo',
         detected_at: new Date('2026-06-26T01:02:03.456Z'),
@@ -69,7 +76,7 @@ describe('EventsController record', () => {
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
     await expect(
-      controller.record({
+      controller.record(edgeRequest(), {
         camera_id: 'camera-1',
         type: ' DETECTION-LOST ',
         detected_at: new Date('2026-06-26T01:02:03.456Z'),
@@ -101,7 +108,7 @@ describe('EventsController record', () => {
     const cameras = {} as CamerasService;
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
-    await controller.record({
+    await controller.record(edgeRequest(), {
       camera_id: 'camera-1',
       type: 'fall',
       detected_at: new Date('2026-06-26T01:02:03.456Z'),
@@ -123,7 +130,7 @@ describe('EventsController record', () => {
     const controller = new EventsController(eventAlarm, recorder, cameras);
 
     await expect(
-      controller.record({
+      controller.record(edgeRequest(), {
         camera_id: 'camera-1',
         type: 'fall',
         detected_at: new Date('2026-06-26T01:02:03.456Z'),
@@ -316,7 +323,7 @@ describe('EventsController uploadSnapshot', () => {
     const eventAlarm = {} as EventAlarmService;
     const resolveForSnapshot = jest.fn<
       Promise<{ readonly id: string; readonly facilityId: string }>,
-      [string]
+      [string, string | null | undefined]
     >();
     resolveForSnapshot.mockResolvedValue({
       id: 'event-created-id',
@@ -338,7 +345,7 @@ describe('EventsController uploadSnapshot', () => {
       controller.uploadSnapshot(req as never, 'client-route-id'),
     ).resolves.toEqual({ snapshotKey: 'facility-1/event-created-id.jpg' });
 
-    expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
+    expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id', null);
     expect(persistSnapshotKey).toHaveBeenCalledWith(
       'facility-1',
       'event-created-id',
@@ -355,7 +362,7 @@ describe('EventsController uploadSnapshot', () => {
     const eventAlarm = {} as EventAlarmService;
     const resolveForSnapshot = jest.fn<
       Promise<{ readonly id: string; readonly facilityId: string }>,
-      [string]
+      [string, string | null | undefined]
     >();
     const persistSnapshotKey = jest.fn<
       Promise<void>,
@@ -391,7 +398,7 @@ describe('EventsController uploadSnapshot', () => {
     const eventAlarm = {} as EventAlarmService;
     const resolveForSnapshot = jest.fn<
       Promise<{ readonly id: string; readonly facilityId: string }>,
-      [string]
+      [string, string | null | undefined]
     >();
     const persistSnapshotKey = jest.fn<
       Promise<void>,

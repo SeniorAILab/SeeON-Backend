@@ -20,6 +20,7 @@ describe('EventRecorderService', () => {
       $queryRaw: jest.fn(),
       event: {
         create,
+        findFirst: jest.fn(),
         findUniqueOrThrow: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
@@ -262,10 +263,14 @@ describe('EventRecorderService', () => {
   });
 
   it('resolves event snapshot ownership through the security definer function', async () => {
-    const { subject, prisma } = makeSubject();
+    const { subject, prisma, tx } = makeSubject();
     prisma.$queryRaw.mockResolvedValue([
       { id: 'evt_1', facilityId: 'fac_1' },
     ] as never);
+    tx.event.findFirst.mockResolvedValue({
+      id: 'evt_1',
+      facilityId: 'fac_1',
+    });
 
     await expect(subject.resolveForSnapshot('evt_1')).resolves.toEqual({
       id: 'evt_1',
@@ -273,6 +278,10 @@ describe('EventRecorderService', () => {
     });
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.event.findFirst).toHaveBeenCalledWith({
+      where: { id: 'evt_1', validationRunId: null },
+      select: { id: true, facilityId: true },
+    });
   });
 
   it('rejects unknown events for snapshot upload', async () => {
@@ -320,7 +329,7 @@ describe('EventRecorderService', () => {
       ),
     });
     expect(tx.event.findMany).toHaveBeenCalledWith({
-      where: undefined,
+      where: { validationRunId: null },
       orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
       take: 3,
     });
@@ -339,6 +348,7 @@ describe('EventRecorderService', () => {
     });
     expect(tx.event.findMany).toHaveBeenCalledWith({
       where: {
+        validationRunId: null,
         OR: [
           { detectedAt: { lt: new Date('2026-06-26T02:00:00.000Z') } },
           {
@@ -377,7 +387,7 @@ describe('EventRecorderService', () => {
 
       await subject.list('fac_1', { cursor, limit });
       expect(tx.event.findMany).toHaveBeenLastCalledWith({
-        where: undefined,
+        where: { validationRunId: null },
         orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
         take,
       });

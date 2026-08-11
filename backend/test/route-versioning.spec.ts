@@ -13,6 +13,10 @@ const prismaDouble = {
   $connect: jest.fn(),
   $disconnect: jest.fn(),
   db: {
+    mediaDownloadProcessHeartbeat: {
+      upsert: jest.fn(),
+      updateMany: jest.fn(),
+    },
     user: {
       findUnique: jest.fn(),
     },

@@ -36,6 +36,12 @@ ENV NODE_ENV="production"
 ENV PORT="8080"
 ARG DEPLOY_SHA
 ENV DEPLOY_SHA="${DEPLOY_SHA}"
+RUN if [ "${#DEPLOY_SHA}" -ne 40 ] || case "$DEPLOY_SHA" in *[!0123456789abcdef]*) true ;; *) false ;; esac; then \
+      printf '%s\n' 'DEPLOY_SHA must be exactly 40 lowercase hexadecimal characters' >&2; \
+      exit 1; \
+    fi
+LABEL org.opencontainers.image.revision="${DEPLOY_SHA}" \
+      org.opencontainers.image.source="SeniorAILab/eldercare-fall-ai"
 
 COPY --from=build /prod/backend/package.json ./package.json
 COPY --from=build /prod/backend/node_modules ./node_modules

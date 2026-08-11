@@ -13,6 +13,7 @@ const VALID_PROD_ENV = {
   SMTP_HOST: 'smtp.example.com',
   SMTP_USER: 'alerts@example.com',
   SMTP_PASSWORD: 'prod-smtp-password',
+  EDGE_TOKEN_PEPPER: 'prod-dummy-edge-token-pepper',
 } as const;
 
 describe('validateBackendEnv', () => {

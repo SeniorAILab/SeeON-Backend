@@ -64,6 +64,7 @@ jobs:
       DATABASE_URL: postgresql://fall_app:fall_app@localhost:5432/fall_dev?schema=public
       DIRECT_URL: postgresql://fall:fall@localhost:5432/fall_dev?schema=public
       SESSION_JWT_SECRET: ci-session-secret-minimum-32-characters
+      EDGE_TOKEN_PEPPER: ci-edge-token-pepper
     services:
       postgres:
         image: postgres:17-alpine
