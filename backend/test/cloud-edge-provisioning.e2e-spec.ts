@@ -25,12 +25,19 @@ const OTHER_INSTALLATION_REF = '9b0f5ba2-d359-4d8e-948f-e386ac40c347';
 const FLOOR_REF = 'floor-task15';
 const ROOM_REF = 'room-task15';
 const CAMERA_REF = 'camera-task15';
+const describeCloudEdge = process.env.CLOUD_EDGE_AI_URL
+  ? describe
+  : describe.skip;
 
-describe('cloud edge provisioning real-service lifecycle', () => {
-  const database = new CloudEdgeDbFixture();
-  const http = new CloudEdgeHttpClient();
+describeCloudEdge('cloud edge provisioning real-service lifecycle', () => {
+  let database: CloudEdgeDbFixture;
+  let http: CloudEdgeHttpClient;
 
-  beforeAll(() => database.start());
+  beforeAll(() => {
+    database = new CloudEdgeDbFixture();
+    http = new CloudEdgeHttpClient();
+    return database.start();
+  });
   afterAll(() => database.disconnect());
 
   it('converges, confirms omissions, preserves legacy overlap, and denies cross-tenant access', async () => {
