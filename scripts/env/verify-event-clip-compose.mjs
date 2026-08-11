@@ -14,6 +14,7 @@ APP_DB_PASSWORD=prod-app-password
 DATABASE_URL=postgresql://fall_app:prod-app-password@db:5432/prod_db?schema=public
 DIRECT_URL=postgresql://prod_admin:prod-admin-password@db:5432/prod_db?schema=public
 SESSION_JWT_SECRET=prod-session-secret-minimum-32-characters
+EDGE_TOKEN_PEPPER=prod-edge-token-pepper
 SMTP_HOST=mail.example.test
 SMTP_USER=alerts@example.test
 SMTP_PASSWORD=prod-mail-password

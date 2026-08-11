@@ -24,6 +24,8 @@ services:
       FRONT_ORIGIN: ${FRONT_ORIGIN:?FRONT_ORIGIN is required in prod}
       ALERT_DASHBOARD_URL: ${ALERT_DASHBOARD_URL:?ALERT_DASHBOARD_URL is required in prod}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
+      EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:?EDGE_TOKEN_PEPPER is required in prod}
+      EDGE_LEGACY_COMPAT_ENABLED: ${EDGE_LEGACY_COMPAT_ENABLED:-true}
       # SMTP_* configures outbound alert email delivery (nodemailer). Host/user/password
       # are required in prod; port/from/secure have sane defaults in the adapter.
       SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required in prod}
