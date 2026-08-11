@@ -191,7 +191,7 @@ describe('cloud edge provisioning real-service lifecycle', () => {
       recoveredToken,
       INSTALLATION_REF,
     );
-  });
+  }, 60_000);
 
   function createCamera(label: string): Promise<unknown> {
     return http.ml(
