@@ -55,7 +55,7 @@ export class CreateValidationRunRequestDto {
   @IsInt() @Min(1) @Max(3600) durationSeconds!: number;
 }
 
-export class OwnershipTransferItemDto {
+export class OwnershipTransferItemRequestDto {
   @IsIn(['FLOOR', 'ROOM', 'CAMERA']) kind!: 'FLOOR' | 'ROOM' | 'CAMERA';
   @IsString() edgeRef!: string;
   @IsString() canonicalId!: string;
@@ -69,6 +69,6 @@ export class OwnershipTransferRequestDto {
   @Matches(/^[a-f0-9]{64}$/) manifestDigest!: string;
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => OwnershipTransferItemDto)
-  manifest!: OwnershipTransferItemDto[];
+  @Type(() => OwnershipTransferItemRequestDto)
+  manifest!: OwnershipTransferItemRequestDto[];
 }

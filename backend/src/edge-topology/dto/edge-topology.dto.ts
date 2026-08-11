@@ -16,7 +16,7 @@ import {
 const EDGE_REF = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-export class EdgeTopologyCameraDto {
+export class EdgeTopologyCameraRequestDto {
   @IsString()
   @Matches(EDGE_REF)
   edgeRef!: string;
@@ -26,7 +26,7 @@ export class EdgeTopologyCameraDto {
   label!: string;
 }
 
-export class EdgeTopologyRoomDto {
+export class EdgeTopologyRoomRequestDto {
   @IsString()
   @Matches(EDGE_REF)
   edgeRef!: string;
@@ -49,11 +49,11 @@ export class EdgeTopologyRoomDto {
   @IsArray()
   @ArrayMaxSize(1)
   @ValidateNested({ each: true })
-  @Type(() => EdgeTopologyCameraDto)
-  cameras!: EdgeTopologyCameraDto[];
+  @Type(() => EdgeTopologyCameraRequestDto)
+  cameras!: EdgeTopologyCameraRequestDto[];
 }
 
-export class EdgeTopologyFloorDto {
+export class EdgeTopologyFloorRequestDto {
   @IsString()
   @Matches(EDGE_REF)
   edgeRef!: string;
@@ -68,8 +68,8 @@ export class EdgeTopologyFloorDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => EdgeTopologyRoomDto)
-  rooms!: EdgeTopologyRoomDto[];
+  @Type(() => EdgeTopologyRoomRequestDto)
+  rooms!: EdgeTopologyRoomRequestDto[];
 }
 
 export class EdgeTopologySnapshotRequestDto {
@@ -93,8 +93,8 @@ export class EdgeTopologySnapshotRequestDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => EdgeTopologyFloorDto)
-  floors!: EdgeTopologyFloorDto[];
+  @Type(() => EdgeTopologyFloorRequestDto)
+  floors!: EdgeTopologyFloorRequestDto[];
 }
 
 export class EdgeTopologyConfirmationRequestDto {
