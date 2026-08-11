@@ -594,7 +594,8 @@ model EdgeInstallation {
   deactivatedAt     DateTime? @map("deactivated_at")
 
   facility           Facility                     @relation(fields: [facilityId], references: [id])
-  generations        EdgeInstallationGeneration[]
+  generations        EdgeInstallationGeneration[] @relation("EdgeInstallationGenerations")
+  currentGenerationRow EdgeInstallationGeneration   @relation("EdgeInstallationCurrentGeneration", fields: [facilityId, id, currentGeneration], references: [facilityId, edgeInstallationId, generation], onDelete: NoAction, onUpdate: NoAction, map: "edge_installations_current_generation_fkey")
   floors             Floor[]
   spaces             Space[]
   cameras            Camera[]
@@ -619,7 +620,8 @@ model EdgeInstallationGeneration {
   replacedAt             DateTime?             @map("replaced_at")
   deactivatedAt          DateTime?             @map("deactivated_at")
 
-  installation       EdgeInstallation        @relation(fields: [facilityId, edgeInstallationId], references: [facilityId, id], onDelete: Cascade)
+  installation            EdgeInstallation   @relation("EdgeInstallationGenerations", fields: [facilityId, edgeInstallationId], references: [facilityId, id], onDelete: Cascade)
+  currentForInstallations EdgeInstallation[] @relation("EdgeInstallationCurrentGeneration")
   credentials        EdgeCredential[]
   snapshots          EdgeTopologySnapshot[]
   omissionPreviews   EdgeOmissionPreview[]
