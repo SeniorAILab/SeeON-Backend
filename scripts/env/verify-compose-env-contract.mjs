@@ -15,6 +15,8 @@ APP_DB_PASSWORD=prod-app-password-32chars
 DATABASE_URL=postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public
 DIRECT_URL=postgresql://fall_prod_admin:prod-admin-password-32chars@db:5432/fall_prod?schema=public
 SESSION_JWT_SECRET=prod-dummy-session-secret-minimum-32-chars
+EDGE_TOKEN_PEPPER=prod-dummy-edge-token-pepper-32chars
+EDGE_LEGACY_COMPAT_ENABLED=true
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=prod-alerts@example.com
@@ -149,6 +151,27 @@ function assertHostComposeContract(config) {
   }
 
   const { backend, db, front } = services;
+  const backendEnvironment = backend.environment;
+  if (
+    backendEnvironment === null ||
+    typeof backendEnvironment !== 'object' ||
+    Array.isArray(backendEnvironment)
+  ) {
+    throw new VerificationError('host prod backend has no environment map');
+  }
+  if (
+    backendEnvironment.EDGE_TOKEN_PEPPER !==
+    'prod-dummy-edge-token-pepper-32chars'
+  ) {
+    throw new VerificationError(
+      'host prod backend must receive EDGE_TOKEN_PEPPER',
+    );
+  }
+  if (String(backendEnvironment.EDGE_LEGACY_COMPAT_ENABLED) !== 'true') {
+    throw new VerificationError(
+      'host prod backend must keep EDGE_LEGACY_COMPAT_ENABLED true',
+    );
+  }
   const backendImage = backend.image;
   const frontImage = front.image;
   const backendMatch =
@@ -191,6 +214,26 @@ function assertHostComposeContract(config) {
     );
   }
 }
+function assertLocalComposeContract(config) {
+  const backendEnvironment = config.services?.backend?.environment;
+  if (
+    backendEnvironment === null ||
+    typeof backendEnvironment !== 'object' ||
+    Array.isArray(backendEnvironment)
+  ) {
+    throw new VerificationError('local backend has no environment map');
+  }
+  if (backendEnvironment.EDGE_TOKEN_PEPPER !== '') {
+    throw new VerificationError(
+      'local backend must map EDGE_TOKEN_PEPPER without a default',
+    );
+  }
+  if (String(backendEnvironment.EDGE_LEGACY_COMPAT_ENABLED) !== 'true') {
+    throw new VerificationError(
+      'local backend must keep EDGE_LEGACY_COMPAT_ENABLED true',
+    );
+  }
+}
 function assertSmtpSecureOmissionContract(config) {
   const smtpPort = config.services?.backend?.environment?.SMTP_PORT;
   const smtpSecure = config.services?.backend?.environment?.SMTP_SECURE;
@@ -213,11 +256,21 @@ function withTempEnvFiles(run) {
   try {
     const emptyHostEnvPath = join(dir, 'empty-host.env');
     const hostEnvPath = join(dir, 'host.env');
+    const missingPepperHostEnvPath = join(dir, 'missing-pepper-host.env');
     const implicitSecureHostEnvPath = join(dir, 'implicit-secure-host.env');
     writeFileSync(emptyHostEnvPath, '');
     writeFileSync(hostEnvPath, completeHostEnv);
+    writeFileSync(
+      missingPepperHostEnvPath,
+      completeHostEnv.replace(/^EDGE_TOKEN_PEPPER=.*\n/m, ''),
+    );
     writeFileSync(implicitSecureHostEnvPath, implicitSecureHostEnv);
-    run({ emptyHostEnvPath, hostEnvPath, implicitSecureHostEnvPath });
+    run({
+      emptyHostEnvPath,
+      hostEnvPath,
+      missingPepperHostEnvPath,
+      implicitSecureHostEnvPath,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -225,12 +278,33 @@ function withTempEnvFiles(run) {
 
 function verify() {
   withTempEnvFiles(
-    ({ emptyHostEnvPath, hostEnvPath, implicitSecureHostEnvPath }) => {
+    ({
+      emptyHostEnvPath,
+      hostEnvPath,
+      missingPepperHostEnvPath,
+      implicitSecureHostEnvPath,
+    }) => {
+      const localConfigJson = requireSuccess(
+        'local JSON config',
+        ['--profile', 'full', '-f', 'compose.yaml', 'config', '--format', 'json'],
+        emptyHostEnvPath,
+      );
+      assertLocalComposeContract(
+        parseComposeJson('local JSON config', localConfigJson),
+      );
+
       requireFailure(
         'host prod missing env',
         ['--profile', 'full', '-f', 'compose.yaml', '-f', 'compose.prod.yaml', 'config'],
         emptyHostEnvPath,
         ['required in prod'],
+      );
+
+      requireFailure(
+        'host prod missing edge token pepper',
+        ['--profile', 'full', '-f', 'compose.yaml', '-f', 'compose.prod.yaml', 'config'],
+        missingPepperHostEnvPath,
+        ['EDGE_TOKEN_PEPPER is required in prod'],
       );
 
 
