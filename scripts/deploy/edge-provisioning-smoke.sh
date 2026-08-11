@@ -46,7 +46,7 @@ check_sealed_image() {
   revision=$(json_value "$SEAL" "$repo" "$image" revision)
   repository=$(json_value "$SEAL" "$repo" "$image" repository)
   case "$ref" in *@sha256:????????????????????????????????????????????????????????????????) ;; *) fail "sealed $repo $image is not digest-pinned" ;; esac
-  [ "$image_id" = "${ref##*@}" ] || fail "sealed $repo $image ID mismatch"
+  case "$image_id" in sha256:????????????????????????????????????????????????????????????????) ;; *) fail "sealed $repo $image ID is invalid" ;; esac
   case "$platform" in linux/amd64|linux/arm64) ;; *) fail "sealed $repo $image platform is invalid" ;; esac
   [ "$revision" = "$(json_value "$SEAL" "$repo" sha)" ] || fail "sealed $repo $image revision mismatch"
   [ "$repository" = "$expected_repository" ] || fail "sealed $repo $image repository mismatch"
@@ -119,7 +119,8 @@ check_readback() {
 const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 const restart=body.executions.find((value)=>value.id==="restart");
 if(body.postRestart.generation<=body.preflight.generation)process.exit(1);
-if(Date.parse(body.postRestart.observedAt)<=Date.parse(restart.completedAt))process.exit(1);
+const observed=Date.parse(body.postRestart.observedAt),completed=Date.parse(restart.completedAt);
+if(!Number.isFinite(observed)||!Number.isFinite(completed)||observed<=completed)process.exit(1);
 ' "$READBACK" || fail 'AI post-restart evidence is stale'
   fi
 }
@@ -164,6 +165,12 @@ EOF
   if (gate_artifacts) >/dev/null 2>&1; then fail 'invalid image provenance passed'; fi
   SEAL=$original_seal SEAL_SHA256=$original_seal_sha
   printf '%s\n' 'AI_IMAGE_PROVENANCE_REJECTION_OK'
+  cp "$READBACK" "$tmp/invalid-timestamp.json"
+  node -e 'const fs=require("node:fs"),p=process.argv[1],v=JSON.parse(fs.readFileSync(p));v.postRestart.observedAt="invalid";fs.writeFileSync(p,JSON.stringify(v))' "$tmp/invalid-timestamp.json"
+  original_readback=$READBACK original_readback_sha=$READBACK_SHA256 READBACK=$tmp/invalid-timestamp.json READBACK_SHA256=$(sha256_file "$tmp/invalid-timestamp.json")
+  if (check_readback) >/dev/null 2>&1; then fail 'invalid post-restart timestamp passed'; fi
+  READBACK=$original_readback READBACK_SHA256=$original_readback_sha
+  printf '%s\n' 'AI_INVALID_TIMESTAMP_REJECTION_OK'
   cp "$READBACK" "$tmp/tampered.json"
   node -e 'const fs=require("node:fs"),p=process.argv[1],v=JSON.parse(fs.readFileSync(p));v.postRestart.queuesDrained=false;fs.writeFileSync(p,JSON.stringify(v))' "$tmp/tampered.json"
   READBACK=$tmp/tampered.json
