@@ -20,6 +20,7 @@ SMTP_USER=alerts@example.test
 SMTP_PASSWORD=prod-mail-password
 EDGE_FACILITY_TOKEN=prod-edge-token
 BACKEND_IMAGE=eldercare-backend:0123456789abcdef0123456789abcdef01234567
+API_INGRESS_IMAGE=eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567
 FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
@@ -128,7 +129,7 @@ function assertContract(config) {
   ) {
     throw new VerificationError('backend clip storage source must be declared');
   }
-  for (const serviceName of ['db', 'front']) {
+  for (const serviceName of ['db', 'api-ingress', 'front']) {
     const mounts = config.services?.[serviceName]?.volumes;
     if (
       Array.isArray(mounts) &&
