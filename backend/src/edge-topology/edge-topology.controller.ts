@@ -15,6 +15,7 @@ import type {
   EdgeAuthenticatedRequest,
   EdgePrincipal,
 } from '../edge-credentials/edge-credential.types.js';
+import { SkipCsrf } from '../security/skip-csrf.decorator.js';
 import {
   EdgeTopologyConfirmationRequestDto,
   EdgeTopologySnapshotRequestDto,
@@ -27,6 +28,7 @@ import { EdgeTopologyService } from './edge-topology.service.js';
 
 @Controller({ path: 'edge/topology-snapshots', version: '1' })
 @UseGuards(EdgeFacilityTokenGuard)
+@SkipCsrf()
 @UsePipes(
   new ValidationPipe({
     transform: true,

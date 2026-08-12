@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, type RequestWithAuth } from '../auth/jwt-auth.guard.js';
+import { SkipCsrf } from '../security/skip-csrf.decorator.js';
 import {
   IssueEdgeCredentialRequestDto,
   RecoverEdgeSecretRequestDto,
@@ -102,6 +103,7 @@ export class EdgeOperationAdminController {
 
 @Controller({ path: 'edge/enrollments', version: '1' })
 @UseGuards(EdgeEnrollmentGuard)
+@SkipCsrf()
 export class EdgeEnrollmentController {
   constructor(private readonly service: EdgeCredentialService) {}
 
