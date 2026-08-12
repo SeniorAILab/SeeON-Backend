@@ -31,6 +31,8 @@
     "compose:prod:up": "docker compose --env-file .env.host.prod --profile full -f compose.yaml -f compose.prod.yaml up -d",
     "compose:down": "docker compose down",
     "release:prod": "node scripts/release/create-production-release.mjs",
+    "release:product-ready:check": "node scripts/release/check-product-ready.mjs",
+    "test:product-ready": "node --test scripts/release/check-product-ready.test.mjs scripts/release/product-ready-runbooks.test.mjs",
     "smoke:backend:no-db": "pnpm --filter backend run smoke:no-db",
     "backend:demo:bind": "SEED_BIND_DEMO_USERS=true pnpm --filter backend run prisma:seed"
   }
