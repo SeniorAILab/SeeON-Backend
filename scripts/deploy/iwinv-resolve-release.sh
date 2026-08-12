@@ -7,17 +7,62 @@ RELEASES_DIR=${RELEASES_DIR:-/opt/eldercare-fall-ai/releases}
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 valid_sha() { [ "${#1}" -eq 40 ] && printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
 json_value() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1"; }
+validate_manifest_json() {
+  command -v node >/dev/null 2>&1 || fail 'Missing required command: node'
+  node - "$1" <<'NODE'
+const fs = require('node:fs');
+const manifestPath = process.argv[2];
+let manifest;
+try {
+  manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+} catch {
+  console.error(`Malformed release manifest JSON: ${manifestPath}`);
+  process.exit(1);
+}
+if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) {
+  console.error(`Invalid release manifest shape: ${manifestPath}`);
+  process.exit(1);
+}
+const hasSchema = Object.hasOwn(manifest, 'schema');
+const schema = hasSchema ? manifest.schema : '1';
+if (hasSchema && schema !== '2') {
+  console.error(`Unsupported release manifest schema: ${manifestPath}`);
+  process.exit(1);
+}
+const schemaOneKeys = [
+  'sha', 'backend_image', 'backend_image_id', 'front_image', 'front_image_id',
+  'compose_sha256', 'env_sha256', 'pre_migration_dump', 'timestamp',
+];
+const schemaTwoKeys = [
+  'schema', 'sha', 'backend_image', 'backend_image_id', 'api_ingress_image',
+  'api_ingress_image_id', 'compose_sha256', 'env_sha256',
+  'pre_migration_dump', 'timestamp',
+];
+const transitionalKeys = [
+  ...schemaTwoKeys, 'embedded_front_image', 'embedded_front_image_id',
+];
+const actualKeys = Object.keys(manifest).sort();
+const expectedLayouts = schema === '1'
+  ? [schemaOneKeys]
+  : [schemaTwoKeys, transitionalKeys];
+const exactLayout = expectedLayouts.some((keys) => {
+  const expected = [...keys].sort();
+  return expected.length === actualKeys.length &&
+    expected.every((key, index) => key === actualKeys[index]);
+});
+if (!exactLayout || Object.values(manifest).some((value) => typeof value !== 'string')) {
+  console.error(`Invalid release manifest shape: ${manifestPath}`);
+  process.exit(1);
+}
+process.stdout.write(schema);
+NODE
+}
 
 validate_current_manifest() {
   current_manifest=$RELEASES_DIR/current.json
   [ -f "$current_manifest" ] || fail "Release pointer is not a regular file: $current_manifest"
 
-  if grep -Eq '"schema"[[:space:]]*:' "$current_manifest"; then
-    schema=$(json_value "$current_manifest" schema)
-    [ "$schema" = 2 ] || fail "Unsupported release manifest schema: $current_manifest"
-  else
-    schema=1
-  fi
+  schema=$(validate_manifest_json "$current_manifest")
 
   current_sha=$(json_value "$current_manifest" sha)
   backend_image=$(json_value "$current_manifest" backend_image)

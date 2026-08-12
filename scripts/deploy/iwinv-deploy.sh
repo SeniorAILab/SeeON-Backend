@@ -78,7 +78,7 @@ if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
   preflight
   exit 0
 fi
-need docker; need curl; need grep; need sed; need cmp; need sha256sum
+need docker; need curl; need grep; need sed; need cmp; need sha256sum; need node
 need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need head; need mktemp; need stat
 [ -d "$APP_DIR" ] || fail "Missing deployment directory: $APP_DIR"
 [ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
@@ -139,20 +139,59 @@ acquire_lock() {
 }
 
 json_value() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1"; }
-manifest_schema() {
-  manifest=$1
-  if grep -Eq '"schema"[[:space:]]*:' "$manifest"; then
-    schema=$(json_value "$manifest" schema)
-    [ "$schema" = 2 ] || fail "Unsupported release manifest schema: $manifest"
-    printf '%s\n' 2
-  else
-    printf '%s\n' 1
-  fi
+validate_manifest_json() {
+  node - "$1" <<'NODE'
+const fs = require('node:fs');
+const manifestPath = process.argv[2];
+let manifest;
+try {
+  manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+} catch {
+  console.error(`Malformed release manifest JSON: ${manifestPath}`);
+  process.exit(1);
+}
+if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) {
+  console.error(`Invalid release manifest shape: ${manifestPath}`);
+  process.exit(1);
+}
+const hasSchema = Object.hasOwn(manifest, 'schema');
+const schema = hasSchema ? manifest.schema : '1';
+if (hasSchema && schema !== '2') {
+  console.error(`Unsupported release manifest schema: ${manifestPath}`);
+  process.exit(1);
+}
+const schemaOneKeys = [
+  'sha', 'backend_image', 'backend_image_id', 'front_image', 'front_image_id',
+  'compose_sha256', 'env_sha256', 'pre_migration_dump', 'timestamp',
+];
+const schemaTwoKeys = [
+  'schema', 'sha', 'backend_image', 'backend_image_id', 'api_ingress_image',
+  'api_ingress_image_id', 'compose_sha256', 'env_sha256',
+  'pre_migration_dump', 'timestamp',
+];
+const transitionalKeys = [
+  ...schemaTwoKeys, 'embedded_front_image', 'embedded_front_image_id',
+];
+const actualKeys = Object.keys(manifest).sort();
+const expectedLayouts = schema === '1'
+  ? [schemaOneKeys]
+  : [schemaTwoKeys, transitionalKeys];
+const exactLayout = expectedLayouts.some((keys) => {
+  const expected = [...keys].sort();
+  return expected.length === actualKeys.length &&
+    expected.every((key, index) => key === actualKeys[index]);
+});
+if (!exactLayout || Object.values(manifest).some((value) => typeof value !== 'string')) {
+  console.error(`Invalid release manifest shape: ${manifestPath}`);
+  process.exit(1);
+}
+process.stdout.write(schema);
+NODE
 }
 read_manifest() {
   manifest=$1
   [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
-  MANIFEST_SCHEMA=$(manifest_schema "$manifest")
+  MANIFEST_SCHEMA=$(validate_manifest_json "$manifest")
   SHA=$(json_value "$manifest" sha)
   BACKEND_IMAGE=$(json_value "$manifest" backend_image)
   BACKEND_ID=$(json_value "$manifest" backend_image_id)
@@ -529,7 +568,6 @@ $images
 EOF
 }
 
-acquire_lock
 validate_existing_pointers
 load_pending_recovery
 [ -f "$RELEASE_DIR/current.json" ] && HAS_CURRENT=1
@@ -560,6 +598,7 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   APP_SERVICES='backend api-ingress front'
 fi
 
+acquire_lock
 preflight
 if [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 0 ]; then
   run compose config >/dev/null

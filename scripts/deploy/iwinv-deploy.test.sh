@@ -424,7 +424,7 @@ release_state_before=$(release_state)
 set +e
 output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback "$ROLLBACK_SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Invalid SHA in manifest'
+assert_failure "$status"; assert_contains "$output" 'Invalid release manifest shape'
 log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_not_contains "$log" 'docker '
 cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" || {
@@ -437,7 +437,7 @@ cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" ||
 set +e
 output=$(run_deploy --sha "$SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Invalid SHA in manifest'
+assert_failure "$status"; assert_contains "$output" 'Invalid release manifest shape'
 log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_not_contains "$log" 'docker '
 cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" || {
@@ -485,6 +485,30 @@ set +e
 output=$(TEST_MEMORY_MIN_MB=999999 run_deploy --preflight-only); status=$?
 set -e
 assert_failure "$status"; assert_contains "$output" 'Insufficient available memory plus swap'
+
+# A syntactically invalid schema-1 lookalike must fail before release env,
+# Docker, database, or pointer mutation even when pointer bytes match.
+printf 'NOT-JSON "sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z" TRAILING-GARBAGE\n' "$CURRENT_SHA" "$CURRENT_SHA" "$CURRENT_SHA" "$CURRENT_SHA" "$CURRENT_SHA" > "$TMP/root/releases/$CURRENT_SHA.json"
+cp "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/current.json"
+printf 'BACKEND_IMAGE=sentinel\nAPI_INGRESS_IMAGE=sentinel\nFRONT_IMAGE=sentinel\n' > "$TMP/root/shared/release-images.env"
+cp "$TMP/root/shared/release-images.env" "$TMP/release-env.before-malformed-json"
+release_env_checksum_before=$(cksum "$TMP/root/shared/release-images.env")
+release_state_before=$(release_state)
+: > "$TMP/mock.log"
+set +e
+output=$(run_deploy --sha "$SHA"); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'Malformed release manifest JSON'
+[ ! -s "$TMP/mock.log" ] || { printf 'malformed JSON reached Docker or DB\n' >&2; exit 1; }
+cmp -s "$TMP/release-env.before-malformed-json" "$TMP/root/shared/release-images.env" || {
+  printf 'release-images.env changed after malformed JSON\n' >&2; exit 1
+}
+[ "$release_state_before" = "$(release_state)" ] || {
+  printf 'release pointers or manifests changed after malformed JSON\n' >&2; exit 1
+}
+release_env_checksum_after=$(cksum "$TMP/root/shared/release-images.env")
+printf 'malformed JSON deploy rejection proof: exit=%s release_env_before=%s release_env_after=%s docker_log_bytes=0 pointers_unchanged=yes\n' "$status" "$release_env_checksum_before" "$release_env_checksum_after"
 
 # A pointer must byte-match its immutable record before any Docker side effect.
 pointer "$CURRENT_SHA" current

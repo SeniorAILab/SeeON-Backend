@@ -43,12 +43,14 @@ assert_contains "$dockerfile" 'FROM nginx:1.27-alpine'
 assert_contains "$dockerfile" 'COPY infra/api-ingress/nginx.conf /etc/nginx/conf.d/default.conf'
 assert_contains "$config" 'listen 3000;'
 assert_contains "$config" 'resolver 127.0.0.11 valid=30s;'
+# shellcheck disable=SC2016 # Assert the literal nginx variable, not a shell expansion.
 assert_contains "$config" 'set $backend_upstream http://backend:8080;'
 assert_not_contains "$config" 'try_files'
 assert_not_contains "$config" '/usr/share/nginx/html'
 assert_not_contains "$config" 'location /assets/'
 assert_not_contains "$config" 'index.html'
 
+# shellcheck disable=SC2016 # This function asserts literal nginx variables.
 assert_forwarding_contract() {
   block=$1
   label=$2
@@ -85,8 +87,11 @@ assert_contains "$upload_block" 'proxy_request_buffering off;'
 
 media_block=$(location_block 'location ~ ^/api/v1/alerts/')
 assert_forwarding_contract "$media_block" media-content
-assert_contains "$media_block" 'proxy_set_header Range $http_range;'
-assert_contains "$media_block" 'proxy_set_header If-Range $http_if_range;'
+# shellcheck disable=SC2016 # Assert literal nginx request-header variables.
+{
+  assert_contains "$media_block" 'proxy_set_header Range $http_range;'
+  assert_contains "$media_block" 'proxy_set_header If-Range $http_if_range;'
+}
 assert_contains "$media_block" 'proxy_buffering off;'
 assert_contains "$media_block" 'proxy_request_buffering off;'
 assert_contains "$media_block" 'proxy_cache off;'

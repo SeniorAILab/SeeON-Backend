@@ -26,7 +26,12 @@ if [ "${1:-}" = ls-remote ]; then
 fi
 exec "$REAL_GIT" "$@"
 EOF
-chmod +x "$GIT_SHIM/git"
+cat > "$GIT_SHIM/docker" <<'EOF'
+#!/usr/bin/env sh
+printf 'docker %s\n' "$*" >> "${DOCKER_LOG:?}"
+exit 99
+EOF
+chmod +x "$GIT_SHIM/git" "$GIT_SHIM/docker"
 
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_failure() { [ "$1" -ne 0 ] || { printf 'command unexpectedly passed\n' >&2; exit 1; }; }
@@ -59,7 +64,7 @@ run_resolver() {
 run_resolver_with_git_shim() {
   (
     cd "$WORK"
-    PATH="$GIT_SHIM:$PATH" REAL_GIT="$REAL_GIT" GIT_REMOTE=origin RELEASES_DIR="$RELEASES" sh "$SCRIPT"
+    PATH="$GIT_SHIM:$PATH" REAL_GIT="$REAL_GIT" DOCKER_LOG="${DOCKER_LOG:-$TMP/docker.log}" GIT_REMOTE=origin RELEASES_DIR="$RELEASES" sh "$SCRIPT"
   )
 }
 
@@ -90,7 +95,7 @@ schema_two_backend_ingress_manifest() {
 }
 
 pretty_manifest() {
-  printf '{\n  "sha" : "%s",\n  "backend_image" : "eldercare-backend:%s",\n  "backend_image_id" : "sha256:backend-%s",\n  "front_image" : "eldercare-front:%s",\n  "front_image_id" : "sha256:front-%s"\n}\n' "$1" "$1" "$1" "$1" "$1"
+  printf '{\n  "sha" : "%s",\n  "backend_image" : "eldercare-backend:%s",\n  "backend_image_id" : "sha256:backend-%s",\n  "front_image" : "eldercare-front:%s",\n  "front_image_id" : "sha256:front-%s",\n  "compose_sha256" : "compose",\n  "env_sha256" : "env",\n  "pre_migration_dump" : "test.dump",\n  "timestamp" : "2026-07-12T00:00:00Z"\n}\n' "$1" "$1" "$1" "$1" "$1"
 }
 
 add_lightweight_tag() {
@@ -223,6 +228,26 @@ manifest "$other_sha" > "$RELEASES/$other_sha.json"
 cp "$RELEASES/$other_sha.json" "$RELEASES/current.json"
 output=$(run_resolver)
 assert_contains "$output" 'NO_OP=0'
+
+# A syntactically invalid schema-1 lookalike is rejected by the resolver's
+# manifest reader before any release environment or Docker side effect.
+printf 'NOT-JSON "sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"test.dump","timestamp":"2026-08-12T00:00:00Z" TRAILING-GARBAGE\n' "$main_sha" "$main_sha" "$main_sha" "$main_sha" "$main_sha" > "$RELEASES/$main_sha.json"
+cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
+release_env=$TMP/resolver-release-images.env
+printf 'BACKEND_IMAGE=sentinel\nAPI_INGRESS_IMAGE=sentinel\nFRONT_IMAGE=sentinel\n' > "$release_env"
+cp "$release_env" "$release_env.before"
+release_env_checksum_before=$(cksum "$release_env")
+docker_log=$TMP/resolver-docker.log
+: > "$docker_log"
+set +e
+output=$(DOCKER_LOG="$docker_log" run_resolver_with_git_shim 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'Malformed release manifest JSON'
+cmp -s "$release_env.before" "$release_env" || { printf 'resolver changed sentinel release environment\n' >&2; exit 1; }
+[ ! -s "$docker_log" ] || { printf 'resolver malformed JSON reached Docker\n' >&2; exit 1; }
+release_env_checksum_after=$(cksum "$release_env")
+printf 'malformed JSON resolver rejection proof: exit=%s release_env_before=%s release_env_after=%s docker_log_bytes=0\n' "$status" "$release_env_checksum_before" "$release_env_checksum_after"
 
 # Malformed pointers, missing image fields, missing immutable manifests, and mismatched bytes are red.
 printf '{"sha":\n' > "$RELEASES/current.json"
