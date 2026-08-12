@@ -13,6 +13,13 @@ refines: []
 
 Superseded by [ADR-002: Release-based CD](ADR-002-release-based-cd.md).
 
+> Historical record. This ADR was decided in the pre-extraction combined
+> repository (`SeniorAILab/eldercare-fall-ai`, backend + frontend); its
+> "front + backend" scope and the `#587` issue reference belong to that source
+> repository. The body below is preserved as decided and is not current
+> guidance. Current deploy ownership: `SeniorAILab/SeeON-Backend` builds and
+> deploys backend and API-ingress images only, per ADR-002 as amended.
+
 ## Date
 
 2026-07-10
@@ -90,6 +97,6 @@ GitHub Actions는 검사만, 빌드와 배포는 iwinv의 Jenkins가 수행하�
 
 ## References
 
-- SeniorAILab/eldercare-fall-ai#587 — 수용/유예 보안 항목
+- SeniorAILab/eldercare-fall-ai#587 — 수용/유예 보안 항목 (pre-extraction source-repo issue; historical provenance only)
 - `scripts/deploy/ncloud-deploy.sh` — 재사용 대상 배포 로직
 - `.github/workflows/deploy-ncloud.yml` — 폐기 대상 기존 CD

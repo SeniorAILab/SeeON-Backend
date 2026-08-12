@@ -24,7 +24,7 @@ scripts/
 | --- | --- | --- |
 | Protected-branch guard | `git-guard/assert-not-main.sh` | Refuses commit/push on `main` (the one hard invariant). |
 | Local dev orchestration | `dev/`, `db/` | Guarded local env checks, DB reset, and native dev command sequencing. |
-| Local lint gate | `git-guard/check-lint.sh` | Mirrors backend lint/type checks; runs backend tests when the local DB is up. Still carries stale frontend-package detection from the combined repository; cleanup is tracked separately. |
+| Local lint gate | `git-guard/check-lint.sh` | Backend-only scoping: changes under `backend/`, `scripts/backend-guard/`, or shared TS manifests run `dto:check` + `tsc --noEmit` + `lint`, plus backend tests when the local DB and `.env.local` are present; env/compose contract changes run `pnpm env:verify`. Covered by `check-lint.test.sh`. |
 | Migration order guard | `git-guard/check-migrations.sh` | Rejects out-of-order/misnamed Prisma migrations (pre-push + CI); `--fix` renumbers. |
 | Freshness guard | `git-guard/check-freshness.sh` | Protects stale protected-branch work. |
 | Migration guard | `backend-guard/check-schema-migration.sh` | Blocks schema changes without migration SQL, append-only tables not named `*_history`, and undocumented nullable `*Id` fields. |
