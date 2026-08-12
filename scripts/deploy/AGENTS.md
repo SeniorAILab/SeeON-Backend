@@ -9,9 +9,10 @@ imaged, or started here.
 
 ## Where to look
 - `Jenkinsfile` — resolves a published production release, requires its GitHub
-  `CI gate=success`, builds exact-SHA backend and API-ingress images, takes
-  safety receipts, then invokes deploy.
-- `iwinv-deploy.sh` — deploys exact local SHA-tagged images, backs up PostgreSQL,
+  `CI gate=success`, builds exact-SHA backend and API-ingress images, captures
+  the Edge continuity receipt, then invokes deploy.
+- `iwinv-deploy.sh` — deploys exact local SHA-tagged images, validates the live
+  `repo_clips` mount, backs up PostgreSQL, classifies candidate migrations,
   migrates, starts Compose, and verifies health/version.
 - `iwinv-deploy.test.sh` — mocked dry-run and production-path contracts for
   gating, retention, rollback/restore ordering, health, and failure propagation.
@@ -62,10 +63,20 @@ imaged, or started here.
   `/opt/eldercare-fall-ai/releases/` (legacy host paths retained on the
   server). The API ingress binds only host loopback (`127.0.0.1:3001`); backend
   and database remain internal. Caddy owns public exposure of the API.
-- Before migration, require a fresh content-addressed off-host media backup
-  receipt, capture an Edge heartbeat seed, create a `pg_dump -Fc` backup, and
-  validate it with `pg_restore --list`. Audit Prisma history before `migrate
-  deploy`; migrations run once from deploy tooling, never on app start.
+- Event-media bundle backup is not an iwinv deployment prerequisite. Jenkins,
+  readiness, and deploy must not call `event-media-backup.sh`, require an
+  off-host destination, or consume its receipt. The script remains optional,
+  explicitly manual operator recovery tooling with a separate test gate.
+- Before migration, require the exact named `repo_clips` volume and verify that
+  the one running backend mounts it at `/app/backend/clips` readably. Capture an
+  Edge heartbeat seed, create a `pg_dump -Fc` backup, and validate it with
+  `pg_restore --list`. Candidate migrations must descend from the current
+  release and pass the comment/string-aware additive classifier. Audit Prisma
+  history before `migrate deploy`; migrations run once from deploy tooling,
+  never on app start.
+- Deployment and pruning may remove only individually classified stale images
+  and manifests. They must never run broad image/system pruning or remove/prune
+  Docker volumes; current and previous manifest images stay protected.
 - Fail on the first resolution, checkout, build, preflight, backup, migration,
   Compose, or health error. No hidden retry, automatic rollback, alternate path,
   or secret output.

@@ -159,6 +159,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Verify overlap release and rollback contracts
         run: pnpm deploy:verify
+      - name: Verify optional manual event-media recovery tooling
+        run: pnpm deploy:event-media:manual-test
 
   repo-residue:
     name: Backend repository residue

@@ -74,9 +74,12 @@ AI requires all of the following before release publication:
 - deployment lock available and no Jenkins deployment running
 - memory available plus free swap at least 1024 MiB
 - filesystem free space at least 10 GiB
-- database and media volumes healthy
+- database volumes healthy, plus exact named volume `repo_clips` mounted readably
+  by the one running backend at `/app/backend/clips`
 - durable queues drained for the deployment boundary
-- a validated `pg_dump -Fc` backup and retained previous release manifest
+- a validated pre-migration `pg_dump -Fc` archive and retained previous release manifest
+- candidate migrations descend from the current release and pass the
+  comment/string-aware additive, non-destructive classifier
 - legacy compatibility enabled through the rollback window
 
 The edge requires all of the following before image replacement:
@@ -94,6 +97,12 @@ The edge requires all of the following before image replacement:
 
 Failure of any item aborts before release, updater, enrollment, restart, topology,
 or media mutation.
+
+An event-media backup bundle, off-host media destination, and media-backup
+receipt are not iwinv deployment prerequisites. `event-media-backup.sh` is an
+optional standalone recovery command only; Jenkins, readiness, and deploy do
+not invoke it or consume its receipt. Deploy and prune operations never remove
+or prune Docker volumes and never broadly prune images.
 
 ## Ordered rollout
 
