@@ -5,12 +5,14 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
+import { cleanupFacilityFixtures } from './helpers/facility-fixture-cleanup.js';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 type CountRow = { count: number };
 type NullableColumnRow = { column_name: string; is_nullable: 'YES' | 'NO' };
 
 describe('room-centric cross-slice regression invariants', () => {
+  const facilityIds = ['regression-a', 'regression-b'] as const;
   let direct: PrismaClient;
   let app: PrismaClient;
   let httpApp: INestApplication;
@@ -35,17 +37,7 @@ describe('room-centric cross-slice regression invariants', () => {
     httpApp = moduleRef.createNestApplication();
     configureVersionedTestApp(httpApp);
     await httpApp.init();
-    // dashboard_receipt_history is append-only (no cascade); receipts must go
-    // before the alerts they reference.
-    await direct.dashboardReceipt.deleteMany();
-    await direct.alert.deleteMany();
-    await direct.event.deleteMany();
-    await direct.camera.deleteMany();
-    await direct.space.deleteMany();
-    await direct.floor.deleteMany();
-    await direct.facility.deleteMany({
-      where: { id: { in: ['regression-a', 'regression-b'] } },
-    });
+    await cleanupFacilityFixtures(direct, facilityIds);
     await direct.facility.createMany({
       data: [
         { id: 'regression-a', name: 'Regression A' },
@@ -123,6 +115,7 @@ describe('room-centric cross-slice regression invariants', () => {
   afterAll(async () => {
     await httpApp.close();
     await app.$disconnect();
+    await cleanupFacilityFixtures(direct, facilityIds);
     await direct.$disconnect();
   });
 
