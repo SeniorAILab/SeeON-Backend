@@ -11,8 +11,16 @@ export const TOKEN = `eft_v1.0123456789AB.${'A'.repeat(43)}`;
 // Hub-seeded ids in real facilities are opaque strings (e.g. "sp_201"), not
 // UUIDs — this fixture proves the DTO accepts them and exercises multi-room
 // legacy claims on a single PRODUCT floor.
-export const MULTI_PRODUCT_FLOOR_ID = 'flr_101';
-export const MULTI_PRODUCT_ROOM_ID_1 = 'sp_201';
-export const MULTI_PRODUCT_ROOM_ID_2 = 'sp_202';
-export const MULTI_PRODUCT_CAMERA_ID_1 = 'cam_201';
-export const MULTI_PRODUCT_CAMERA_ID_2 = 'cam_202';
+//
+// `Floor.id` / `Space.id` / `Camera.id` are global (non-facility-scoped)
+// primary keys (prisma/schema.prisma). `prisma/demo-nokyang.fixture.ts`
+// auto-generates residential-floor room ids as `sp_${floorNumber}${index}`,
+// so a plain `sp_201`/`sp_202` here collides with the real nokyang demo
+// seed's floor-2 rooms whenever the test DB has been seeded (see issue
+// #669). Namespace with an `edge-topology-fixture-` prefix that no seed
+// generator produces, while keeping the ids non-UUID/opaque.
+export const MULTI_PRODUCT_FLOOR_ID = 'flr_edge-topology-fixture-101';
+export const MULTI_PRODUCT_ROOM_ID_1 = 'sp_edge-topology-fixture-201';
+export const MULTI_PRODUCT_ROOM_ID_2 = 'sp_edge-topology-fixture-202';
+export const MULTI_PRODUCT_CAMERA_ID_1 = 'cam_edge-topology-fixture-201';
+export const MULTI_PRODUCT_CAMERA_ID_2 = 'cam_edge-topology-fixture-202';
