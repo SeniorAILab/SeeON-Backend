@@ -26,16 +26,19 @@ import { PrismaModule } from '../src/prisma/prisma.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { sha256CanonicalJson } from './helpers/edge-contract-fixtures.js';
 import {
+  cleanupEdgeEnrollmentFixtures,
+  edgeEnrollmentUuidV7,
+  EDGE_ENROLLMENT_CAMERA_ID as CAMERA_ID,
+  EDGE_ENROLLMENT_FACILITY_ID as FACILITY_ID,
+  EDGE_ENROLLMENT_FLOOR_ID as FLOOR_ID,
+  EDGE_ENROLLMENT_OTHER_FACILITY_ID as OTHER_FACILITY_ID,
+  EDGE_ENROLLMENT_SPACE_ID as SPACE_ID,
+} from './helpers/edge-enrollment-db-fixture.js';
+import {
   readObject,
   readObjectField,
   readStringField,
 } from './helpers/json-response.js';
-
-const FACILITY_ID = 'a5ff4ed1-7e63-4a4f-9ef0-42e807d74a64';
-const OTHER_FACILITY_ID = 'b5ff4ed1-7e63-4a4f-9ef0-42e807d74a64';
-const CAMERA_ID = 'b3333333-3333-4333-8333-333333333333';
-const SPACE_ID = 'a2222222-2222-4222-8222-222222222222';
-const FLOOR_ID = 'f1111111-1111-4111-8111-111111111111';
 
 class FakeClock implements EdgeClock {
   private current = new Date('2026-01-01T00:00:00.000Z');
@@ -414,7 +417,7 @@ describe('edge enrollment v1 contract', () => {
 
   function uuidV7(): string {
     sequence += 1;
-    return `0197f671-3a31-7a6c-a6e4-${sequence.toString(16).padStart(12, '0')}`;
+    return edgeEnrollmentUuidV7(sequence);
   }
   function uuidV4(): string {
     sequence += 1;
@@ -457,41 +460,6 @@ describe('edge enrollment v1 contract', () => {
   }
 
   async function cleanup(): Promise<void> {
-    await admin.event.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeProvisioningAudit.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeValidationGrant.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeOwnershipTransfer.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeTopologyAlias.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeCredential.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeAdminOperation.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.camera.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.space.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.floor.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.edgeInstallation.deleteMany({
-      where: { facilityId: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
-    await admin.facility.deleteMany({
-      where: { id: { in: [FACILITY_ID, OTHER_FACILITY_ID] } },
-    });
+    await cleanupEdgeEnrollmentFixtures(admin);
   }
 });

@@ -70,6 +70,53 @@ describe('validateBackendEnv', () => {
     },
   );
 
+  it('accepts the temporary cross-site bridge only with pinned secure transport and the exact plural Vercel origin', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation();
+    const env: Record<string, string> = {
+      ...VALID_PROD_ENV,
+      AUTH_COOKIE_SAME_SITE: 'none',
+      AUTH_COOKIE_SECURE: 'true',
+      FRONT_ORIGINS: 'https://seeon-front.vercel.app',
+    };
+    delete env.FRONT_ORIGIN;
+
+    expect(validateBackendEnv(env)).toBe(env);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('temporary cross-site auth bridge'),
+    );
+    warn.mockRestore();
+  });
+
+  it.each([
+    [{ AUTH_COOKIE_SAME_SITE: 'None' }],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'auto',
+        FRONT_ORIGINS: 'https://seeon-front.vercel.app',
+      },
+    ],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'true',
+        FRONT_ORIGIN: 'https://seeon-front.vercel.app',
+      },
+    ],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'true',
+        FRONT_ORIGINS:
+          'https://seeon-front.vercel.app,https://seeon.seniorsailab.com',
+      },
+    ],
+  ])('rejects an invalid temporary cookie bridge profile: %j', (override) => {
+    expect(() =>
+      validateBackendEnv({ ...VALID_PROD_ENV, ...override }),
+    ).toThrow(BackendEnvValidationError);
+  });
+
   it('rejects an invalid cookie mode outside production so boot fails closed', () => {
     expect(() =>
       validateBackendEnv({

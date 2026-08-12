@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../../src/auth/password.js';
 
-export const FACILITY_ID = 'a5ff4ed1-7e63-4a4f-9ef0-42e807d74a64';
-export const OTHER_FACILITY_ID = 'b5ff4ed1-7e63-4a4f-9ef0-42e807d74a64';
+export const FACILITY_ID = 'c10d0001-0000-4000-8000-000000000001';
+export const OTHER_FACILITY_ID = 'c10d0001-0000-4000-8000-000000000002';
+export const CLOUD_EDGE_FIXTURE_IDS = [FACILITY_ID, OTHER_FACILITY_ID] as const;
 export const SUPER_EMAIL = 'task15-super@example.invalid';
 export const ADMIN_EMAIL = 'task15-admin@example.invalid';
 export const OTHER_ADMIN_EMAIL = 'task15-other@example.invalid';

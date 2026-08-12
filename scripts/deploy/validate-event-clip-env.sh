@@ -7,14 +7,12 @@ fail() {
 }
 
 usage() {
-  printf '%s\n' 'Usage: validate-event-clip-env.sh <production-env-file> [--print-front-flag]' >&2
+  printf '%s\n' 'Usage: validate-event-clip-env.sh <production-env-file>' >&2
   exit 2
 }
 
-[ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
+[ "$#" -eq 1 ] || usage
 ENV_FILE=$1
-MODE=${2:-}
-[ -z "$MODE" ] || [ "$MODE" = --print-front-flag ] || usage
 [ -f "$ENV_FILE" ] || fail 'production environment file must be a regular file'
 
 permissions=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE") || fail 'unable to inspect production environment file permissions'
@@ -57,16 +55,11 @@ boolean_value() {
 }
 
 event_clips_enabled=$(env_value EVENT_CLIPS_ENABLED)
-front_event_clips_enabled=$(env_value VITE_EVENT_CLIPS_ENABLED)
 retention_days=$(env_value MEDIA_RETENTION_DAYS)
 minimum_free_bytes=$(env_value MEDIA_MIN_FREE_BYTES)
 maximum_clip_bytes=$(env_value MEDIA_CLIP_MAX_BYTES)
 
 boolean_value EVENT_CLIPS_ENABLED "$event_clips_enabled"
-boolean_value VITE_EVENT_CLIPS_ENABLED "$front_event_clips_enabled"
-[ "$event_clips_enabled" = "$front_event_clips_enabled" ] || {
-  fail 'EVENT_CLIPS_ENABLED and VITE_EVENT_CLIPS_ENABLED must match'
-}
 positive_integer MEDIA_RETENTION_DAYS "$retention_days"
 [ "$retention_days" -ge 60 ] || fail 'MEDIA_RETENTION_DAYS must be an integer of at least 60'
 positive_integer MEDIA_MIN_FREE_BYTES "$minimum_free_bytes"
@@ -77,7 +70,3 @@ positive_integer MEDIA_CLIP_MAX_BYTES "$maximum_clip_bytes"
 [ "$minimum_free_bytes" -ge "$maximum_clip_bytes" ] || {
   fail 'MEDIA_MIN_FREE_BYTES must cover at least one maximum-sized clip'
 }
-
-if [ "$MODE" = --print-front-flag ]; then
-  printf '%s\n' "$front_event_clips_enabled"
-fi

@@ -2,7 +2,11 @@ import type { INestApplication } from '@nestjs/common';
 import { parseFrontendOrigins } from './frontend-origins.js';
 
 const CORS_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'] as const;
-const CORS_ALLOWED_HEADERS = ['content-type', 'x-facility-id'] as const;
+const CORS_ALLOWED_HEADERS = [
+  'content-type',
+  'x-facility-id',
+  'idempotency-key',
+] as const;
 
 export function configureFrontendCors(
   app: INestApplication,

@@ -22,7 +22,6 @@ SMTP_PASSWORD=prod-mail-password
 EDGE_FACILITY_TOKEN=prod-edge-token
 BACKEND_IMAGE=eldercare-backend:0123456789abcdef0123456789abcdef01234567
 API_INGRESS_IMAGE=eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567
-FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -130,7 +129,7 @@ function assertContract(config) {
   ) {
     throw new VerificationError('backend clip storage source must be declared');
   }
-  for (const serviceName of ['db', 'api-ingress', 'front']) {
+  for (const serviceName of ['db', 'api-ingress']) {
     const mounts = config.services?.[serviceName]?.volumes;
     if (
       Array.isArray(mounts) &&
@@ -160,11 +159,9 @@ function expectInvalidRetention(config) {
 
 function assertStaticDefaults() {
   const hostExample = readFileSync('.env.host.prod.example', 'utf8');
-  const frontDockerfile = readFileSync('front/Dockerfile', 'utf8');
   const jenkinsfile = readFileSync('Jenkinsfile', 'utf8');
   const expectedHostLines = [
     'EVENT_CLIPS_ENABLED=false',
-    'VITE_EVENT_CLIPS_ENABLED=false',
     'MEDIA_RETENTION_DAYS=60',
     'MEDIA_MIN_FREE_BYTES=1073741824',
     'MEDIA_CLIP_MAX_BYTES=268435456',
@@ -174,18 +171,8 @@ function assertStaticDefaults() {
       throw new VerificationError(`host env example is missing ${line}`);
     }
   }
-  if (
-    !frontDockerfile.includes('ARG VITE_EVENT_CLIPS_ENABLED=false') ||
-    !frontDockerfile.includes('ENV VITE_EVENT_CLIPS_ENABLED=$VITE_EVENT_CLIPS_ENABLED')
-  ) {
-    throw new VerificationError('frontend image flag must default to false');
-  }
-  if (
-    !jenkinsfile.includes(
-      '--build-arg VITE_EVENT_CLIPS_ENABLED="$VITE_EVENT_CLIPS_ENABLED"',
-    )
-  ) {
-    throw new VerificationError('Jenkins must pass the validated frontend flag');
+  if (/front\/Dockerfile|eldercare-front|VITE_EVENT_CLIPS_ENABLED/.test(jenkinsfile)) {
+    throw new VerificationError('Jenkins must not build an embedded frontend image');
   }
 }
 

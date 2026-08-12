@@ -45,7 +45,7 @@ assert_contains "$dockerfile" 'COPY infra/api-ingress/nginx.conf /etc/nginx/conf
 assert_contains "$dockerfile" 'ARG DEPLOY_SHA'
 assert_contains "$dockerfile" 'DEPLOY_SHA must be exactly 40 lowercase hexadecimal characters'
 assert_contains "$dockerfile" 'org.opencontainers.image.revision="${DEPLOY_SHA}"'
-assert_contains "$dockerfile" 'org.opencontainers.image.source="SeniorAILab/SeeON"'
+assert_contains "$dockerfile" 'org.opencontainers.image.source="SeniorAILab/SeeON-Backend"'
 assert_contains "$config" 'listen 3000;'
 assert_contains "$config" 'resolver 127.0.0.11 valid=30s;'
 assert_contains "$config" 'map $http_x_forwarded_proto $forwarded_proto {'

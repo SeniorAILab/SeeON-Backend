@@ -2,7 +2,9 @@
 
 ## Overview
 `.github/**` owns GitHub-side CI, PR automation, and the gated release signal for
-iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/frontend.
+iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys the backend
+and API ingress. This repository is backend-only; the SeeON-Front dashboard is
+an external repository with its own deployment.
 
 ## Where to look
 - `workflows/ci.yml` — CI jobs.
@@ -22,9 +24,9 @@ iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/fronte
   secret `WEBHOOK_TOKEN`. Jenkins stores the matching server credential as
   `eldercare-webhook-token`; never expose either value.
 - GitHub Actions does not build, tag, push, SSH-deploy, retry, or roll back
-  production images. Jenkins alone builds exact `eldercare-backend:<sha>`,
-  `eldercare-api-ingress:<sha>`, and transitional `eldercare-front:<sha>`
-  images and deploys them after verifying that SHA's `CI gate=success`.
+  production images. Jenkins alone builds exact `eldercare-backend:<sha>` and
+  `eldercare-api-ingress:<sha>` images and deploys them after verifying that
+  SHA's `CI gate=success`. No frontend image is built here.
 - Keep permissions minimal and fail before an external trigger when required
   release classification input is absent.
 - The trigger gate is classification plus canonical repository identity; no

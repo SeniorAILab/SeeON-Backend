@@ -113,15 +113,15 @@ fi
 
 sha=$(json_value "$current_manifest" sha)
 backend_image=$(json_value "$current_manifest" backend_image)
-front_image=$(json_value "$current_manifest" front_image)
+api_ingress_image=$(json_value "$current_manifest" api_ingress_image)
 backend_image_id=$(json_value "$current_manifest" backend_image_id)
-front_image_id=$(json_value "$current_manifest" front_image_id)
+api_ingress_image_id=$(json_value "$current_manifest" api_ingress_image_id)
 valid_sha "$sha" || fail 'current release manifest SHA is invalid'
-[ "$backend_image" = "eldercare-backend:$sha" ] && [ "$front_image" = "eldercare-front:$sha" ] || {
+[ "$backend_image" = "eldercare-backend:$sha" ] && [ "$api_ingress_image" = "eldercare-api-ingress:$sha" ] || {
   fail 'current release manifest image policy is invalid'
 }
-[ -n "$backend_image_id" ] && [ -n "$front_image_id" ] || fail 'current release manifest image IDs are required'
-printf 'BACKEND_IMAGE=%s\nFRONT_IMAGE=%s\n' "$backend_image" "$front_image" | cmp -s - "$RELEASE_ENV" || {
+[ -n "$backend_image_id" ] && [ -n "$api_ingress_image_id" ] || fail 'current release manifest image IDs are required'
+printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\n' "$backend_image" "$api_ingress_image" | cmp -s - "$RELEASE_ENV" || {
   fail 'release image environment does not match current manifest'
 }
 
@@ -137,17 +137,17 @@ compose_before=$(sha256sum "$APP_DIR/compose.yaml" "$APP_DIR/compose.prod.yaml")
 cd "$APP_DIR"
 db_container=$(compose ps -q db)
 backend_container=$(compose ps -q backend)
-front_container=$(compose ps -q front)
-[ -n "$db_container" ] && [ -n "$backend_container" ] && [ -n "$front_container" ] || {
-  fail 'database, backend, and frontend must be present for feature disable'
+api_ingress_container=$(compose ps -q api-ingress)
+[ -n "$db_container" ] && [ -n "$backend_container" ] && [ -n "$api_ingress_container" ] || {
+  fail 'database, backend, and API ingress must be present for feature disable'
 }
 db_volume=$(container_mount /var/lib/postgresql/data "$db_container")
 clip_volume=$(container_mount /app/backend/clips "$backend_container")
 [ -n "$db_volume" ] || fail 'database volume identity is unavailable'
 [ -n "$clip_volume" ] || fail 'clip volume identity is unavailable'
 [ "$(container_image "$backend_container")" = "$backend_image" ] && \
-  [ "$(container_image "$front_container")" = "$front_image" ] && \
-  [ "$(container_image_id "$backend_container")" = "$backend_image_id" ] && [ "$(container_image_id "$front_container")" = "$front_image_id" ] || {
+  [ "$(container_image "$api_ingress_container")" = "$api_ingress_image" ] && \
+  [ "$(container_image_id "$backend_container")" = "$backend_image_id" ] && [ "$(container_image_id "$api_ingress_container")" = "$api_ingress_image_id" ] || {
   fail 'running services do not use current compatible images'
 }
 
@@ -171,8 +171,8 @@ compose up -d --no-deps --wait --wait-timeout 120 backend
 
 new_db_container=$(compose ps -q db)
 new_backend_container=$(compose ps -q backend)
-new_front_container=$(compose ps -q front)
-[ -n "$new_db_container" ] && [ -n "$new_backend_container" ] && [ -n "$new_front_container" ] || {
+new_api_ingress_container=$(compose ps -q api-ingress)
+[ -n "$new_db_container" ] && [ -n "$new_backend_container" ] && [ -n "$new_api_ingress_container" ] || {
   fail 'service identity unavailable after feature disable'
 }
 [ "$(container_mount /var/lib/postgresql/data "$new_db_container")" = "$db_volume" ] || {
@@ -182,8 +182,8 @@ new_front_container=$(compose ps -q front)
   fail 'clip volume identity changed during feature disable'
 }
 [ "$(container_image "$new_backend_container")" = "$backend_image" ] && \
-  [ "$(container_image "$new_front_container")" = "$front_image" ] && \
-  [ "$(container_image_id "$new_backend_container")" = "$backend_image_id" ] && [ "$(container_image_id "$new_front_container")" = "$front_image_id" ] || {
+  [ "$(container_image "$new_api_ingress_container")" = "$api_ingress_image" ] && \
+  [ "$(container_image_id "$new_backend_container")" = "$backend_image_id" ] && [ "$(container_image_id "$new_api_ingress_container")" = "$api_ingress_image_id" ] || {
   fail 'feature disable changed the compatible release images'
 }
 [ "$env_before" = "$(sha256sum "$ENV_FILE")" ] || fail 'production environment changed during feature disable'

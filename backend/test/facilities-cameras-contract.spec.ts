@@ -9,6 +9,7 @@ import type { App } from 'supertest/types';
 import { SESSION_COOKIE_NAME } from '../src/auth/auth.constants';
 import { AppModule } from '../src/app.module';
 
+import { cleanupFacilityFixtures } from './helpers/facility-fixture-cleanup';
 import {
   readArray,
   readObject,
@@ -370,22 +371,18 @@ describe('Facilities and cameras response contracts (e2e)', () => {
   }
 
   async function cleanup() {
-    await direct.alert.deleteMany({
-      where: { facility: { name: { startsWith: PREFIX } } },
+    const owned = await direct.facility.findMany({
+      where: {
+        OR: [
+          { name: { startsWith: PREFIX } },
+          { users: { some: { nickname: { startsWith: PREFIX } } } },
+        ],
+      },
+      select: { id: true },
     });
-    await direct.event.deleteMany({
-      where: { facility: { name: { startsWith: PREFIX } } },
-    });
-    await direct.user.deleteMany({
-      where: { nickname: { startsWith: PREFIX } },
-    });
-    await direct.camera.deleteMany({
-      where: { label: { startsWith: PREFIX } },
-    });
-    await direct.space.deleteMany({ where: { name: { startsWith: PREFIX } } });
-    await direct.floor.deleteMany({ where: { name: { startsWith: PREFIX } } });
-    await direct.facility.deleteMany({
-      where: { name: { startsWith: PREFIX } },
-    });
+    await cleanupFacilityFixtures(
+      direct,
+      owned.map((facility) => facility.id),
+    );
   }
 });

@@ -55,7 +55,7 @@ function validateSeal(seal, planSha256) {
   if (seal.schemaVersion !== 2) throw new EvidenceError('seal schemaVersion must be 2');
   if (seal.approvedPlanSha256 !== planSha256) throw new EvidenceError('seal approved-plan binding mismatch');
   for (const [name, record, repository] of [
-    ['ai', seal.ai, 'SeniorAILab/eldercare-fall-ai'],
+    ['ai', seal.ai, 'SeniorAILab/SeeON-Backend'],
     ['ml', seal.ml, 'SeniorAILab/eldercare-fall-ml-v2'],
   ]) {
     if (!record || typeof record !== 'object') throw new EvidenceError(`seal ${name} record is missing`);
@@ -63,9 +63,10 @@ function validateSeal(seal, planSha256) {
     if (!GIT_SHA.test(record.tree ?? '')) throw new EvidenceError(`seal ${name} tree is invalid`);
     if (record.repository !== repository) throw new EvidenceError(`seal ${name} repository identity is invalid`);
   }
+  if ('frontImage' in seal.ai) throw new EvidenceError('seal AI front image ownership is not allowed');
   for (const [label, image, revision, repository] of [
     ['AI backend', seal.ai.backendImage, seal.ai.sha, seal.ai.repository],
-    ['AI front', seal.ai.frontImage, seal.ai.sha, seal.ai.repository],
+    ['AI API ingress', seal.ai.apiIngressImage, seal.ai.sha, seal.ai.repository],
     ['ML API', seal.ml.apiImage, seal.ml.sha, seal.ml.repository],
     ['ML worker', seal.ml.workerImage, seal.ml.sha, seal.ml.repository],
   ]) {
@@ -79,7 +80,7 @@ function validateSeal(seal, planSha256) {
 
 function repositoryIdentity(path) {
   const remote = execFileSync('git', ['-C', path, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
-  const match = remote.match(/SeniorAILab\/(eldercare-fall-(?:ai|ml-v2))(?:\.git)?$/);
+  const match = remote.match(/SeniorAILab\/(SeeON-Backend|eldercare-fall-ml-v2)(?:\.git)?$/);
   if (!match) throw new EvidenceError(`unrecognized repository origin: ${remote}`);
   return `SeniorAILab/${match[1]}`;
 }
@@ -125,11 +126,11 @@ function fixture() {
       schemaVersion: 2,
       approvedPlanSha256: planDigest,
       ai: {
-        repository: 'SeniorAILab/eldercare-fall-ai',
+        repository: 'SeniorAILab/SeeON-Backend',
         sha: 'a'.repeat(40),
         tree: '1'.repeat(40),
-        backendImage: { ref: `local/backend@sha256:${'b'.repeat(64)}`, imageId: `sha256:${'3'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ai' },
-        frontImage: { ref: `local/front@sha256:${'c'.repeat(64)}`, imageId: `sha256:${'4'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/eldercare-fall-ai' },
+        backendImage: { ref: `local/backend@sha256:${'b'.repeat(64)}`, imageId: `sha256:${'3'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/SeeON-Backend' },
+        apiIngressImage: { ref: `local/api-ingress@sha256:${'c'.repeat(64)}`, imageId: `sha256:${'4'.repeat(64)}`, platform: 'linux/arm64', revision: 'a'.repeat(40), repository: 'SeniorAILab/SeeON-Backend' },
       },
       ml: {
         repository: 'SeniorAILab/eldercare-fall-ml-v2',
@@ -147,6 +148,8 @@ function fixture() {
       { ...seal, ai: { ...seal.ai, sha: 'short' } },
       { ...seal, ml: { ...seal.ml, workerImage: { ...seal.ml.workerImage, ref: 'mutable:latest' } } },
       { ...seal, ai: { ...seal.ai, repository: 'attacker/repository' } },
+      { ...seal, ai: { ...seal.ai, repository: 'SeniorAILab/eldercare-fall-ai' } },
+      { ...seal, ai: { ...seal.ai, frontImage: { ...seal.ai.apiIngressImage } } },
       { ...seal, ml: { ...seal.ml, apiImage: { ...seal.ml.apiImage, revision: '0'.repeat(40) } } },
     ]) {
       let rejected = false;
@@ -184,7 +187,7 @@ function verify(options) {
   verifyRepository(ai, seal.ai, 'AI');
   verifyRepository(ml, seal.ml, 'ML');
   verifyImage(seal.ai.backendImage, 'AI backend');
-  verifyImage(seal.ai.frontImage, 'AI front');
+  verifyImage(seal.ai.apiIngressImage, 'AI API ingress');
   verifyImage(seal.ml.apiImage, 'ML API');
   verifyImage(seal.ml.workerImage, 'ML worker');
   for (let task = 1; task <= 20; task += 1) {

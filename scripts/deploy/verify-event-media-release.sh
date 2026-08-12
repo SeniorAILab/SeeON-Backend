@@ -67,11 +67,11 @@ if grep -Eiq '(/api/v1/alerts/|media/content|[.]mp4|/app/backend/clips|/var/lib/
   fail 'outer proxy access log redaction proof failed'
 fi
 
-need_loopback='"127.0.0.1:3000:3000"'
+need_loopback='"127.0.0.1:3001:3000"'
 grep -F "$need_loopback" "$REPO_ROOT/compose.prod.yaml" >/dev/null || {
-  fail 'frontend must remain loopback-only behind the outer proxy'
+  fail 'API ingress must remain loopback-only behind the outer proxy'
 }
-backend_compose=$(sed -n '/^  backend:/,/^  front:/p' "$REPO_ROOT/compose.prod.yaml")
+backend_compose=$(sed -n '/^  backend:/,/^  api-ingress:/p' "$REPO_ROOT/compose.prod.yaml")
 printf '%s\n' "$backend_compose" | grep -F 'ports: !reset []' >/dev/null || {
   fail 'backend must remain private behind the outer proxy'
 }

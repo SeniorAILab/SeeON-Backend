@@ -15,6 +15,7 @@ type ClearCookieCall = readonly [name: string, options: CookieOptions];
 
 describe('auth cookie utilities', () => {
   const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
+  const originalAuthCookieSameSite = process.env.AUTH_COOKIE_SAME_SITE;
 
   const makeRequest = (secure: boolean) => ({ secure }) as Request;
   const makeResponse = () =>
@@ -31,6 +32,11 @@ describe('auth cookie utilities', () => {
       delete process.env.AUTH_COOKIE_SECURE;
     } else {
       process.env.AUTH_COOKIE_SECURE = originalAuthCookieSecure;
+    }
+    if (originalAuthCookieSameSite === undefined) {
+      delete process.env.AUTH_COOKIE_SAME_SITE;
+    } else {
+      process.env.AUTH_COOKIE_SAME_SITE = originalAuthCookieSameSite;
     }
   });
 
@@ -59,6 +65,18 @@ describe('auth cookie utilities', () => {
       );
     },
   );
+
+  it('uses unconditional Secure and SameSite=None for the temporary bridge', () => {
+    process.env.AUTH_COOKIE_SAME_SITE = 'none';
+    process.env.AUTH_COOKIE_SECURE = 'true';
+
+    expect(buildAuthCookieOptions(makeRequest(false))).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+    });
+  });
 
   it('uses matching strict host-only attributes for session set and clear', () => {
     process.env.AUTH_COOKIE_SECURE = 'auto';
@@ -90,6 +108,14 @@ describe('auth cookie utilities', () => {
     });
     expect(setOptions).not.toHaveProperty('domain');
     expect(clearOptions).not.toHaveProperty('domain');
+  });
+
+  it('rejects an invalid SameSite mode instead of guessing', () => {
+    process.env.AUTH_COOKIE_SAME_SITE = 'lax';
+
+    expect(() => buildAuthCookieOptions(makeRequest(true))).toThrow(
+      'AUTH_COOKIE_SAME_SITE must be strict or none',
+    );
   });
 
   it('rejects an invalid cookie security mode instead of guessing', () => {

@@ -29,6 +29,7 @@ export {
   SNAPSHOT_ID,
 } from './edge-topology-fixture-values.js';
 import {
+  edgeTopologyUuidV7,
   FACILITY_ID,
   INSTALLATION_ID,
   SNAPSHOT_ID,
@@ -139,7 +140,10 @@ export class EdgeTopologyHarness {
         manifestDigest,
         manifest,
       },
-      { idempotencyKey: uuidV7(90), actorUserId: 'task-10-admin' },
+      {
+        idempotencyKey: edgeTopologyUuidV7(90),
+        actorUserId: 'task-10-admin',
+      },
     );
   }
 
@@ -193,8 +197,4 @@ function requiredPepper(): string {
     throw new Error('EDGE_TOKEN_PEPPER is required for topology tests');
   }
   return pepper;
-}
-
-function uuidV7(sequence: number): string {
-  return `0197f671-3a31-7a6c-a6e4-${sequence.toString(16).padStart(12, '0')}`;
 }

@@ -1,8 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import { cleanupFacilityFixtures } from './helpers/facility-fixture-cleanup.js';
 
 type CountRow = { count: number };
 
 describe('placement RLS tenant isolation', () => {
+  const facilityIds = ['rls-a', 'rls-b'] as const;
   let direct: PrismaClient;
   let app: PrismaClient;
 
@@ -21,14 +23,7 @@ describe('placement RLS tenant isolation', () => {
     await direct.$connect();
     await app.$connect();
 
-    await direct.alert.deleteMany();
-    await direct.event.deleteMany();
-    await direct.camera.deleteMany();
-    await direct.space.deleteMany();
-    await direct.floor.deleteMany();
-    await direct.facility.deleteMany({
-      where: { id: { in: ['rls-a', 'rls-b'] } },
-    });
+    await cleanupFacilityFixtures(direct, facilityIds);
     await direct.facility.createMany({
       data: [
         { id: 'rls-a', name: 'RLS A' },
@@ -37,24 +32,34 @@ describe('placement RLS tenant isolation', () => {
     });
     await direct.floor.createMany({
       data: [
-        { id: 'floor-a', facilityId: 'rls-a', name: 'A Floor', orderIndex: 1 },
-        { id: 'floor-b', facilityId: 'rls-b', name: 'B Floor', orderIndex: 1 },
+        {
+          id: 'placement-rls-floor-a',
+          facilityId: 'rls-a',
+          name: 'A Floor',
+          orderIndex: 1,
+        },
+        {
+          id: 'placement-rls-floor-b',
+          facilityId: 'rls-b',
+          name: 'B Floor',
+          orderIndex: 1,
+        },
       ],
     });
     await direct.space.createMany({
       data: [
         {
-          id: 'space-a',
+          id: 'placement-rls-space-a',
           facilityId: 'rls-a',
-          floorId: 'floor-a',
+          floorId: 'placement-rls-floor-a',
           name: 'A Room',
           type: 'ROOM',
           capacity: 1,
         },
         {
-          id: 'space-b',
+          id: 'placement-rls-space-b',
           facilityId: 'rls-b',
-          floorId: 'floor-b',
+          floorId: 'placement-rls-floor-b',
           name: 'B Room',
           type: 'ROOM',
           capacity: 1,
@@ -64,15 +69,15 @@ describe('placement RLS tenant isolation', () => {
     await direct.camera.createMany({
       data: [
         {
-          id: 'camera-a',
+          id: 'placement-rls-camera-a',
           facilityId: 'rls-a',
-          spaceId: 'space-a',
+          spaceId: 'placement-rls-space-a',
           label: 'A Camera',
         },
         {
-          id: 'camera-b',
+          id: 'placement-rls-camera-b',
           facilityId: 'rls-b',
-          spaceId: 'space-b',
+          spaceId: 'placement-rls-space-b',
           label: 'B Camera',
         },
       ],
@@ -82,8 +87,8 @@ describe('placement RLS tenant isolation', () => {
       data: {
         id: 'placement-event-a',
         facilityId: 'rls-a',
-        cameraId: 'camera-a',
-        spaceId: 'space-a',
+        cameraId: 'placement-rls-camera-a',
+        spaceId: 'placement-rls-space-a',
         type: 'fall',
         detectedAt: new Date('2026-07-03T00:00:00.000Z'),
         dedupKey: 'placement-event-a',
@@ -93,6 +98,7 @@ describe('placement RLS tenant isolation', () => {
 
   afterAll(async () => {
     await app.$disconnect();
+    await cleanupFacilityFixtures(direct, facilityIds);
     await direct.$disconnect();
   });
 
@@ -134,7 +140,7 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
           INSERT INTO spaces (id, facility_id, floor_id, name, type, capacity)
-          VALUES ('space-cross', 'rls-a', 'floor-b', 'Cross Room', 'ROOM', 1)
+          VALUES ('space-cross', 'rls-a', 'placement-rls-floor-b', 'Cross Room', 'ROOM', 1)
         `;
       }),
     ).rejects.toThrow();
@@ -144,7 +150,7 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
           INSERT INTO cameras (id, facility_id, space_id, label)
-          VALUES ('camera-cross', 'rls-a', 'space-b', 'Cross Camera')
+          VALUES ('camera-cross', 'rls-a', 'placement-rls-space-b', 'Cross Camera')
         `;
       }),
     ).rejects.toThrow();
@@ -154,7 +160,7 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
           INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
-          VALUES ('alert-cross-space', 'rls-a', 'camera-a', 'space-b', 'fall', 0.9, now(), 'alert-cross-space-key', 'placement-event-a')
+          VALUES ('alert-cross-space', 'rls-a', 'placement-rls-camera-a', 'placement-rls-space-b', 'fall', 0.9, now(), 'alert-cross-space-key', 'placement-event-a')
         `;
       }),
     ).rejects.toThrow();
@@ -164,7 +170,7 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
           INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
-          VALUES ('alert-cross-camera', 'rls-a', 'camera-b', 'space-a', 'fall', 0.9, now(), 'alert-cross-camera-key', 'placement-event-a')
+          VALUES ('alert-cross-camera', 'rls-a', 'placement-rls-camera-b', 'placement-rls-space-a', 'fall', 0.9, now(), 'alert-cross-camera-key', 'placement-event-a')
         `;
       }),
     ).rejects.toThrow();
@@ -176,11 +182,11 @@ describe('placement RLS tenant isolation', () => {
         await tx.$executeRaw`SELECT set_config('app.facility_id', 'rls-a', true)`;
         await tx.$executeRaw`
           INSERT INTO cameras (id, facility_id, space_id, label)
-          VALUES ('camera-a1', 'rls-a', 'space-a', 'A Camera 1')
+          VALUES ('placement-rls-camera-a1', 'rls-a', 'placement-rls-space-a', 'A Camera 1')
         `;
         await tx.$executeRaw`
           INSERT INTO cameras (id, facility_id, space_id, label)
-          VALUES ('camera-a2', 'rls-a', 'space-a', 'A Camera 2')
+          VALUES ('placement-rls-camera-a2', 'rls-a', 'placement-rls-space-a', 'A Camera 2')
         `;
       }),
     ).rejects.toThrow();

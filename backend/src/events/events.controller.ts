@@ -22,6 +22,7 @@ import * as path from 'path';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
+import { SkipCsrf } from '../security/skip-csrf.decorator.js';
 import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
 import type { EdgeIngestRequest } from './edge-ingest-token.guard.js';
 import {
@@ -64,6 +65,7 @@ export class EventsController {
   })
   @Post()
   @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
   async record(
     @Req() request: EdgeIngestRequest,
     @Body() body: RecordEventRequestDto,
@@ -110,6 +112,7 @@ export class EventsController {
   @Post('heartbeat')
   @HttpCode(200)
   @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
   async heartbeat(
     @Body() body: RecordHeartbeatRequestDto,
   ): Promise<RecordHeartbeatResponseDto> {
@@ -127,6 +130,7 @@ export class EventsController {
   @Put(':eventId/snapshot')
   @HttpCode(201)
   @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
   async uploadSnapshot(
     @Req() req: RequestWithAuth & EdgeIngestRequest,
     @Param('eventId') eventId: string,

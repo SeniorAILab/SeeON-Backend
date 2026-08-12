@@ -14,6 +14,7 @@ import {
   EdgeOperationAdminController,
 } from './edge-credential.controller.js';
 import { EdgeInstallationAdminController } from './edge-installation.controller.js';
+import { EdgeEnrollmentGuard } from './edge-enrollment.guard.js';
 import { EdgeIssuanceRepository } from './edge-issuance.repository.js';
 import { EdgeLifecycleRepository } from './edge-lifecycle.repository.js';
 import { EdgeReplacementRepository } from './edge-replacement.repository.js';
@@ -42,6 +43,7 @@ import { SuperAdminEdgeGuard } from './super-admin-edge.guard.js';
     EdgeCredentialService,
     EdgeAdminService,
     EnrollmentRateLimiter,
+    EdgeEnrollmentGuard,
     LegacyEdgeMetrics,
     SuperAdminEdgeGuard,
   ],

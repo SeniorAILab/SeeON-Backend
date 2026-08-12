@@ -50,7 +50,6 @@ sha256_file() { sha256sum "$1" | awk '{print $1}'; }
 compose() {
   BACKEND_IMAGE="eldercare-backend:$SHA" \
   API_INGRESS_IMAGE="eldercare-api-ingress:$SHA" \
-  FRONT_IMAGE="eldercare-front:$SHA" \
     docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
 }
 validate_tooling() {
@@ -67,8 +66,18 @@ validate_pre_build() {
   [ -f "$APP_DIR/compose.yaml" ] && [ -f "$APP_DIR/compose.prod.yaml" ] || fail 'both Compose files are required'
   [ -f "$INGRESS_CONFIG" ] && [ ! -L "$INGRESS_CONFIG" ] || fail 'standalone API ingress config is required'
   [ -f "$APP_DIR/infra/api-ingress/Dockerfile" ] || fail 'standalone API ingress Dockerfile is required'
-  [ "$(env_value FRONT_ORIGINS)" = 'https://seeon.seniorsailab.com,http://49.247.204.81' ] || fail 'production FRONT_ORIGINS must equal the overlap allowlist'
-  [ "$(env_value AUTH_COOKIE_SECURE)" = auto ] || fail 'production AUTH_COOKIE_SECURE must be auto during overlap'
+  same_site=$(env_value AUTH_COOKIE_SAME_SITE)
+  case "$same_site" in
+    strict)
+      [ "$(env_value FRONT_ORIGINS)" = 'https://seeon.seniorsailab.com,http://49.247.204.81' ] || fail 'strict production FRONT_ORIGINS must equal the approved overlap allowlist'
+      [ "$(env_value AUTH_COOKIE_SECURE)" = auto ] || fail 'strict production AUTH_COOKIE_SECURE must remain auto during overlap'
+      ;;
+    none)
+      [ "$(env_value FRONT_ORIGINS)" = 'https://seeon-front.vercel.app' ] || fail 'temporary bridge FRONT_ORIGINS must equal the stable Vercel origin'
+      [ "$(env_value AUTH_COOKIE_SECURE)" = true ] || fail 'temporary bridge AUTH_COOKIE_SECURE must be true'
+      ;;
+    *) fail 'AUTH_COOKIE_SAME_SITE must be strict or none' ;;
+  esac
   sh "$APP_DIR/scripts/deploy/validate-event-clip-env.sh" "$ENV_FILE"
   sh "$APP_DIR/infra/api-ingress/nginx-config.test.sh"
   (
@@ -141,7 +150,6 @@ case "$MODE" in
     validate_edge_receipt
     verify_image "eldercare-backend:$SHA" backend
     verify_image "eldercare-api-ingress:$SHA" 'API ingress'
-    verify_image "eldercare-front:$SHA" frontend
     printf 'overlap pre-deploy readiness verified. sha=%s\n' "$SHA"
     ;;
   *) fail 'Usage: iwinv-overlap-readiness.sh --pre-build|--capture-edge|--pre-deploy <release-sha>' ;;

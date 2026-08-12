@@ -39,7 +39,7 @@ describe('audited alert media downloads (e2e)', () => {
     await deleteDownloadRows();
   });
 
-  it('downloads full bytes as an attachment and completes one audit', async () => {
+  it('downloads full bytes as an attachment without mutating audit state', async () => {
     const response = await request(fixture.app.getHttpServer())
       .get(downloadPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.adminCookie)
@@ -54,23 +54,7 @@ describe('audited alert media downloads (e2e)', () => {
       'accept-ranges': 'bytes',
       etag: mediaEtag,
     });
-    const audits = [await waitForTerminalAudit()];
-    expect(audits).toHaveLength(1);
-    expect(audits[0]).toMatchObject({
-      alertId: mediaFixtureIds.alertA,
-      clipId: mediaFixtureIds.clipA,
-      actorUserId: mediaFixtureIds.adminA,
-      state: 'COMPLETED',
-      requestId: 'download-correlation',
-      httpStatus: 200,
-      rangeStart: null,
-      rangeEnd: null,
-      bytesPlanned: BigInt(mediaBytes.length),
-      bytesActual: BigInt(mediaBytes.length),
-      outboxJob: { state: 'COMPLETED' },
-    });
-    expect(audits[0]?.completedAt).toBeInstanceOf(Date);
-    expect(audits[0]?.abortedAt).toBeNull();
+    await expectDownloadCount(0);
   });
 
   it('persists STARTED plus its pending recovery job atomically', async () => {
@@ -92,7 +76,7 @@ describe('audited alert media downloads (e2e)', () => {
     await expectDownloadCount(1);
   });
 
-  it('downloads a range with a distinct operation for repeated correlation ids', async () => {
+  it('downloads repeated ranges without mutating audit state', async () => {
     for (const range of ['bytes=2-5', 'bytes=6-9']) {
       await request(fixture.app.getHttpServer())
         .get(downloadPath(mediaFixtureIds.alertA))
@@ -102,28 +86,7 @@ describe('audited alert media downloads (e2e)', () => {
         .expect(206);
     }
 
-    await waitForTerminalCount(2);
-
-    const audits = await fixture.direct.mediaDownloadAudit.findMany({
-      where: { facilityId: mediaFixtureIds.facilityA },
-      orderBy: { rangeStart: 'asc' },
-    });
-    expect(audits).toHaveLength(2);
-    expect(new Set(audits.map((audit) => audit.id)).size).toBe(2);
-    expect(audits.map((audit) => audit.requestId)).toEqual([
-      'same-client-id',
-      'same-client-id',
-    ]);
-    expect(
-      audits.map((audit) => [
-        audit.httpStatus,
-        audit.rangeStart,
-        audit.rangeEnd,
-      ]),
-    ).toEqual([
-      [206, 2n, 5n],
-      [206, 6n, 9n],
-    ]);
+    await expectDownloadCount(0);
   });
 
   it.each([
@@ -417,38 +380,6 @@ describe('audited alert media downloads (e2e)', () => {
       fixture.app.get(MediaDownloadProcessRepository),
       clock,
     );
-  }
-
-  async function waitForTerminalAudit() {
-    const deadline = Date.now() + 2_000;
-    for (;;) {
-      const audit = await fixture.direct.mediaDownloadAudit.findFirst({
-        where: { facilityId: mediaFixtureIds.facilityA },
-        include: { outboxJob: true },
-      });
-      if (audit?.state === 'COMPLETED') return audit;
-      if (Date.now() >= deadline) {
-        throw new Error('Download audit did not complete');
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-
-  async function waitForTerminalCount(expected: number): Promise<void> {
-    const deadline = Date.now() + 2_000;
-    for (;;) {
-      const terminal = await fixture.direct.mediaDownloadAudit.count({
-        where: {
-          facilityId: mediaFixtureIds.facilityA,
-          state: { in: ['COMPLETED', 'ABORTED'] },
-        },
-      });
-      if (terminal === expected) return;
-      if (Date.now() >= deadline) {
-        throw new Error('Download audits did not settle');
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
   }
 
   async function deleteDownloadRows(): Promise<void> {

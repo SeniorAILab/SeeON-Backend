@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { EdgeIngestTokenGuard } from '../events/edge-ingest-token.guard.js';
+import { SkipCsrf } from '../security/skip-csrf.decorator.js';
 import {
   EdgeMediaCapabilityQueryDto,
   ReportUnavailableClipRequestDto,
@@ -44,6 +45,7 @@ export class EdgeMediaController {
 
   @Put('clips/:clipId')
   @HttpCode(200)
+  @SkipCsrf()
   async uploadReady(
     @Param('clipId') clipId: string,
     @Req() request: RequestWithAuth,
@@ -59,6 +61,7 @@ export class EdgeMediaController {
 
   @Put('clips/:clipId/state')
   @HttpCode(200)
+  @SkipCsrf()
   async reportUnavailable(
     @Param('clipId') clipId: string,
     @Body() body: ReportUnavailableClipRequestDto,

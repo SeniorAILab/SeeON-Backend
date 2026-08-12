@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { EDGE_CLOCK, type EdgeClock } from './edge-clock.js';
-import { EdgeCredentialAuthenticator } from './edge-credential-authenticator.js';
+import type { AuthenticatedEnrollment } from './edge-credential-authenticator.js';
 import { bodyHash, generateCredential } from './edge-credential-crypto.js';
 import { EdgeCredentialQueryRepository } from './edge-credential-query.repository.js';
 import type { EdgeCredentialLifecycleName } from './edge-credential.types.js';
@@ -12,7 +12,6 @@ import {
   type MutationContext,
 } from './edge-mutation-support.js';
 import { EdgeReplacementRepository } from './edge-replacement.repository.js';
-import { EnrollmentRateLimiter } from './enrollment-rate-limiter.js';
 import {
   displayCredential,
   jsonContainsTokenId,
@@ -28,8 +27,6 @@ export class EdgeCredentialService {
     private readonly issuance: EdgeIssuanceRepository,
     private readonly lifecycle: EdgeLifecycleRepository,
     private readonly replacements: EdgeReplacementRepository,
-    private readonly authenticator: EdgeCredentialAuthenticator,
-    private readonly limiter: EnrollmentRateLimiter,
     @Inject(EDGE_CLOCK) private readonly clock: EdgeClock,
   ) {}
 
@@ -187,18 +184,12 @@ export class EdgeCredentialService {
     return { ...result, oneTimeDisplay: displayCredential(replacement) };
   }
 
-  async verify(input: {
-    readonly fullToken: string;
-    readonly sourceIp: string;
+  async verifyEnrollment(input: {
+    readonly authenticated: AuthenticatedEnrollment;
     readonly facilityCode: string;
     readonly clientInstallationRef: string;
   }) {
-    if (!this.limiter.consume(input.sourceIp, input.facilityCode)) {
-      throw edgeHttpError(429, EDGE_ERROR_CODES.RATE_LIMITED, true);
-    }
-    const authenticated = await this.authenticator.authenticateForEnrollment(
-      input.fullToken,
-    );
+    const authenticated = input.authenticated;
     if (authenticated.binding.facilityCode !== input.facilityCode) {
       throw edgeHttpError(401, EDGE_ERROR_CODES.INVALID);
     }

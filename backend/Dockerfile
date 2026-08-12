@@ -41,7 +41,7 @@ RUN if [ "${#DEPLOY_SHA}" -ne 40 ] || case "$DEPLOY_SHA" in *[!0123456789abcdef]
       exit 1; \
     fi
 LABEL org.opencontainers.image.revision="${DEPLOY_SHA}" \
-      org.opencontainers.image.source="SeniorAILab/eldercare-fall-ai"
+      org.opencontainers.image.source="SeniorAILab/SeeON-Backend"
 
 COPY --from=build /prod/backend/package.json ./package.json
 COPY --from=build /prod/backend/node_modules ./node_modules

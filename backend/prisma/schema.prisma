@@ -89,6 +89,7 @@ enum MediaAccessAction {
   CONTENT_ABORTED
   PLAY_STARTED
   FULLSCREEN_ENTERED
+  DOWNLOAD_STARTED
 }
 
 enum MediaAccessOutcome {

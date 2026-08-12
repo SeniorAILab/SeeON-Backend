@@ -18,6 +18,7 @@ import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequireCapability, RolesGuard } from '../auth/roles.guard.js';
 import { FacilityContextInterceptor } from '../auth/facility-context.interceptor.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
+import { SkipCsrf } from '../security/skip-csrf.decorator.js';
 import { CamerasService } from './cameras.service.js';
 import {
   CreateCameraRequestDto,
@@ -100,6 +101,7 @@ export class CamerasController {
 
 @Controller({ path: 'edge/cameras', version: '1' })
 @UseGuards(EdgeFacilityTokenGuard)
+@SkipCsrf()
 export class EdgeCamerasController {
   constructor(private readonly service: CamerasService) {}
 

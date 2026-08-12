@@ -7,22 +7,21 @@
 # which is the only real gate available on this plan.
 #
 # Mirrors `ci.yml` semantics exactly so local == CI:
-#   frontend (front/** or shared TS manifests): `tsc --noEmit` (BLOCK) + `lint` (BLOCK)
-#   backend  (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR)
+#   backend (backend/**, backend guard scripts, or shared TS manifests): `dto:check` (BLOCK) + `tsc --noEmit` (BLOCK) + `lint` (WARN-first, ADR)
 #            + `test:local` (BLOCK when the local dev DB container and .env.local
 #            are present; skipped otherwise — the jest suite includes e2e specs
 #            that need Postgres and env from .env.local). Non-Linux hosts skip
 #            the media storage suites, which need /proc/self/fd; CI covers them.
 #            This is the only place stale tests can block before main on this plan.
 #
-# Scoped to changed packages so a frontend-only push never needs backend tooling.
-# When a changed package's toolchain is missing, it warns and skips (cannot verify) —
+# Scoped to backend and env-contract changes.
+# When the backend toolchain is missing, it warns and skips (cannot verify) —
 # never a false block. Real lint/type failures block the push.
 #
 # Escape hatch (intentional only): GIT_GUARD_SKIP_LINT=1 git push
 set -eu
 
-_gg_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+_gg_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source=scripts/git-guard/lib.sh
 . "$_gg_dir/lib.sh"
 
@@ -42,32 +41,25 @@ changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
 [ -z "$changed" ] && exit 0
 
 # Map changed files -> packages (mirrors ci.yml dorny/paths-filter).
-fe=0; be=0; envc=0
-if printf '%s\n' "$changed" | grep -Eq '^front/';   then fe=1; fi
+be=0; envc=0
 if printf '%s\n' "$changed" | grep -Eq '^(backend/|scripts/backend-guard/)'; then be=1; fi
 if printf '%s\n' "$changed" | grep -Eq '^(compose(\..*)?\.ya?ml|\.env.*\.example|scripts/env/|\.github/workflows/ci\.yml|package\.json)$'; then envc=1; fi
-# Shared TS manifests/lockfiles affect both front and backend.
-if printf '%s\n' "$changed" | grep -Eq '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)$'; then fe=1; be=1; fi
+# Shared TS manifests/lockfiles affect the backend workspace.
+if printf '%s\n' "$changed" | grep -Eq '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)$'; then be=1; fi
 
-[ "$fe" = 0 ] && [ "$be" = 0 ] && [ "$envc" = 0 ] && exit 0
+[ "$be" = 0 ] && [ "$envc" = 0 ] && exit 0
 
-if [ "$fe" = 1 ] || [ "$be" = 1 ] || [ "$envc" = 1 ]; then
+if [ "$be" = 1 ] || [ "$envc" = 1 ]; then
   if ! command -v pnpm >/dev/null 2>&1; then
     gg_warn "pnpm not found — skipping JS lint/typecheck gate (run 'pnpm install' to enable)"
-    fe=0; be=0; envc=0
+    be=0; envc=0
   elif [ ! -d node_modules ]; then
     gg_warn "node_modules missing — run 'pnpm install' to enable the JS lint/typecheck gate; skipping"
-    fe=0; be=0; envc=0
+    be=0; envc=0
   fi
 fi
 
 fail=0
-
-if [ "$fe" = 1 ]; then
-  gg_warn "frontend changed -> tsc --noEmit + lint"
-  pnpm --filter front exec tsc --noEmit || fail=1
-  pnpm --filter front lint || fail=1
-fi
 
 if [ "$be" = 1 ]; then
   gg_warn "backend changed -> dto:check + tsc --noEmit + lint (block)"

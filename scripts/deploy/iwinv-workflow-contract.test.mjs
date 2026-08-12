@@ -12,7 +12,7 @@ const workflow = await readFile(workflowUrl, 'utf8');
 
 const requiredTriggerPredicates = [
   "needs.classify.outputs.is_production == 'true'",
-  "github.repository == 'SeniorAILab/SeeON'",
+  "github.repository == 'SeniorAILab/SeeON-Backend'",
 ];
 
 const requiredDeliveryFragments = [

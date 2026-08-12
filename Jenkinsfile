@@ -34,7 +34,7 @@ pipeline {
             sh(
               script: '''#!/usr/bin/env sh
                 set -eu
-                repository='git@github.com:SeniorAILab/SeeON.git'
+                repository='git@github.com:SeniorAILab/SeeON-Backend.git'
                 if [ ! -d .git ]; then git init 1>&2; fi
                 remotes=$(git remote) || { echo 'Unable to list Git remotes.' >&2; exit 1; }
                 if printf '%s\n' "$remotes" | grep -Fx 'origin' >/dev/null; then
@@ -183,25 +183,6 @@ pipeline {
             --build-arg DEPLOY_SHA="$RELEASE_SHA" \
             --tag "eldercare-api-ingress:$RELEASE_SHA" --file infra/api-ingress/Dockerfile .
           docker run --rm --entrypoint nginx "eldercare-api-ingress:$RELEASE_SHA" -t
-        '''
-      }
-    }
-
-    stage('Build frontend') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
-      steps {
-        sh '''#!/usr/bin/env sh
-          set -eu
-          VITE_EVENT_CLIPS_ENABLED=$(sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env" --print-front-flag)
-          export VITE_EVENT_CLIPS_ENABLED
-          docker buildx build --builder "$BUILDX_BUILDER" --load \
-            --resource memory=2g --resource memory-swap=3g \
-            --build-arg DEPLOY_SHA="$RELEASE_SHA" \
-            --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
-            --build-arg VITE_EVENT_CLIPS_ENABLED="$VITE_EVENT_CLIPS_ENABLED" \
-            --tag "eldercare-front:$RELEASE_SHA" --file front/Dockerfile .
         '''
       }
     }

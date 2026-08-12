@@ -7,6 +7,7 @@ import { join } from 'node:path';
 const completeHostEnv = `NODE_ENV=production
 FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
 AUTH_COOKIE_SECURE=auto
+AUTH_COOKIE_SAME_SITE=strict
 ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 POSTGRES_USER=fall_prod_admin
 POSTGRES_PASSWORD=prod-admin-password-32chars
@@ -28,7 +29,6 @@ NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
 EDGE_FACILITY_TOKEN=prod-edge-facility-token-32-chars
 BACKEND_IMAGE=eldercare-backend:0123456789abcdef0123456789abcdef01234567
 API_INGRESS_IMAGE=eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567
-FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -144,18 +144,18 @@ function assertHostComposeContract(config) {
   }
 
   const serviceNames = Object.keys(services).sort();
-  const expectedServiceNames = ['api-ingress', 'backend', 'db', 'front'];
+  const expectedServiceNames = ['api-ingress', 'backend', 'db'];
   if (
     serviceNames.length !== expectedServiceNames.length ||
     serviceNames.some((name, index) => name !== expectedServiceNames[index])
   ) {
     throw new VerificationError(
-      'host prod service set must be exactly db, backend, api-ingress, front',
+      'host prod service set must be exactly db, backend, api-ingress',
       `Found: ${serviceNames.join(', ')}`,
     );
   }
 
-  const { 'api-ingress': apiIngress, backend, db, front } = services;
+  const { 'api-ingress': apiIngress, backend, db } = services;
   const backendEnvironment = backend.environment;
   if (
     backendEnvironment === null ||
@@ -180,7 +180,8 @@ function assertHostComposeContract(config) {
   if (
     backendEnvironment.FRONT_ORIGINS !==
       'https://seeon.seniorsailab.com,http://49.247.204.81' ||
-    backendEnvironment.AUTH_COOKIE_SECURE !== 'auto'
+    backendEnvironment.AUTH_COOKIE_SECURE !== 'auto' ||
+    backendEnvironment.AUTH_COOKIE_SAME_SITE !== 'strict'
   ) {
     throw new VerificationError(
       'host prod backend must receive the exact overlap origins and auto cookie policy',
@@ -188,26 +189,20 @@ function assertHostComposeContract(config) {
   }
   const backendImage = backend.image;
   const apiIngressImage = apiIngress.image;
-  const frontImage = front.image;
   const backendMatch =
     typeof backendImage === 'string' &&
     /^eldercare-backend:([0-9a-f]{40})$/.exec(backendImage);
   const apiIngressMatch =
     typeof apiIngressImage === 'string' &&
     /^eldercare-api-ingress:([0-9a-f]{40})$/.exec(apiIngressImage);
-  const frontMatch =
-    typeof frontImage === 'string' &&
-    /^eldercare-front:([0-9a-f]{40})$/.exec(frontImage);
   if (
     !backendMatch ||
     !apiIngressMatch ||
-    !frontMatch ||
-    backendMatch[1] !== apiIngressMatch[1] ||
-    backendMatch[1] !== frontMatch[1]
+    backendMatch[1] !== apiIngressMatch[1]
   ) {
     throw new VerificationError(
       'host prod app images must use matching lowercase 40-character SHA tags',
-      `backend: ${String(backendImage)}\napi-ingress: ${String(apiIngressImage)}\nfront: ${String(frontImage)}`,
+      `backend: ${String(backendImage)}\napi-ingress: ${String(apiIngressImage)}`,
     );
   }
 
@@ -216,8 +211,7 @@ function assertHostComposeContract(config) {
   }
   if (
     backend.pull_policy !== 'never' ||
-    apiIngress.pull_policy !== 'never' ||
-    front.pull_policy !== 'never'
+    apiIngress.pull_policy !== 'never'
   ) {
     throw new VerificationError('host prod app images must never be pulled');
   }
@@ -250,20 +244,6 @@ function assertHostComposeContract(config) {
     throw new VerificationError(
       'host prod API ingress must exclusively publish 127.0.0.1:3001',
       JSON.stringify(apiIngressPorts),
-    );
-  }
-  const frontPorts = front.ports;
-  if (
-    !Array.isArray(frontPorts) ||
-    frontPorts.length !== 1 ||
-    frontPorts[0].host_ip !== '127.0.0.1' ||
-    frontPorts[0].published !== '3000' ||
-    frontPorts[0].target !== 3000 ||
-    frontPorts[0].protocol !== 'tcp'
-  ) {
-    throw new VerificationError(
-      'host prod frontend must exclusively publish 127.0.0.1:3000',
-      JSON.stringify(frontPorts),
     );
   }
 }
@@ -424,9 +404,7 @@ function verify() {
         'EDGE_FACILITY_TOKEN: prod-edge-facility-token-32-chars',
         'eldercare-backend:0123456789abcdef0123456789abcdef01234567',
         'eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567',
-        'eldercare-front:0123456789abcdef0123456789abcdef01234567',
         'host_ip: 127.0.0.1',
-        'published: "3000"',
         'pull_policy: always',
         'pull_policy: never',
       ]);

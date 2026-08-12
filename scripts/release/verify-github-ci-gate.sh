@@ -2,7 +2,7 @@
 set -eu
 set +x
 
-REPOSITORY=${GITHUB_REPOSITORY:-SeniorAILab/SeeON}
+REPOSITORY=${GITHUB_REPOSITORY:-SeniorAILab/SeeON-Backend}
 GITHUB_API_URL=${GITHUB_API_URL:-https://api.github.com}
 GITHUB_TOKEN=${GITHUB_TOKEN:-}
 
@@ -12,7 +12,7 @@ valid_sha() { [ "${#1}" -eq 40 ] && printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'
 [ "$#" -eq 1 ] || fail 'Usage: verify-github-ci-gate.sh <release-sha>'
 SHA=$1
 valid_sha "$SHA" || fail 'release SHA must be exactly 40 lowercase hexadecimal characters'
-[ "$REPOSITORY" = SeniorAILab/SeeON ] || fail 'GitHub ci-gate repository must be SeniorAILab/SeeON'
+[ "$REPOSITORY" = SeniorAILab/SeeON-Backend ] || fail 'GitHub ci-gate repository must be SeniorAILab/SeeON-Backend'
 [ -n "$GITHUB_TOKEN" ] || fail 'GITHUB_TOKEN is required to verify GitHub ci-gate'
 command -v curl >/dev/null 2>&1 || fail 'curl is required to verify GitHub ci-gate'
 command -v jq >/dev/null 2>&1 || fail 'jq is required to validate GitHub check-run JSON'

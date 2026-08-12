@@ -25,7 +25,7 @@ success='{"check_runs":[{"name":"CI gate","head_sha":"'$SHA'","status":"complete
 : > "$TMP/curl.log"
 output=$(TEST_TOKEN=synthetic-token run_gate "$success")
 assert_contains "$output" 'GitHub ci-gate verified'
-grep -F 'repos/SeniorAILab/SeeON/commits/' "$TMP/curl.log" >/dev/null
+grep -F 'repos/SeniorAILab/SeeON-Backend/commits/' "$TMP/curl.log" >/dev/null
 grep -F 'Authorization: Bearer synthetic-token' "$TMP/curl.log" >/dev/null
 
 for response in \

@@ -107,9 +107,9 @@ compose() {
     fi
   else
     if [ -f "$FEATURE_ENV" ]; then
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
     else
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
     fi
   fi
 }
@@ -164,7 +164,7 @@ assert_fresh_receipt_epoch() {
   [ "$age" -ge 0 ] && [ "$age" -le "$RECEIPT_MAX_AGE_SECONDS" ] || fail "$label is stale."
 }
 verify_overlap_receipts() {
-  [ "$MANIFEST_SCHEMA" = 2 ] && [ "$HAS_FRONT" -eq 1 ] || fail 'A normal overlap deploy must use the transitional schema-2 service set.'
+  [ "$MANIFEST_SCHEMA" = 2 ] || fail 'A normal deploy must use the schema-2 backend service set.'
 
   owner_only_receipt "$MEDIA_RECEIPT" 'Media backup receipt'
   [ "$(wc -l < "$MEDIA_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Media backup receipt is malformed.'
@@ -246,8 +246,10 @@ read_manifest() {
     FRONT_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image_id)
     [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
     [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
-    HAS_FRONT=1
-    APP_SERVICES='backend front'
+    # Preserve legacy image metadata for pointer validation and pruning, but
+    # frontend lifecycle belongs to the standalone frontend repository.
+    HAS_FRONT=0
+    APP_SERVICES='backend'
   else
     API_INGRESS_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image)
     API_INGRESS_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image_id)
@@ -258,8 +260,10 @@ read_manifest() {
     if [ -n "$FRONT_IMAGE" ] || [ -n "$FRONT_ID" ]; then
       [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
       [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
-      HAS_FRONT=1
-      APP_SERVICES='backend api-ingress front'
+      # Transitional manifests remain readable; embedded frontend lifecycle
+      # is intentionally not activated by this backend repository.
+      HAS_FRONT=0
+      APP_SERVICES='backend api-ingress'
     else
       HAS_FRONT=0
       APP_SERVICES='backend api-ingress'
@@ -292,8 +296,7 @@ write_release_env() {
   TEMP_FILE=$RELEASE_ENV.$$.tmp
   umask 077
   release_api_ingress_image=${API_INGRESS_IMAGE:-restore-only}
-  release_front_image=${FRONT_IMAGE:-restore-only}
-  printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\nFRONT_IMAGE=%s\n' "$BACKEND_IMAGE" "$release_api_ingress_image" "$release_front_image" > "$TEMP_FILE"
+  printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\n' "$BACKEND_IMAGE" "$release_api_ingress_image" > "$TEMP_FILE"
   mv "$TEMP_FILE" "$RELEASE_ENV"
   TEMP_FILE=
 }
@@ -669,12 +672,12 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   MANIFEST_SCHEMA=2
   BACKEND_IMAGE=eldercare-backend:$SHA
   API_INGRESS_IMAGE=eldercare-api-ingress:$SHA
-  FRONT_IMAGE=eldercare-front:$SHA
+  FRONT_IMAGE=''
   BACKEND_ID=''
   API_INGRESS_ID=''
   FRONT_ID=''
-  HAS_FRONT=1
-  APP_SERVICES='backend api-ingress front'
+  HAS_FRONT=0
+  APP_SERVICES='backend api-ingress'
 fi
 
 # Fail every overlap prerequisite before taking the deploy lock or touching
@@ -701,13 +704,13 @@ fi
 write_release_env
 run compose config >/dev/null
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "would verify exact local images $BACKEND_IMAGE, $API_INGRESS_IMAGE, and $FRONT_IMAGE"
+  log "would verify exact local images $BACKEND_IMAGE and $API_INGRESS_IMAGE"
 elif [ "$IMAGE_IDS_VERIFIED" -eq 0 ]; then
   verify_image_ids
 fi
 
 if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
-  run compose stop front api-ingress backend
+  run compose stop api-ingress backend
   assert_backend_stopped
   run compose up -d --wait --wait-timeout 120 db
   if [ "$RESTORE_COUNT" -eq 1 ]; then
@@ -727,7 +730,7 @@ if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
 fi
 
 if [ "$HAS_CURRENT" -eq 1 ]; then
-  run compose stop front api-ingress backend
+  run compose stop api-ingress backend
   assert_backend_stopped
   if [ "$DRY_RUN" -eq 1 ]; then
     if [ -n "$PENDING_DUMP" ]; then

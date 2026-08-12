@@ -5,6 +5,7 @@ import type { App } from 'supertest/types';
 import { configureFrontendCors } from '../src/config/frontend-cors.js';
 
 const PRODUCT_ORIGIN = 'https://seeon.seniorsailab.com';
+const VERCEL_ORIGIN = 'https://seeon-front.vercel.app';
 const LEGACY_ORIGIN = 'http://49.247.204.81';
 const ALLOWED_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'];
 
@@ -32,7 +33,7 @@ describe('credentialed frontend CORS (e2e)', () => {
     app = moduleRef.createNestApplication();
     configureFrontendCors(app, {
       NODE_ENV: 'production',
-      FRONT_ORIGINS: `${PRODUCT_ORIGIN},${LEGACY_ORIGIN}`,
+      FRONT_ORIGINS: `${PRODUCT_ORIGIN},${VERCEL_ORIGIN},${LEGACY_ORIGIN}`,
     });
     await app.init();
   });
@@ -41,14 +42,17 @@ describe('credentialed frontend CORS (e2e)', () => {
     await app.close();
   });
 
-  it.each([PRODUCT_ORIGIN, LEGACY_ORIGIN])(
+  it.each([PRODUCT_ORIGIN, VERCEL_ORIGIN, LEGACY_ORIGIN])(
     'echoes the exact allowed origin for OPTIONS and GET: %s',
     async (origin) => {
       const preflight = await request(app.getHttpServer())
         .options('/probe')
         .set('origin', origin)
         .set('access-control-request-method', 'GET')
-        .set('access-control-request-headers', 'content-type,x-facility-id')
+        .set(
+          'access-control-request-headers',
+          'content-type,x-facility-id,idempotency-key',
+        )
         .expect(204);
 
       expect(preflight.headers['access-control-allow-origin']).toBe(origin);
@@ -63,7 +67,13 @@ describe('credentialed frontend CORS (e2e)', () => {
         splitHeader(preflight.headers['access-control-allow-headers']).map(
           (header) => header.toLowerCase(),
         ),
-      ).toEqual(expect.arrayContaining(['content-type', 'x-facility-id']));
+      ).toEqual(
+        expect.arrayContaining([
+          'content-type',
+          'x-facility-id',
+          'idempotency-key',
+        ]),
+      );
 
       const get = await request(app.getHttpServer())
         .get('/probe')

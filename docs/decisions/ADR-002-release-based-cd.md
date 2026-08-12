@@ -4,6 +4,9 @@ date: 2026-07-12
 status: Accepted
 supersedes: ADR-001-iwinv-jenkins-cd
 references:
+  # Pre-extraction source-repository issue (combined SeniorAILab/eldercare-fall-ai
+  # repo, before the SeeON-Backend extraction). Kept as historical provenance;
+  # it is not an issue in this repository.
   - SeniorAILab/eldercare-fall-ai#587
 ---
 
@@ -12,6 +15,11 @@ references:
 ## Status
 
 Accepted. Supersedes ADR-001.
+
+Decided in the pre-extraction combined repository
+(`SeniorAILab/eldercare-fall-ai`, backend + frontend). The decision carried
+over to `SeniorAILab/SeeON-Backend` at extraction and remains the current
+deployment model here; the amendment below records the backend-only image set.
 
 ## Context
 
@@ -31,8 +39,11 @@ The GitHub workflow classifies a published canonical non-draft, non-prerelease
 production release and sends Jenkins an empty signal. Jenkins uses its existing
 deploy key to resolve release state with one `git ls-remote` lookup, producing
 `RELEASE_TAG=`, `RELEASE_SHA=`, and `NO_OP=`. The resolved tagged commit must be
-contained by `origin/main`. Backend and frontend images are named only with the
-resolved commit SHA.
+contained by `origin/main`. Backend and API-ingress images are named only with
+the resolved commit SHA. (As originally decided in the combined repository this
+read "backend and frontend images"; since the SeeON-Backend extraction the
+pipeline builds no frontend image, and transitional manifests that name one
+survive only in the deploy script's READ path.)
 
 Repeated delivery of the same version, or a version lower than the deployed
 semantic version, converges as a successful no-op. It does not build or deploy.
@@ -90,4 +101,11 @@ so the deployer acts on repository truth rather than payload data.
 ## Follow-ups
 
 - Remove obsolete Jenkins parameters after cutover housekeeping.
-- Track public transport hardening in issue #587.
+- Track public transport hardening in issue #587 (pre-extraction source-repo
+  issue; see references note above).
+
+## Changelog
+
+- 2026-07-12: initial decision (combined `SeniorAILab/eldercare-fall-ai` repo).
+- 2026-08-12: amended for the `SeniorAILab/SeeON-Backend` extraction: the image
+  set is backend + API ingress; no frontend image is built or deployed here.

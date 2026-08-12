@@ -106,7 +106,7 @@ compose() {
       docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
     else
-      BACKEND_IMAGE=backup-only FRONT_IMAGE=backup-only docker compose \
+      BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
         --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         -f compose.yaml -f compose.prod.yaml "$@"
     fi
@@ -114,7 +114,7 @@ compose() {
     docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" \
       -f compose.yaml -f compose.prod.yaml "$@"
   else
-    BACKEND_IMAGE=backup-only FRONT_IMAGE=backup-only docker compose \
+    BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
       --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
   fi
 }

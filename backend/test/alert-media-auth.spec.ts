@@ -88,6 +88,26 @@ describe('alert media authorization and metadata (e2e)', () => {
       clipId: mediaFixtureIds.clipA,
     });
 
+    const downloadInteractionId = 'interaction-t15-download-started';
+    await request(fixture.app.getHttpServer())
+      .post(accessPath(mediaFixtureIds.alertA))
+      .set('cookie', fixture.adminCookie)
+      .send({
+        action: 'DOWNLOAD_STARTED',
+        interactionId: downloadInteractionId,
+      })
+      .expect(201)
+      .expect({ accepted: true });
+    await expect(
+      fixture.direct.mediaAccessLog.count({
+        where: {
+          actorUserId: mediaFixtureIds.adminA,
+          interactionId: downloadInteractionId,
+          action: 'DOWNLOAD_STARTED',
+        },
+      }),
+    ).resolves.toBe(1);
+
     await request(fixture.app.getHttpServer())
       .post(accessPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.adminCookie)
@@ -222,12 +242,16 @@ describe('alert media authorization and metadata (e2e)', () => {
   });
 
   it('pins a super-admin selected facility into an HttpOnly scope cookie for native video', async () => {
-    const metadata = await request(fixture.app.getHttpServer())
-      .get(metadataPath(mediaFixtureIds.alertA))
+    const access = await request(fixture.app.getHttpServer())
+      .post(accessPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.superAdminCookie)
       .set('x-facility-id', mediaFixtureIds.facilityA)
-      .expect(200);
-    const scopeCookie = readCookie(metadata, 'app_media_facility');
+      .send({
+        action: 'PLAY_STARTED',
+        interactionId: 'super-admin-media-cookie',
+      })
+      .expect(201);
+    const scopeCookie = readCookie(access, 'app_media_facility');
     expect(scopeCookie).toContain('HttpOnly');
     expect(scopeCookie).toContain('SameSite=Strict');
 
@@ -240,12 +264,16 @@ describe('alert media authorization and metadata (e2e)', () => {
   });
 
   it('does not accept a stale selected-facility cookie for another alert', async () => {
-    const metadata = await request(fixture.app.getHttpServer())
-      .get(metadataPath(mediaFixtureIds.alertA))
+    const access = await request(fixture.app.getHttpServer())
+      .post(accessPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.superAdminCookie)
       .set('x-facility-id', mediaFixtureIds.facilityA)
-      .expect(200);
-    const scopeCookie = readCookie(metadata, 'app_media_facility');
+      .send({
+        action: 'PLAY_STARTED',
+        interactionId: 'super-admin-stale-media-cookie',
+      })
+      .expect(201);
+    const scopeCookie = readCookie(access, 'app_media_facility');
 
     await request(fixture.app.getHttpServer())
       .get(contentPath(mediaFixtureIds.alertB))

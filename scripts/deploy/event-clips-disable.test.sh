@@ -11,17 +11,17 @@ mkdir -p "$TMP/bin" "$TMP/app/shared" "$TMP/app/releases"
 
 SHA=0123456789abcdef0123456789abcdef01234567
 BACKEND_IMAGE=eldercare-backend:$SHA
-FRONT_IMAGE=eldercare-front:$SHA
+API_INGRESS_IMAGE=eldercare-api-ingress:$SHA
 cat > "$TMP/app/shared/.env" <<'EOF'
 EVENT_CLIPS_ENABLED=true
 AUTH_COOKIE_SECURE=true
 EOF
 cat > "$TMP/app/shared/release-images.env" <<EOF
 BACKEND_IMAGE=$BACKEND_IMAGE
-FRONT_IMAGE=$FRONT_IMAGE
+API_INGRESS_IMAGE=$API_INGRESS_IMAGE
 EOF
 cat > "$TMP/app/releases/current.json" <<EOF
-{"sha":"$SHA","backend_image":"$BACKEND_IMAGE","backend_image_id":"sha256:backend-$SHA","front_image":"$FRONT_IMAGE","front_image_id":"sha256:front-$SHA","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-16T00:00:00Z"}
+{"schema":"2","sha":"$SHA","backend_image":"$BACKEND_IMAGE","backend_image_id":"sha256:backend-$SHA","api_ingress_image":"$API_INGRESS_IMAGE","api_ingress_image_id":"sha256:api-ingress-$SHA","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-16T00:00:00Z"}
 EOF
 chmod 600 "$TMP/app/shared/.env" "$TMP/app/shared/release-images.env" "$TMP/app/releases/current.json"
 printf '%s\n' running > "$TMP/backend.state"
@@ -48,7 +48,7 @@ if [ "${1:-}" = compose ]; then
       ;;
     *' ps -q db '*) printf '%s\n' db-container ;;
     *' ps -q backend '*) printf '%s\n' backend-container ;;
-    *' ps -q front '*) printf '%s\n' front-container ;;
+    *' ps -q api-ingress '*) printf '%s\n' api-ingress-container ;;
     *' stop backend '*) printf '%s\n' stopped > "$MOCK_BACKEND_STATE" ;;
     *' up -d --no-deps --wait --wait-timeout 120 backend '*) printf '%s\n' running > "$MOCK_BACKEND_STATE" ;;
     *' config '*)
@@ -65,9 +65,9 @@ if [ "${1:-}" = inspect ]; then
   container=${4:-}
   case "$format:$container" in
     *Config.Image*':backend-container') printf '%s\n' "eldercare-backend:$MOCK_SHA" ;;
-    *Config.Image*':front-container') printf '%s\n' "eldercare-front:$MOCK_SHA" ;;
+    *Config.Image*':api-ingress-container') printf '%s\n' "eldercare-api-ingress:$MOCK_SHA" ;;
     *'{{.Image}}:backend-container') printf '%s\n' "${MOCK_BACKEND_IMAGE_ID:-sha256:backend-$MOCK_SHA}" ;;
-    *'{{.Image}}:front-container') printf '%s\n' "sha256:front-$MOCK_SHA" ;;
+    *'{{.Image}}:api-ingress-container') printf '%s\n' "sha256:api-ingress-$MOCK_SHA" ;;
     *var/lib/postgresql/data*':db-container') printf '%s\n' pgdata-fixture ;;
     *app/backend/clips*':backend-container')
       if [ "${MOCK_CLIP_DRIFT:-0}" = 1 ] && [ "$(cat "$MOCK_BACKEND_STATE")" = running ] && grep -F 'stop backend' "$log" >/dev/null; then
@@ -232,9 +232,9 @@ deploy_source=$(cat "$DEPLOY")
 assert_contains "$deploy_source" 'FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}'
 assert_contains "$deploy_source" '--env-file "$FEATURE_ENV"'
 assert_contains "$deploy_source" 'assert_backend_stopped'
-assert_contains "$deploy_source" 'run compose stop front api-ingress backend'
+assert_contains "$deploy_source" 'run compose stop api-ingress backend'
 assert_contains "$deploy_source" 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES'
-stop_line=$(grep -n -F 'run compose stop front api-ingress backend' "$DEPLOY" | sed -n '1s/:.*//p')
+stop_line=$(grep -n -F 'run compose stop api-ingress backend' "$DEPLOY" | sed -n '1s/:.*//p')
 assert_line=$(grep -n -F 'assert_backend_stopped' "$DEPLOY" | sed -n '2s/:.*//p')
 start_line=$(grep -n -F 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES' "$DEPLOY" | sed -n '1s/:.*//p')
 [ -n "$stop_line" ] && [ -n "$assert_line" ] && [ -n "$start_line" ] && \
