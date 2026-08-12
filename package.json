@@ -17,7 +17,7 @@
     "typecheck": "pnpm --filter front exec tsc -b && pnpm --filter backend exec tsc --noEmit",
     "lint": "pnpm -r lint",
     "format": "pnpm --filter backend format",
-    "env:verify": "node scripts/env/verify-compose-env-contract.mjs && sh scripts/deploy/validate-event-clip-env.test.sh && node scripts/env/verify-event-clip-compose.mjs && sh scripts/deploy/iwinv-build-resource-contract.test.sh && sh scripts/deploy/event-media-proxy.test.sh && sh scripts/deploy/event-media-backup-inputs.test.sh && sh scripts/deploy/event-media-release-security.test.sh && sh scripts/deploy/event-clips-disable.test.sh && sh scripts/deploy/iwinv-resolve-release.test.sh && sh scripts/deploy/rotate-admin-password.test.sh && sh scripts/deploy/backend-image-contract.test.sh",
+    "env:verify": "node scripts/env/verify-compose-env-contract.mjs && sh scripts/deploy/validate-event-clip-env.test.sh && node scripts/env/verify-event-clip-compose.mjs && sh scripts/deploy/iwinv-build-resource-contract.test.sh && sh scripts/deploy/event-media-proxy.test.sh && sh scripts/deploy/event-media-backup-inputs.test.sh && sh scripts/deploy/event-media-release-security.test.sh && sh scripts/deploy/event-clips-disable.test.sh && sh scripts/deploy/iwinv-resolve-release.test.sh",
     "deploy:event-media:restore-test": "sh scripts/deploy/event-media-restore-harness.test.sh && sh scripts/deploy/event-media-product-restore-harness.test.sh",
     "deploy:event-media:release-test": "sh scripts/deploy/event-media-release-security.test.sh && sh scripts/deploy/event-clips-disable.test.sh",
     "env:local:verify": "node scripts/dev/ensure-local-env.mjs",

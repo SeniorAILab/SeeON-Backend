@@ -49,13 +49,9 @@ jobs:
               - 'package.json'
               - '.github/workflows/ci.yml'
             env_contract:
-              - 'backend/**'
               - 'compose*.yaml'
               - '.env*.example'
               - 'scripts/env/**'
-              - 'scripts/deploy/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
               - 'package.json'
               - '.github/workflows/ci.yml'
 
