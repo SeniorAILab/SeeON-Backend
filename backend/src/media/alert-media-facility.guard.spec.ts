@@ -17,6 +17,7 @@ describe('AlertMediaFacilityGuard cookie policy', () => {
   it('uses the shared strict request-aware policy for the media facility cookie', () => {
     process.env.AUTH_COOKIE_SECURE = 'auto';
     const request = {
+      method: 'POST',
       secure: true,
       headers: { 'x-facility-id': 'facility-selected' },
       user: {
@@ -55,5 +56,37 @@ describe('AlertMediaFacilityGuard cookie policy', () => {
       maxAge: 5 * 60 * 1_000,
     });
     expect(options).not.toHaveProperty('domain');
+  });
+
+  it.each(['GET', 'HEAD'])('%s only reads an established media facility cookie', (method) => {
+    const request = {
+      method,
+      secure: true,
+      headers: {
+        'x-facility-id': 'header-must-not-rotate-cookie',
+        cookie: `${MEDIA_FACILITY_COOKIE_NAME}=facility-established`,
+      },
+      user: {
+        id: 'super-admin',
+        facilityId: null,
+        role: 'SUPER_ADMIN',
+        email: 'admin@example.test',
+        nickname: 'Admin',
+        sessionVersion: 1,
+      },
+    } as unknown as RequestWithAuth;
+    const response = { cookie: jest.fn() } as unknown as Response & {
+      cookie: jest.Mock;
+    };
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => request,
+        getResponse: () => response,
+      }),
+    } as ExecutionContext;
+
+    expect(new AlertMediaFacilityGuard().canActivate(context)).toBe(true);
+    expect(request.effectiveFacilityId).toBe('facility-established');
+    expect(response.cookie).not.toHaveBeenCalled();
   });
 });

@@ -37,7 +37,8 @@ export class AlertMediaFacilityGuard implements CanActivate {
       throw new ForbiddenException('Facility onboarding required');
     }
 
-    const selectedFromHeader = readFacilityScopeHeader(request);
+    const selectedFromHeader =
+      request.method === 'POST' ? readFacilityScopeHeader(request) : null;
     if (selectedFromHeader !== null) {
       requireSafeFacilityId(selectedFromHeader);
       request.effectiveFacilityId = selectedFromHeader;
