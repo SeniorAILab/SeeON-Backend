@@ -51,13 +51,14 @@ imaged, or started here.
   or a release-tag image.
 
 ## Invariants
-- Jenkins resolves the release tag once through the deploy-key authenticated
-  remote lookup, then deploys only the resulting 40-character lowercase SHA.
-  Never infer a branch, SHA, image, env file, or Compose profile.
+- Jenkins resolves the release tag once through the SeeON-Backend deploy-key
+  authenticated remote lookup, then deploys only the resulting 40-character
+  lowercase SHA. Never infer a branch, SHA, image, env file, or Compose profile.
 - Server-side application builds are allowed only inside Jenkins and only as
-  `eldercare-backend:<sha>` and `eldercare-api-ingress:<sha>`. The host must
-  provision jq for GitHub API JSON plus every POSIX command listed in the release-manifest validator contract; none is
-  optional.
+  `eldercare-backend:<sha>` and `eldercare-api-ingress:<sha>`. GitHub check-run
+  JSON is parsed fail-closed with Jenkins-native Groovy; jq, Node, and Python
+  are not host runtime dependencies. Every external command in the Jenkins
+  runtime preflight and release-manifest validator contract is mandatory.
 - Repository checkout is `/opt/eldercare-fall-ai/repo`; backups are under
   `/opt/eldercare-fall-ai/backups/db/`, releases under
   `/opt/eldercare-fall-ai/releases/` (legacy host paths retained on the

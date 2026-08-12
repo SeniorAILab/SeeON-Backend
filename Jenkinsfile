@@ -30,7 +30,7 @@ pipeline {
     stage('Resolve release') {
       steps {
         script {
-          def resolverOutput = sshagent(credentials: ['eldercare-github-deploy-key']) {
+          def resolverOutput = sshagent(credentials: ['seeon-backend-github-deploy-key']) {
             sh(
               script: '''#!/usr/bin/env sh
                 set -eu
@@ -92,17 +92,46 @@ pipeline {
         }
       }
     }
+    stage('Verify locked Jenkins runtime') {
+      when {
+        expression { env.NO_OP != '1' }
+      }
+      steps {
+        sh '''#!/usr/bin/env sh
+          set -eu
+          for tool in awk cat chmod cmp curl cut date df dirname docker free git grep head mktemp mkdir mv pwd rm rmdir sed sh sha256sum sort ssh ssh-add ssh-agent stat tail tr wc; do
+            command -v "$tool" >/dev/null 2>&1 || {
+              printf 'Locked Jenkins runtime is missing required command: %s\n' "$tool" >&2
+              exit 1
+            }
+          done
+          docker buildx version >/dev/null 2>&1 || { printf '%s\n' 'Locked Jenkins runtime is missing docker buildx.' >&2; exit 1; }
+          docker compose version >/dev/null 2>&1 || { printf '%s\n' 'Locked Jenkins runtime is missing docker compose.' >&2; exit 1; }
+        '''
+      }
+    }
     stage('Verify GitHub CI gate') {
       when {
         expression { env.NO_OP != '1' }
       }
       steps {
-        withCredentials([string(credentialsId: 'eldercare-github-ci-token', variable: 'GITHUB_TOKEN')]) {
-          sh '''#!/usr/bin/env sh
-            set -eu
-            set +x
-            sh scripts/release/verify-github-ci-gate.sh "$RELEASE_SHA"
-          '''
+        script {
+          def checkRunJson
+          withCredentials([string(credentialsId: 'eldercare-github-ci-token', variable: 'GITHUB_TOKEN')]) {
+            checkRunJson = sh(
+              script: '''#!/usr/bin/env sh
+                set -eu
+                set +x
+                sh scripts/release/verify-github-ci-gate.sh "$RELEASE_SHA"
+              ''',
+              returnStdout: true
+            )
+          }
+          def ciGateVerifier = load('scripts/release/verify-github-ci-gate.groovy')
+          if (!ciGateVerifier.isSuccessful(checkRunJson, env.RELEASE_SHA)) {
+            error("GitHub ci-gate is not successful for release SHA ${env.RELEASE_SHA}")
+          }
+          echo "GitHub ci-gate verified. sha=${env.RELEASE_SHA}"
         }
       }
     }

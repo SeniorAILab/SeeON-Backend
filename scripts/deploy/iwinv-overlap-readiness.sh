@@ -51,9 +51,9 @@ compose() {
     docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
 }
 validate_tooling() {
-  # The release-manifest grammar is dependency-free, but its complete POSIX
-  # command contract and jq for GitHub JSON validation are mandatory host tools.
-  for tool in awk cat cmp curl date docker grep jq mktemp rm sed sha256sum stat tail tr wc; do
+  # GitHub JSON is parsed by Jenkins-native Groovy. This stage requires only
+  # the locked image commands exercised by release and readiness validation.
+  for tool in awk cat cmp curl date docker grep mktemp rm sed sha256sum stat tail tr wc; do
     command -v "$tool" >/dev/null 2>&1 || fail "required release validation tool is missing: $tool"
   done
 }

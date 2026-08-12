@@ -1,0 +1,145 @@
+[
+  {
+    "name": "one exact successful GitHub Actions run",
+    "expect": true,
+    "response": {
+      "total_count": 1,
+      "check_runs": [
+        {"id": 101, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "missing required run",
+    "expect": false,
+    "response": {"total_count": 0, "check_runs": []}
+  },
+  {
+    "name": "latest relevant attempt pending over old success",
+    "expect": false,
+    "response": {
+      "total_count": 2,
+      "check_runs": [
+        {"id": 202, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "in_progress", "conclusion": null, "started_at": "2026-08-12T01:00:00Z", "completed_at": null, "app": {"id": 15368, "slug": "github-actions"}},
+        {"id": 201, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "latest relevant attempt failure over old success",
+    "expect": false,
+    "response": {
+      "total_count": 2,
+      "check_runs": [
+        {"id": 302, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "failure", "started_at": "2026-08-12T01:00:00Z", "completed_at": "2026-08-12T01:01:00Z", "app": {"id": 15368, "slug": "github-actions"}},
+        {"id": 301, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "latest relevant attempt success over old failure",
+    "expect": true,
+    "response": {
+      "total_count": 2,
+      "check_runs": [
+        {"id": 402, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T01:00:00Z", "completed_at": "2026-08-12T01:01:00Z", "app": {"id": 15368, "slug": "github-actions"}},
+        {"id": 401, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "failure", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "same timestamp uses larger check-run id as latest",
+    "expect": false,
+    "response": {
+      "total_count": 2,
+      "check_runs": [
+        {"id": 502, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "cancelled", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}},
+        {"id": 501, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "duplicate check-run id is ambiguous",
+    "expect": false,
+    "response": {
+      "total_count": 2,
+      "check_runs": [
+        {"id": 601, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}},
+        {"id": 601, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "failure", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+      ]
+    }
+  },
+  {
+    "name": "wrong target SHA",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": [{"id": 701, "name": "CI gate", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}]}
+  },
+  {
+    "name": "mixed exact and wrong SHAs",
+    "expect": false,
+    "response": {"total_count": 2, "check_runs": [
+      {"id": 802, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T01:00:00Z", "completed_at": "2026-08-12T01:01:00Z", "app": {"id": 15368, "slug": "github-actions"}},
+      {"id": 801, "name": "CI gate", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}
+    ]}
+  },
+  {
+    "name": "lookalike check name",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": [{"id": 901, "name": "CI gate ", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}]}
+  },
+  {
+    "name": "wrong GitHub app",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": [{"id": 1001, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 99999, "slug": "untrusted-app"}}]}
+  },
+  {
+    "name": "malformed relevant timestamp",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": [{"id": 1101, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "later", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}]}
+  },
+  {
+    "name": "impossible calendar date",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": [{"id": 1151, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-02-30T00:00:00Z", "completed_at": "2026-02-30T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}]}
+  },
+  {
+    "name": "missing total count",
+    "expect": false,
+    "response": {"check_runs": []}
+  },
+  {
+    "name": "paginated or truncated run list",
+    "expect": false,
+    "response": {"total_count": 2, "check_runs": [{"id": 1201, "name": "CI gate", "head_sha": "0123456789abcdef0123456789abcdef01234567", "status": "completed", "conclusion": "success", "started_at": "2026-08-12T00:00:00Z", "completed_at": "2026-08-12T00:01:00Z", "app": {"id": 15368, "slug": "github-actions"}}]}
+  },
+  {
+    "name": "check runs has wrong type",
+    "expect": false,
+    "response": {"total_count": 1, "check_runs": {"id": 1301}}
+  },
+  {
+    "name": "GitHub API error response",
+    "expect": false,
+    "response": {"message": "Not Found", "documentation_url": "https://docs.github.com/rest"}
+  },
+  {
+    "name": "GitHub rate limit response",
+    "expect": false,
+    "response": {"message": "API rate limit exceeded", "documentation_url": "https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api"}
+  },
+  {
+    "name": "malformed JSON",
+    "expect": false,
+    "raw": "not-json"
+  },
+  {
+    "name": "truncated JSON",
+    "expect": false,
+    "raw": "{\"total_count\":1,\"check_runs\":[{"
+  },
+  {
+    "name": "empty response",
+    "expect": false,
+    "raw": ""
+  }
+]
