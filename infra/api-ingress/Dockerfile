@@ -8,6 +8,6 @@ RUN if [ "${#DEPLOY_SHA}" -ne 40 ] || case "$DEPLOY_SHA" in *[!0123456789abcdef]
       exit 1; \
     fi
 LABEL org.opencontainers.image.revision="${DEPLOY_SHA}" \
-      org.opencontainers.image.source="SeniorAILab/SeeON"
+      org.opencontainers.image.source="SeniorAILab/SeeON-Backend"
 
 EXPOSE 3000

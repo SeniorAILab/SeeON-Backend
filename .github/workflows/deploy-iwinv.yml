@@ -39,7 +39,7 @@ jobs:
     needs: classify
     if: >-
       needs.classify.outputs.is_production == 'true' &&
-      github.repository == 'SeniorAILab/SeeON'
+      github.repository == 'SeniorAILab/SeeON-Backend'
     runs-on: ubuntu-latest
     env:
       WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}

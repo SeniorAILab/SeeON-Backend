@@ -23,7 +23,7 @@ assert_order() {
 jenkins=$(cat "$JENKINSFILE")
 deploy=$(cat "$DEPLOY")
 
-assert_contains "$jenkins" 'git@github.com:SeniorAILab/SeeON.git'
+assert_contains "$jenkins" 'git@github.com:SeniorAILab/SeeON-Backend.git'
 assert_not_contains "$jenkins" 'git@github.com:SeniorAILab/eldercare-fall-ai.git'
 assert_contains "$jenkins" 'stage('\''Verify GitHub CI gate'\'')'
 assert_contains "$jenkins" 'sh scripts/release/verify-github-ci-gate.sh "$RELEASE_SHA"'

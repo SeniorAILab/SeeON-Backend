@@ -34,7 +34,7 @@ pipeline {
             sh(
               script: '''#!/usr/bin/env sh
                 set -eu
-                repository='git@github.com:SeniorAILab/SeeON.git'
+                repository='git@github.com:SeniorAILab/SeeON-Backend.git'
                 if [ ! -d .git ]; then git init 1>&2; fi
                 remotes=$(git remote) || { echo 'Unable to list Git remotes.' >&2; exit 1; }
                 if printf '%s\n' "$remotes" | grep -Fx 'origin' >/dev/null; then

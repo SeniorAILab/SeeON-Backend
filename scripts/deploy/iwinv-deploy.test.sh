@@ -981,7 +981,7 @@ assert_not_contains "$seed" 'regexpFilter'
 assert_not_contains "$seed" 'REGISTER-ONLY'
 assert_not_contains "$seed" 'stringParam'
 assert_not_contains "$seed" 'workflow_run'
-assert_contains "$jenkins" "repository='git@github.com:SeniorAILab/SeeON.git'"
+assert_contains "$jenkins" "repository='git@github.com:SeniorAILab/SeeON-Backend.git'"
 assert_contains "$jenkins" "stage('Verify GitHub CI gate')"
 assert_contains "$jenkins" 'verify-github-ci-gate.sh "$RELEASE_SHA"'
 assert_contains "$jenkins" "stage('Validate release inputs')"
