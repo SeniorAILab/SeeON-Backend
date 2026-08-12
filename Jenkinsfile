@@ -34,7 +34,7 @@ pipeline {
             sh(
               script: '''#!/usr/bin/env sh
                 set -eu
-                repository='git@github.com:SeniorAILab/eldercare-fall-ai.git'
+                repository='git@github.com:SeniorAILab/SeeON.git'
                 if [ ! -d .git ]; then git init 1>&2; fi
                 remotes=$(git remote) || { echo 'Unable to list Git remotes.' >&2; exit 1; }
                 if printf '%s\n' "$remotes" | grep -Fx 'origin' >/dev/null; then
@@ -92,6 +92,33 @@ pipeline {
         }
       }
     }
+    stage('Verify GitHub CI gate') {
+      when {
+        expression { env.NO_OP != '1' }
+      }
+      steps {
+        withCredentials([string(credentialsId: 'eldercare-github-ci-token', variable: 'GITHUB_TOKEN')]) {
+          sh '''#!/usr/bin/env sh
+            set -eu
+            set +x
+            sh scripts/release/verify-github-ci-gate.sh "$RELEASE_SHA"
+          '''
+        }
+      }
+    }
+
+    stage('Validate release inputs') {
+      when {
+        expression { env.NO_OP != '1' }
+      }
+      steps {
+        sh '''#!/usr/bin/env sh
+          set -eu
+          sh scripts/deploy/iwinv-overlap-readiness.sh --pre-build "$RELEASE_SHA"
+        '''
+      }
+    }
+
     stage('Preflight resources') {
       when {
         expression { env.NO_OP != '1' }
@@ -99,7 +126,6 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
-          sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env"
           sh scripts/deploy/iwinv-deploy.sh --preflight-only
         '''
       }
@@ -144,6 +170,23 @@ pipeline {
       }
     }
 
+    stage('Build API ingress') {
+      when {
+        expression { env.NO_OP != '1' }
+      }
+      steps {
+        sh '''#!/usr/bin/env sh
+          set -eu
+          sh infra/api-ingress/nginx-config.test.sh
+          docker buildx build --builder "$BUILDX_BUILDER" --load \
+            --resource memory=2g --resource memory-swap=3g \
+            --build-arg DEPLOY_SHA="$RELEASE_SHA" \
+            --tag "eldercare-api-ingress:$RELEASE_SHA" --file infra/api-ingress/Dockerfile .
+          docker run --rm --entrypoint nginx "eldercare-api-ingress:$RELEASE_SHA" -t
+        '''
+      }
+    }
+
     stage('Build frontend') {
       when {
         expression { env.NO_OP != '1' }
@@ -171,6 +214,14 @@ pipeline {
         lock(resource: 'eldercare-fall-ai-deploy') {
           sh '''#!/usr/bin/env sh
             set -eu
+            : "${EVENT_MEDIA_BACKUP_DESTINATION:?EVENT_MEDIA_BACKUP_DESTINATION is required}"
+            : "${EVENT_MEDIA_CLIP_VOLUME:?EVENT_MEDIA_CLIP_VOLUME is required}"
+            BACKUP_DESTINATION="$EVENT_MEDIA_BACKUP_DESTINATION" \
+              CLIP_VOLUME_NAME="$EVENT_MEDIA_CLIP_VOLUME" \
+              COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}" \
+              sh scripts/deploy/event-media-backup.sh
+            sh scripts/deploy/iwinv-overlap-readiness.sh --capture-edge "$RELEASE_SHA"
+            sh scripts/deploy/iwinv-overlap-readiness.sh --pre-deploy "$RELEASE_SHA"
             sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"
           '''
         }

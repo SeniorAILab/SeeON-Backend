@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 jenkinsfile="$repo_root/Jenkinsfile"
 
 fail() {
@@ -20,7 +20,7 @@ assert_count 1 'disableConcurrentBuilds()'
 assert_count 1 "NODE_OPTIONS = '--max-old-space-size=1536'"
 assert_count 1 'max-parallelism = 1'
 assert_count 1 '--driver-opt memory=2560m,memory-swap=4096m'
-assert_count 2 '--resource memory=2g --resource memory-swap=3g'
+assert_count 3 '--resource memory=2g --resource memory-swap=3g'
 
 mutated=$(mktemp)
 trap 'rm -f "$mutated"' EXIT HUP INT TERM

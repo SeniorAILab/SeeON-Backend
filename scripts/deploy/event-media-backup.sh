@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2016 # Quoted commands expand environment inside containers.
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
@@ -6,6 +7,8 @@ APP_ROOT=${APP_ROOT:-/opt/eldercare-fall-ai}
 APP_DIR=${APP_DIR:-$APP_ROOT/repo}
 ENV_FILE=${ENV_FILE:-$APP_ROOT/shared/.env}
 RELEASE_ENV=${RELEASE_ENV:-$APP_ROOT/shared/release-images.env}
+RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
+RECEIPT_FILE=${MEDIA_RECEIPT:-$RECEIPT_DIR/media-backup.receipt}
 BACKUP_DESTINATION=${BACKUP_DESTINATION:-}
 CLIP_VOLUME_NAME=${CLIP_VOLUME_NAME:-}
 COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-}
@@ -14,6 +17,7 @@ MARKER=.eldercare-event-media-backup
 LOCK_HELD=0
 STAGE=''
 LOCK_DIR=''
+RECEIPT_TEMP=''
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -122,6 +126,10 @@ cleanup() {
     printf '%s\n' 'unable to remove incomplete backup stage' >&2
     cleanup_status=1
   fi
+  if [ -n "$RECEIPT_TEMP" ] && [ -e "$RECEIPT_TEMP" ] && ! rm -f "$RECEIPT_TEMP"; then
+    printf '%s\n' 'unable to remove incomplete backup receipt' >&2
+    cleanup_status=1
+  fi
   if [ "$LOCK_HELD" -eq 1 ] && ! rmdir "$LOCK_DIR"; then
     printf '%s\n' 'unable to release backup lock' >&2
     cleanup_status=1
@@ -215,6 +223,21 @@ sync -f "$STAGE/MANIFEST" "$STAGE/database.dump" "$STAGE/clips.tar" "$STAGE"
 mv "$STAGE" "$FINAL"
 STAGE=''
 sync -f "$BACKUP_DESTINATION"
+
+# Publish a fresh, content-addressed safety receipt only after the complete
+# database+media bundle has validated and reached its final off-host path.
+[ ! -L "$RECEIPT_DIR" ] || fail 'backup receipt directory must not be a symbolic link'
+mkdir -p "$RECEIPT_DIR"
+chmod 700 "$RECEIPT_DIR"
+[ ! -L "$RECEIPT_FILE" ] || fail 'backup receipt must not be a symbolic link'
+receipt_manifest_sha=$(sha256sum "$FINAL/MANIFEST" | awk '{print $1}')
+RECEIPT_TEMP=$RECEIPT_FILE.$$.tmp
+printf 'FORMAT=seeon-event-media-backup-receipt-v1\nBUNDLE=%s\nMANIFEST_SHA256=%s\nCOMPLETED_EPOCH=%s\n' \
+  "$FINAL" "$receipt_manifest_sha" "$(date -u +%s)" > "$RECEIPT_TEMP"
+chmod 600 "$RECEIPT_TEMP"
+mv "$RECEIPT_TEMP" "$RECEIPT_FILE"
+RECEIPT_TEMP=''
+sync -f "$RECEIPT_FILE" "$RECEIPT_DIR"
 rmdir "$LOCK_DIR" || fail 'unable to release backup lock'
 LOCK_HELD=0
 

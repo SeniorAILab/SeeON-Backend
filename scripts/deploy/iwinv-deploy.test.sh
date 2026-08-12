@@ -7,7 +7,7 @@ SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-deploy.sh
 JENKINSFILE=$REPO_ROOT/Jenkinsfile
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-mkdir -p "$TMP/bin" "$TMP/root/shared" "$TMP/root/backups/db" "$TMP/root/releases"
+mkdir -p "$TMP/bin" "$TMP/root/shared/release-receipts" "$TMP/root/backups/db" "$TMP/root/releases" "$TMP/media/event-media-fixture"
 
 cat > "$TMP/bin/docker" <<'EOF'
 #!/usr/bin/env sh
@@ -20,6 +20,7 @@ if [ "${1:-}" = images ]; then
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   image=${5:-}
+  [ "${MOCK_MISSING_IMAGE:-}" != "$image" ] || exit 1
   image_sha=${MOCK_IMAGE_ID_SHA:-${image#*:}}
   case "$image" in
     eldercare-backend:*) if [ -n "${MOCK_IMAGE_ID_SHA:-}" ]; then printf 'sha256:%064s\n' "$image_sha" | tr ' ' 0; else printf '%s\n' 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; fi ;;
@@ -39,6 +40,12 @@ if [ "${1:-}" = compose ]; then
     *'pg_restore --list'*) [ "${MOCK_RESTORE_LIST_FAIL:-0}" != 1 ] || exit 1 ;;
     *'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction'*) ;;
     *has_table_privilege*) printf '%s\n' "${MOCK_AUTH_RESULT:-ok}" ;;
+    *edge_observations*) printf '%s\n' "${MOCK_EDGE_AFTER_EPOCH:-101}" ;;
+    *'finished_at IS NULL AND rolled_back_at IS NULL'*) printf '0\n' ;;
+    *'SELECT migration_name FROM public._prisma_migrations'*) printf '%s\n' '20260613164810_init_domain_models' ;;
+    *to_regclass*) printf 't\n' ;;
+    *'SELECT count(*) FROM public._prisma_migrations'*) printf '1\n' ;;
+    *information_schema.tables*) printf '1\n' ;;
     *psql*) printf '0\n' ;;
     *'exec -T db sh'*) ;;
     *'front wget'*)
@@ -47,6 +54,9 @@ if [ "${1:-}" = compose ]; then
     *'api-ingress wget'*)
       [ "${MOCK_INGRESS_FAIL:-0}" != 1 ] || exit 1
       printf '{"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
+    *OVERLAP_SMOKE_OK*)
+      [ "${MOCK_OVERLAP_SMOKE_FAIL:-0}" != 1 ] || { printf '%s\n' 'OVERLAP_SMOKE_FAILED synthetic'; exit 1; }
+      printf '%s\n' 'OVERLAP_SMOKE_OK' ;;
     *'backend node'*)
       if [ "${MOCK_BACKEND_FAIL:-0}" = 1 ]; then printf 'status=503\nbody={"sha":"wrong","database":"down"}\n'; exit 1; fi
       printf 'status=200\nbody={"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
@@ -100,13 +110,19 @@ APP_DB_USER=fall_app
 APP_DB_PASSWORD=test
 DATABASE_URL=postgresql://fall_app:test@db/fall_prod
 DIRECT_URL=postgresql://fall:test@db/fall_prod
-FRONT_ORIGIN=http://localhost:3000
-ALERT_DASHBOARD_URL=http://localhost:3000
+FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
+AUTH_COOKIE_SECURE=auto
+ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 SESSION_JWT_SECRET=secret
 SMTP_HOST=mail
 SMTP_USER=user
 SMTP_PASSWORD=password
 EDGE_FACILITY_TOKEN=token
+EVENT_CLIPS_ENABLED=false
+VITE_EVENT_CLIPS_ENABLED=false
+MEDIA_RETENTION_DAYS=60
+MEDIA_MIN_FREE_BYTES=1073741824
+MEDIA_CLIP_MAX_BYTES=268435456
 EOF
 
 SHA=0123456789abcdef0123456789abcdef01234567
@@ -140,9 +156,27 @@ pointer_with_dump() {
   cp "$TMP/root/releases/$1.json" "$TMP/root/releases/$2.json"
   : > "$TMP/root/backups/db/$3"
 }
+prepare_overlap_receipts() {
+  receipt_sha=$1
+  printf '%s\n' fixture-manifest > "$TMP/media/event-media-fixture/MANIFEST"
+  now=$(date -u +%s)
+  printf 'FORMAT=seeon-event-media-backup-receipt-v1\nBUNDLE=%s\nMANIFEST_SHA256=%s\nCOMPLETED_EPOCH=%s\n' \
+    "$TMP/media/event-media-fixture" "$FIXTURE_COMPOSE_HASH" "$now" > "$TMP/root/shared/release-receipts/media-backup.receipt"
+  printf 'FORMAT=seeon-edge-continuity-seed-v1\nRELEASE_SHA=%s\nLAST_HEARTBEAT_EPOCH=100\nCAPTURED_EPOCH=%s\n' \
+    "$receipt_sha" "$now" > "$TMP/root/shared/release-receipts/edge-continuity.receipt"
+  chmod 600 "$TMP/root/shared/release-receipts"/*.receipt
+}
 run_deploy() {
+  candidate=
+  previous=
+  for argument do
+    if [ "$previous" = --sha ]; then candidate=$argument; break; fi
+    previous=$argument
+  done
+  if [ -n "$candidate" ] && [ "${SKIP_RECEIPT_SETUP:-0}" != 1 ]; then prepare_overlap_receipts "$candidate"; fi
   PATH="$TMP/bin:$PATH" APP_ROOT="$TMP/root" APP_DIR="$REPO_ROOT" ENV_FILE="$TMP/host.env" \
   MEMORY_MIN_MB="${TEST_MEMORY_MIN_MB:-1}" DISK_MIN_MB=1 MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
+  MOCK_MISSING_IMAGE="${MOCK_MISSING_IMAGE:-}" MOCK_EDGE_AFTER_EPOCH="${MOCK_EDGE_AFTER_EPOCH:-101}" \
   sh "$SCRIPT" "$@" 2>&1
 }
 run_deploy_without_node() {
@@ -232,7 +266,7 @@ assert_not_contains "$output" 'compose pull backend'
 assert_not_contains "$output" 'compose pull front'
 assert_contains "$output" "would verify exact local images eldercare-backend:$SHA, eldercare-api-ingress:$SHA, and eldercare-front:$SHA"
 assert_contains "$output" 'would create and validate pre-migration dump'
-assert_contains "$output" 'would sync app role, assert Prisma tracking, run migrate deploy, and bootstrap super-admin'
+assert_contains "$output" 'would sync app role, audit Prisma migration history, run migrate deploy, and bootstrap super-admin'
 assert_not_contains "$output" "docker image rm eldercare-backend:$SHA"
 assert_not_contains "$output" "docker image rm eldercare-front:$SHA"
 # Normal deploy rejects a preexisting target manifest or current SHA before Docker, backups, or database work.
@@ -254,6 +288,27 @@ assert_failure "$status"; assert_contains "$output" 'Refusing deploy of already-
 log=$(sed -n '1,200p' "$TMP/mock.log")
 assert_not_contains "$log" 'docker '
 rm -f "$TMP/root/releases/current.json" "$TMP/root/releases/$SHA.json"
+
+# Required safety receipts and all three image IDs fail before Compose, DB,
+# release-env, manifest, or pointer activation.
+rm -f "$TMP/root/shared/release-receipts/media-backup.receipt"
+: > "$TMP/mock.log"
+set +e
+output=$(SKIP_RECEIPT_SETUP=1 run_deploy --sha "$SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Media backup receipt is required'
+[ ! -s "$TMP/mock.log" ]
+[ ! -e "$TMP/root/shared/release-images.env" ]
+[ ! -e "$TMP/root/releases/current.json" ]
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_MISSING_IMAGE="eldercare-api-ingress:$SHA" run_deploy --sha "$SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'API ingress image is unavailable'
+log=$(cat "$TMP/mock.log")
+assert_not_contains "$log" 'docker compose'
+[ ! -e "$TMP/root/shared/release-images.env" ]
+[ ! -e "$TMP/root/releases/current.json" ]
 
 set +e
 output=$(TEST_MEMORY_MIN_MB=999999 run_deploy --sha "$SHA" --dry-run); status=$?
@@ -691,8 +746,13 @@ assert_order "$log" 'stop front api-ingress backend' 'pg_dump'
 assert_order "$log" 'pg_dump' 'pull db'
 assert_order "$log" 'pg_restore --list' 'pull db'
 assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-ingress front'
+assert_contains "$output" 'audit Prisma migration history before migrate deploy'
 assert_contains "$log" 'api-ingress wget'
 assert_contains "$log" 'front wget'
+assert_contains "$log" 'OVERLAP_SMOKE_OK'
+assert_contains "$log" 'edge_observations'
+assert_order "$log" 'finished_at IS NULL AND rolled_back_at IS NULL' 'prisma migrate deploy'
+[ -f "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" ] || { printf '%s\n' 'post-deploy Edge receipt was not published' >&2; exit 1; }
 # Schema-2 writer output is one canonical line with a fixed key order and all image IDs.
 grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:[0-9a-f]{64}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:[0-9a-f]{64}","embedded_front_image":"eldercare-front:[0-9a-f]{40}","embedded_front_image_id":"sha256:[0-9a-f]{64}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[A-Za-z0-9._-]+\.dump","timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"\}$' "$TMP/root/releases/current.json" || {
   printf 'schema-2 writer did not emit canonical fixed-order manifest:\n' >&2
@@ -720,6 +780,14 @@ assert_contains "$output" 'NO_OP=1'
 
 # Candidate image IDs are not inherited from the current release.
 NEXT_SHA=1111111111111111111111111111111111111111
+cp "$TMP/root/releases/current.json" "$TMP/current.before-edge-failure"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_EDGE_AFTER_EPOCH=100 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Edge continuity did not advance after deploy'
+cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+[ ! -e "$TMP/root/releases/$NEXT_SHA.json" ] || { printf '%s\n' 'Edge failure published an immutable manifest' >&2; exit 1; }
 : > "$TMP/mock.log"
 output=$(MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA")
 assert_contains "$output" "Deploy complete. sha=$NEXT_SHA"
@@ -896,7 +964,7 @@ cmp -s "$TMP/pending.before-code-only-rollback" "$TMP/root/releases/pending.json
 [ -f "$TMP/root/backups/db/$ROLLBACK_PENDING_DUMP" ]
 
 # Jenkins resolves the latest main-reachable release, builds its exact SHA once, and has no alternate delivery path.
-jenkins=$(sed -n '1,220p' "$JENKINSFILE")
+jenkins=$(sed -n '1,280p' "$JENKINSFILE")
 assert_contains "$jenkins" "stage('Resolve release')"
 assert_contains "$jenkins" 'scripts/deploy/iwinv-resolve-release.sh'
 assert_contains "$jenkins" "env.NO_OP != '1'"
@@ -913,12 +981,20 @@ assert_not_contains "$seed" 'regexpFilter'
 assert_not_contains "$seed" 'REGISTER-ONLY'
 assert_not_contains "$seed" 'stringParam'
 assert_not_contains "$seed" 'workflow_run'
+assert_contains "$jenkins" "repository='git@github.com:SeniorAILab/SeeON.git'"
+assert_contains "$jenkins" "stage('Verify GitHub CI gate')"
+assert_contains "$jenkins" 'verify-github-ci-gate.sh "$RELEASE_SHA"'
+assert_contains "$jenkins" "stage('Validate release inputs')"
 assert_contains "$jenkins" "stage('Preflight resources')"
+assert_contains "$jenkins" "stage('Build API ingress')"
+assert_contains "$jenkins" '--tag "eldercare-api-ingress:$RELEASE_SHA"'
+assert_contains "$jenkins" 'iwinv-overlap-readiness.sh --pre-deploy "$RELEASE_SHA"'
 assert_contains "$jenkins" 'sh scripts/deploy/iwinv-deploy.sh --preflight-only'
 assert_order "$jenkins" "stage('Resolve release')" "stage('Build backend')"
 assert_contains "$jenkins" '--build-arg DEPLOY_SHA="$RELEASE_SHA"'
 assert_contains "$jenkins" '--tag "eldercare-backend:$RELEASE_SHA"'
 assert_contains "$jenkins" '--tag "eldercare-front:$RELEASE_SHA"'
+assert_contains "$jenkins" 'sh scripts/deploy/event-media-backup.sh'
 assert_contains "$jenkins" 'docker buildx rm "$BUILDX_BUILDER"'
 assert_contains "$jenkins" 'docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --buildkitd-config "$config" --use'
 assert_buildkit_parallelism() {
@@ -951,7 +1027,7 @@ assert_not_contains "$jenkins" 'ML'
 assert_not_contains "$jenkins" 'docker pull'
 assert_not_contains "$jenkins" 'docker push'
 compose_prod=$(sed -n '1,80p' "$REPO_ROOT/compose.prod.yaml")
-env_example=$(sed -n '31,60p' "$REPO_ROOT/.env.host.prod.example")
+env_example=$(cat "$REPO_ROOT/.env.host.prod.example")
 assert_contains "$compose_prod" 'SMTP_SECURE: ${SMTP_SECURE-}'
 assert_contains "$env_example" 'omitted SMTP_SECURE lets the adapter use'
 

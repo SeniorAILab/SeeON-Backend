@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2016 # Literal Docker/nginx variables are contract fixtures.
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
@@ -41,8 +42,15 @@ dockerfile=$(cat "$DOCKERFILE")
 # The image owns API ingress only; it must never become another SPA/static server.
 assert_contains "$dockerfile" 'FROM nginx:1.27-alpine'
 assert_contains "$dockerfile" 'COPY infra/api-ingress/nginx.conf /etc/nginx/conf.d/default.conf'
+assert_contains "$dockerfile" 'ARG DEPLOY_SHA'
+assert_contains "$dockerfile" 'DEPLOY_SHA must be exactly 40 lowercase hexadecimal characters'
+assert_contains "$dockerfile" 'org.opencontainers.image.revision="${DEPLOY_SHA}"'
+assert_contains "$dockerfile" 'org.opencontainers.image.source="SeniorAILab/SeeON"'
 assert_contains "$config" 'listen 3000;'
 assert_contains "$config" 'resolver 127.0.0.11 valid=30s;'
+assert_contains "$config" 'map $http_x_forwarded_proto $forwarded_proto {'
+assert_contains "$config" '~^https$ https;'
+assert_contains "$config" '~^http$ http;'
 # shellcheck disable=SC2016 # Assert the literal nginx variable, not a shell expansion.
 assert_contains "$config" 'set $backend_upstream http://backend:8080;'
 assert_not_contains "$config" 'try_files'
@@ -59,7 +67,7 @@ assert_forwarding_contract() {
   assert_contains "$block" 'proxy_http_version 1.1;'
   assert_contains "$block" 'proxy_set_header Host $host;'
   assert_contains "$block" 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
-  assert_contains "$block" 'proxy_set_header X-Forwarded-Proto $scheme;'
+  assert_contains "$block" 'proxy_set_header X-Forwarded-Proto $forwarded_proto;'
   assert_contains "$block" 'proxy_set_header Authorization $http_authorization;'
   assert_contains "$block" 'proxy_set_header X-Edge-Relay-Token $http_x_edge_relay_token;'
 }
