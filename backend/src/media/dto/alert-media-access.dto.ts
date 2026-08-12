@@ -3,6 +3,7 @@ import { IsIn, IsString, Matches, MaxLength } from 'class-validator';
 export const ALERT_MEDIA_ACCESS_ACTIONS = [
   'PLAY_STARTED',
   'FULLSCREEN_ENTERED',
+  'DOWNLOAD_STARTED',
 ] as const;
 
 export type AlertMediaAccessAction =

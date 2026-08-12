@@ -2,9 +2,7 @@ import { request as httpRequest, Server } from 'node:http';
 import { promises as fs } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import * as path from 'node:path';
-import type { Prisma } from '@prisma/client';
 import request from 'supertest';
-import { MediaDownloadAuditService } from '../src/media/media-download-audit.service';
 import {
   type AlertMediaFixture,
   createAlertMediaFixture,
@@ -15,9 +13,6 @@ import {
 
 const DOWNLOAD_PATH = `/api/v1/alerts/${encodeURIComponent(mediaFixtureIds.alertA)}/media/download`;
 const LARGE_CLIP_BYTES = Buffer.alloc(8 * 1024 * 1024, 0x61);
-type DownloadAudit = Prisma.MediaDownloadAuditGetPayload<{
-  include: { outboxJob: true };
-}>;
 
 describe('alert media download response settlement (e2e)', () => {
   let fixture: AlertMediaFixture;
@@ -38,31 +33,19 @@ describe('alert media download response settlement (e2e)', () => {
     await deleteDownloadRows();
   });
 
-  it('keeps a completed audit when the real response emits finish then close', async () => {
+  it('keeps GET byte transport read-only when the response finishes and closes', async () => {
     const signals = observeNextResponse(server);
-    const settlement = observeNextSettlement();
-    try {
-      await request(server)
-        .get(DOWNLOAD_PATH)
-        .set('cookie', fixture.adminCookie)
-        .set('x-request-id', 'transport-finish-close')
-        .expect(200);
+    await request(server)
+      .get(DOWNLOAD_PATH)
+      .set('cookie', fixture.adminCookie)
+      .set('x-request-id', 'transport-finish-close')
+      .expect(200);
 
-      await Promise.all([signals.finish, signals.closed, settlement.observed]);
-
-      expect(await expectAudit('transport-finish-close')).toMatchObject({
-        state: 'COMPLETED',
-        bytesActual: BigInt(mediaBytes.length),
-        abortedAt: null,
-        abortReason: null,
-        outboxJob: { state: 'COMPLETED' },
-      });
-    } finally {
-      settlement.restore();
-    }
+    await Promise.all([signals.finish, signals.closed]);
+    await expectDownloadCount(0);
   });
 
-  it('keeps a disconnected response aborted after later pipeline settlement', async () => {
+  it('keeps a disconnected GET byte transport read-only', async () => {
     const clipPath = path.join(
       fixture.rootDir,
       mediaFixtureIds.facilityA,
@@ -76,29 +59,13 @@ describe('alert media download response settlement (e2e)', () => {
     });
 
     const signals = observeNextResponse(server);
-    const settlement = observeNextSettlement();
     try {
-      const receivedBytes = await downloadAndDisconnect(server);
-      await Promise.all([signals.closed, settlement.observed]);
+      await downloadAndDisconnect(server);
+      await signals.closed;
 
       expect(signals.didFinish()).toBe(false);
-      const audit = await expectAudit('transport-disconnect');
-      expect(audit).toMatchObject({
-        state: 'ABORTED',
-        completedAt: null,
-        abortReason: 'RESPONSE_CLOSED',
-        outboxJob: { state: 'COMPLETED' },
-      });
-      expect(audit.abortedAt).toBeInstanceOf(Date);
-      expect(audit.bytesActual).toBeGreaterThan(0n);
-      expect(audit.bytesActual).toBeGreaterThanOrEqual(BigInt(receivedBytes));
-      await expect(
-        fixture.direct.mediaDownloadAudit.count({
-          where: { requestId: 'transport-disconnect' },
-        }),
-      ).resolves.toBe(1);
+      await expectDownloadCount(0);
     } finally {
-      settlement.restore();
       await fixture.direct.mediaClip.update({
         where: { id: mediaFixtureIds.clipA },
         data: { byteSize: BigInt(mediaBytes.length) },
@@ -106,25 +73,6 @@ describe('alert media download response settlement (e2e)', () => {
       await fs.writeFile(clipPath, mediaBytes);
     }
   });
-
-  function observeNextSettlement(): {
-    readonly observed: Promise<void>;
-    restore(): void;
-  } {
-    const audits = fixture.app.get(MediaDownloadAuditService);
-    const original = audits.observeSettlement.bind(audits);
-    const observed = deferred();
-    const observer = jest
-      .spyOn(audits, 'observeSettlement')
-      .mockImplementation(async (settlement) => {
-        await original(settlement);
-        observed.resolve();
-      });
-    return {
-      observed: observed.promise,
-      restore: () => observer.mockRestore(),
-    };
-  }
 
   function observeNextResponse(server: Server): {
     readonly finish: Promise<void>;
@@ -175,11 +123,12 @@ describe('alert media download response settlement (e2e)', () => {
     });
   }
 
-  async function expectAudit(requestId: string): Promise<DownloadAudit> {
-    return fixture.direct.mediaDownloadAudit.findFirstOrThrow({
-      where: { requestId },
-      include: { outboxJob: true },
-    });
+  async function expectDownloadCount(expected: number): Promise<void> {
+    await expect(
+      fixture.direct.mediaDownloadAudit.count({
+        where: { facilityId: mediaFixtureIds.facilityA },
+      }),
+    ).resolves.toBe(expected);
   }
 
   async function deleteDownloadRows(): Promise<void> {

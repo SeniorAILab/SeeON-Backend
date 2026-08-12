@@ -88,6 +88,26 @@ describe('alert media authorization and metadata (e2e)', () => {
       clipId: mediaFixtureIds.clipA,
     });
 
+    const downloadInteractionId = 'interaction-t15-download-started';
+    await request(fixture.app.getHttpServer())
+      .post(accessPath(mediaFixtureIds.alertA))
+      .set('cookie', fixture.adminCookie)
+      .send({
+        action: 'DOWNLOAD_STARTED',
+        interactionId: downloadInteractionId,
+      })
+      .expect(201)
+      .expect({ accepted: true });
+    await expect(
+      fixture.direct.mediaAccessLog.count({
+        where: {
+          actorUserId: mediaFixtureIds.adminA,
+          interactionId: downloadInteractionId,
+          action: 'DOWNLOAD_STARTED',
+        },
+      }),
+    ).resolves.toBe(1);
+
     await request(fixture.app.getHttpServer())
       .post(accessPath(mediaFixtureIds.alertA))
       .set('cookie', fixture.adminCookie)
