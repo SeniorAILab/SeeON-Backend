@@ -81,6 +81,14 @@ manifest() {
   printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"test.dump","timestamp":"2026-07-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
 }
 
+schema_two_manifest() {
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","embedded_front_image":"eldercare-front:%s","embedded_front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1" "$1" "$1"
+}
+
+schema_two_backend_ingress_manifest() {
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
+}
+
 pretty_manifest() {
   printf '{\n  "sha" : "%s",\n  "backend_image" : "eldercare-backend:%s",\n  "backend_image_id" : "sha256:backend-%s",\n  "front_image" : "eldercare-front:%s",\n  "front_image_id" : "sha256:front-%s"\n}\n' "$1" "$1" "$1" "$1" "$1"
 }
@@ -193,8 +201,18 @@ cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
 output=$(run_resolver)
 assert_contains "$output" 'NO_OP=1'
 
-# Whitespace around manifest separators is accepted when the immutable bytes match.
+# Whitespace around schema-1 manifest separators is accepted when immutable bytes match.
 pretty_manifest "$main_sha" > "$RELEASES/$main_sha.json"
+cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
+output=$(run_resolver)
+assert_contains "$output" 'NO_OP=1'
+
+# Both schema-2 layouts are readable, including the first transitional release.
+schema_two_manifest "$main_sha" > "$RELEASES/$main_sha.json"
+cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
+output=$(run_resolver)
+assert_contains "$output" 'NO_OP=1'
+schema_two_backend_ingress_manifest "$main_sha" > "$RELEASES/$main_sha.json"
 cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
 output=$(run_resolver)
 assert_contains "$output" 'NO_OP=1'
@@ -217,5 +235,12 @@ assert_red
 manifest "$main_sha" > "$RELEASES/$main_sha.json"
 printf '\n' >> "$RELEASES/current.json"
 assert_red
+
+# Unknown or malformed explicit schemas fail closed even when pointer bytes match.
+for invalid_schema in '"3"' '2' '"02"'; do
+  printf '{"schema":%s,"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:ingress"}\n' "$invalid_schema" "$main_sha" "$main_sha" "$main_sha" > "$RELEASES/$main_sha.json"
+  cp "$RELEASES/$main_sha.json" "$RELEASES/current.json"
+  assert_red
+done
 
 printf 'iwinv resolve release contract tests passed\n'

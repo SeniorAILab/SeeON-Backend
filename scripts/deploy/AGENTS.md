@@ -29,8 +29,13 @@ explicit rollback or database restore.
   Jenkins consumption.
 - Roll back with `iwinv-deploy.sh --rollback`. Rollback remains an explicit
   operator action.
-- Backend and frontend images use commit SHA tags only. Never use `latest` or
-  a release-tag image.
+- Release manifests are dual-read: absent `schema` is schema 1; quoted
+  `"schema":"2"` is schema 2. Writers publish schema 2. Once schema 2 is
+  current, a schema-1-only deploy script must never be restored independently:
+  it cannot read the current pointer. Restore or roll back application releases
+  only with a dual-read deploy script.
+- Backend, API ingress, and transitional frontend images use commit SHA tags
+  only. Never use `latest` or a release-tag image.
 
 ## Invariants
 - Jenkins resolves the release tag once through the deploy-key authenticated

@@ -15,7 +15,7 @@ log=${MOCK_LOG:-}
 [ -z "$log" ] || printf '%s\n' "docker $*" >> "$log"
 if [ "${1:-}" = images ]; then
   [ "${MOCK_IMAGES_FAIL:-0}" != 1 ] || exit 1
-  printf '%s\n' "eldercare-backend:${MOCK_SHA}" "eldercare-front:${MOCK_SHA}" "eldercare-backend:cccccccccccccccccccccccccccccccccccccccc"
+  printf '%s\n' "eldercare-backend:${MOCK_SHA}" "eldercare-api-ingress:${MOCK_SHA}" "eldercare-front:${MOCK_SHA}" "eldercare-backend:cccccccccccccccccccccccccccccccccccccccc" "eldercare-api-ingress:cccccccccccccccccccccccccccccccccccccccc"
   exit 0
 fi
 if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
@@ -23,6 +23,7 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   image_sha=${MOCK_IMAGE_ID_SHA:-${image#*:}}
   case "$image" in
     eldercare-backend:*) printf 'sha256:backend-%s\n' "$image_sha" ;;
+    eldercare-api-ingress:*) printf 'sha256:api-ingress-%s\n' "$image_sha" ;;
     eldercare-front:*) printf 'sha256:front-%s\n' "$image_sha" ;;
     *) exit 1 ;;
   esac
@@ -43,6 +44,9 @@ if [ "${1:-}" = compose ]; then
     *'front wget'*)
       [ "${MOCK_FRONT_UNREACHABLE:-0}" != 1 ] || exit 1
       printf '%s\n' "${MOCK_FRONT_VERSION:-$MOCK_SHA}" ;;
+    *'api-ingress wget'*)
+      [ "${MOCK_INGRESS_FAIL:-0}" != 1 ] || exit 1
+      printf '{"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
     *'backend node'*)
       if [ "${MOCK_BACKEND_FAIL:-0}" = 1 ]; then printf 'status=503\nbody={"sha":"wrong","database":"down"}\n'; exit 1; fi
       printf 'status=200\nbody={"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
@@ -50,8 +54,10 @@ if [ "${1:-}" = compose ]; then
     *' pull db '*) ;;
     *' up -d --wait --wait-timeout 120 db '*) ;;
     *' ps -q --status running backend '*) ;;
+    *' up -d --wait --wait-timeout 120 backend api-ingress front '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
+    *' up -d --wait --wait-timeout 120 backend api-ingress '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
     *' up -d --wait --wait-timeout 120 backend front '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
-    *' stop front backend '*) ;;
+    *' stop front api-ingress backend '*) ;;
     *'prisma migrate deploy'*) [ "${MOCK_MIGRATE_FAIL:-0}" != 1 ] || exit 1 ;;
     *'seed-super-admin.js'*) ;;
     *) printf 'unexpected docker compose command: %s\n' "$*" >&2; exit 1 ;;
@@ -97,6 +103,12 @@ ROLLBACK_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CURRENT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 manifest() {
   printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-11T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
+}
+schema_two_manifest() {
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","embedded_front_image":"eldercare-front:%s","embedded_front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1" "$1" "$1"
+}
+schema_two_backend_ingress_manifest() {
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
 }
 pointer() {
   manifest "$1" > "$TMP/root/releases/$1.json"
@@ -197,7 +209,7 @@ output=$(run_deploy --sha "$SHA" --dry-run)
 assert_contains "$output" 'compose pull db'
 assert_not_contains "$output" 'compose pull backend'
 assert_not_contains "$output" 'compose pull front'
-assert_contains "$output" "would verify exact local images eldercare-backend:$SHA and eldercare-front:$SHA"
+assert_contains "$output" "would verify exact local images eldercare-backend:$SHA, eldercare-api-ingress:$SHA, and eldercare-front:$SHA"
 assert_contains "$output" 'would create and validate pre-migration dump'
 assert_contains "$output" 'would sync app role, assert Prisma tracking, run migrate deploy, and bootstrap super-admin'
 assert_not_contains "$output" "docker image rm eldercare-backend:$SHA"
@@ -247,6 +259,60 @@ set +e
 output=$(run_deploy --rollback "$ROLLBACK_SHA"); status=$?
 set -e
 assert_failure "$status"; assert_contains "$output" 'Rollback manifest SHA does not match requested SHA'
+
+# A schema-2 current pointer can roll back through a schema-1 previous pointer.
+schema_two_manifest "$CURRENT_SHA" > "$TMP/root/releases/$CURRENT_SHA.json"
+cp "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/current.json"
+manifest "$ROLLBACK_SHA" > "$TMP/root/releases/$ROLLBACK_SHA.json"
+cp "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/previous.json"
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback)
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend front'
+cmp -s "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/current.json"
+cmp -s "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/previous.json"
+log=$(sed -n '1,240p' "$TMP/mock.log")
+assert_contains "$log" 'image inspect --format {{.Id}} eldercare-backend:'
+assert_contains "$log" 'image inspect --format {{.Id}} eldercare-front:'
+assert_not_contains "$log" 'image inspect --format {{.Id}} eldercare-api-ingress:'
+assert_contains "$log" 'image rm eldercare-api-ingress:cccccccccccccccccccccccccccccccccccccccc'
+
+# Schema-2 without a transitional front starts and probes only backend + ingress.
+schema_two_manifest "$CURRENT_SHA" > "$TMP/root/releases/$CURRENT_SHA.json"
+cp "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/current.json"
+schema_two_backend_ingress_manifest "$ROLLBACK_SHA" > "$TMP/root/releases/$ROLLBACK_SHA.json"
+cp "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/previous.json"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_INGRESS_FAIL=1 MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'API ingress health request failed'
+log=$(sed -n '1,240p' "$TMP/mock.log")
+ingress_health_calls=$(printf '%s\n' "$log" | grep -c 'api-ingress wget' || :)
+[ "$ingress_health_calls" -eq 1 ] || { printf 'expected exactly one API ingress health attempt, got %s\n' "$ingress_health_calls" >&2; exit 1; }
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback)
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-ingress'
+assert_not_contains "$output" 'backend api-ingress front'
+log=$(sed -n '1,240p' "$TMP/mock.log")
+assert_contains "$log" 'api-ingress wget'
+assert_not_contains "$log" 'front wget'
+
+# Unknown schema fails before Docker, DB, release-env, or pointer mutation.
+schema_two_manifest "$CURRENT_SHA" | sed 's/"schema":"2"/"schema":"3"/' > "$TMP/root/releases/$CURRENT_SHA.json"
+cp "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/current.json"
+cp "$TMP/root/releases/current.json" "$TMP/current.before-unknown-schema"
+printf 'BACKEND_IMAGE=sentinel\nAPI_INGRESS_IMAGE=sentinel\nFRONT_IMAGE=sentinel\n' > "$TMP/root/shared/release-images.env"
+cp "$TMP/root/shared/release-images.env" "$TMP/release-env.before-unknown-schema"
+: > "$TMP/mock.log"
+set +e
+output=$(run_deploy --sha "$SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unsupported release manifest schema'
+[ ! -s "$TMP/mock.log" ]
+cmp -s "$TMP/current.before-unknown-schema" "$TMP/root/releases/current.json"
+cmp -s "$TMP/release-env.before-unknown-schema" "$TMP/root/shared/release-images.env"
+# Restore a valid independent previous pointer for the remaining scenarios.
+pointer "$ROLLBACK_SHA" previous
 
 # Restore proves target code images before validating or restoring the database.
 pointer "$SHA" current
@@ -468,9 +534,18 @@ assert_failure "$status"; assert_contains "$output" 'Release manifest references
 : > "$TMP/mock.log"
 output=$(run_deploy --sha "$SHA")
 log=$(sed -n '1,320p' "$TMP/mock.log")
-assert_order "$log" 'stop front backend' 'pg_dump'
+assert_order "$log" 'stop front api-ingress backend' 'pg_dump'
 assert_order "$log" 'pg_dump' 'pull db'
 assert_order "$log" 'pg_restore --list' 'pull db'
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-ingress front'
+assert_contains "$log" 'api-ingress wget'
+assert_contains "$log" 'front wget'
+# Schema-2 writer output is one canonical line with a fixed key order and all image IDs.
+grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:backend-[0-9a-f]{40}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:api-ingress-[0-9a-f]{40}","embedded_front_image":"eldercare-front:[0-9a-f]{40}","embedded_front_image_id":"sha256:front-[0-9a-f]{40}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[^"]+\.dump","timestamp":"[^"]+"\}$' "$TMP/root/releases/current.json" || {
+  printf 'schema-2 writer did not emit canonical fixed-order manifest:\n' >&2
+  cat "$TMP/root/releases/current.json" >&2
+  exit 1
+}
 
 # Candidate image IDs are not inherited from the current release.
 NEXT_SHA=1111111111111111111111111111111111111111
@@ -704,7 +779,7 @@ assert_not_contains "$jenkins" 'ML'
 assert_not_contains "$jenkins" 'docker pull'
 assert_not_contains "$jenkins" 'docker push'
 compose_prod=$(sed -n '1,80p' "$REPO_ROOT/compose.prod.yaml")
-env_example=$(sed -n '31,45p' "$REPO_ROOT/.env.host.prod.example")
+env_example=$(sed -n '31,60p' "$REPO_ROOT/.env.host.prod.example")
 assert_contains "$compose_prod" 'SMTP_SECURE: ${SMTP_SECURE-}'
 assert_contains "$env_example" 'omitted SMTP_SECURE lets the adapter use'
 

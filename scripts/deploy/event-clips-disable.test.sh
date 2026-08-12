@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC2016 # Literal deploy-source contracts are intentional.
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
@@ -231,11 +232,11 @@ deploy_source=$(cat "$DEPLOY")
 assert_contains "$deploy_source" 'FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}'
 assert_contains "$deploy_source" '--env-file "$FEATURE_ENV"'
 assert_contains "$deploy_source" 'assert_backend_stopped'
-assert_contains "$deploy_source" 'run compose stop front backend'
-assert_contains "$deploy_source" 'run compose up -d --wait --wait-timeout 120 backend front'
-stop_line=$(grep -n -F 'run compose stop front backend' "$DEPLOY" | sed -n '1s/:.*//p')
+assert_contains "$deploy_source" 'run compose stop front api-ingress backend'
+assert_contains "$deploy_source" 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES'
+stop_line=$(grep -n -F 'run compose stop front api-ingress backend' "$DEPLOY" | sed -n '1s/:.*//p')
 assert_line=$(grep -n -F 'assert_backend_stopped' "$DEPLOY" | sed -n '2s/:.*//p')
-start_line=$(grep -n -F 'run compose up -d --wait --wait-timeout 120 backend front' "$DEPLOY" | sed -n '1s/:.*//p')
+start_line=$(grep -n -F 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES' "$DEPLOY" | sed -n '1s/:.*//p')
 [ -n "$stop_line" ] && [ -n "$assert_line" ] && [ -n "$start_line" ] && \
   [ "$stop_line" -lt "$assert_line" ] && [ "$assert_line" -lt "$start_line" ] || {
   printf '%s\n' 'deploy path does not prove zero-overlap backend replacement' >&2

@@ -12,15 +12,37 @@ validate_current_manifest() {
   current_manifest=$RELEASES_DIR/current.json
   [ -f "$current_manifest" ] || fail "Release pointer is not a regular file: $current_manifest"
 
+  if grep -Eq '"schema"[[:space:]]*:' "$current_manifest"; then
+    schema=$(json_value "$current_manifest" schema)
+    [ "$schema" = 2 ] || fail "Unsupported release manifest schema: $current_manifest"
+  else
+    schema=1
+  fi
+
   current_sha=$(json_value "$current_manifest" sha)
   backend_image=$(json_value "$current_manifest" backend_image)
-  front_image=$(json_value "$current_manifest" front_image)
   backend_id=$(json_value "$current_manifest" backend_image_id)
-  front_id=$(json_value "$current_manifest" front_image_id)
-
   valid_sha "$current_sha" || fail "Invalid SHA in manifest: $current_manifest"
-  [ "$backend_image" = "eldercare-backend:$current_sha" ] && [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
-  [ -n "$backend_id" ] && [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+  [ "$backend_image" = "eldercare-backend:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+  [ -n "$backend_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+
+  if [ "$schema" = 1 ]; then
+    front_image=$(json_value "$current_manifest" front_image)
+    front_id=$(json_value "$current_manifest" front_image_id)
+    [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+    [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+  else
+    api_ingress_image=$(json_value "$current_manifest" api_ingress_image)
+    api_ingress_id=$(json_value "$current_manifest" api_ingress_image_id)
+    front_image=$(json_value "$current_manifest" embedded_front_image)
+    front_id=$(json_value "$current_manifest" embedded_front_image_id)
+    [ "$api_ingress_image" = "eldercare-api-ingress:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+    [ -n "$api_ingress_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+    if [ -n "$front_image" ] || [ -n "$front_id" ]; then
+      [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+      [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+    fi
+  fi
 
   immutable_manifest=$RELEASES_DIR/$current_sha.json
   [ -f "$immutable_manifest" ] || fail "Release pointer immutable manifest not found: $immutable_manifest"
