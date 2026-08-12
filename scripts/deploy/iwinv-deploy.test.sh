@@ -22,9 +22,9 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   image=${5:-}
   image_sha=${MOCK_IMAGE_ID_SHA:-${image#*:}}
   case "$image" in
-    eldercare-backend:*) printf 'sha256:backend-%s\n' "$image_sha" ;;
-    eldercare-api-ingress:*) printf 'sha256:api-ingress-%s\n' "$image_sha" ;;
-    eldercare-front:*) printf 'sha256:front-%s\n' "$image_sha" ;;
+    eldercare-backend:*) if [ -n "${MOCK_IMAGE_ID_SHA:-}" ]; then printf 'sha256:%064s\n' "$image_sha" | tr ' ' 0; else printf '%s\n' 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; fi ;;
+    eldercare-api-ingress:*) printf '%s\n' 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' ;;
+    eldercare-front:*) printf '%s\n' 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' ;;
     *) exit 1 ;;
   esac
   exit 0
@@ -81,6 +81,17 @@ exec /bin/rmdir "$@"
 EOF
 chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir"
 
+NO_NODE_BIN=$TMP/no-node-bin
+mkdir -p "$NO_NODE_BIN"
+for tool in sh df awk curl grep sed cmp cp mv rm mkdir date sort head mktemp stat wc tr cat tail; do
+  tool_path=$(command -v "$tool") || { printf 'test prerequisite missing: %s\n' "$tool" >&2; exit 1; }
+  ln -s "$tool_path" "$NO_NODE_BIN/$tool"
+done
+ln -s "$TMP/bin/docker" "$NO_NODE_BIN/docker"
+ln -s "$TMP/bin/free" "$NO_NODE_BIN/free"
+ln -s "$TMP/bin/sha256sum" "$NO_NODE_BIN/sha256sum"
+ln -s "$TMP/bin/rmdir" "$NO_NODE_BIN/rmdir"
+
 cat > "$TMP/host.env" <<'EOF'
 POSTGRES_USER=fall
 POSTGRES_PASSWORD=test
@@ -101,14 +112,19 @@ EOF
 SHA=0123456789abcdef0123456789abcdef01234567
 ROLLBACK_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CURRENT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+FIXTURE_BACKEND_ID=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+FIXTURE_INGRESS_ID=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+FIXTURE_FRONT_ID=sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+FIXTURE_COMPOSE_HASH=0000000000000000000000000000000000000000000000000000000000000000
+FIXTURE_ENV_HASH=1111111111111111111111111111111111111111111111111111111111111111
 manifest() {
-  printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-11T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
+  printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"%s","front_image":"eldercare-front:%s","front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-11T00:00:00Z"}\n' "$1" "$1" "$FIXTURE_BACKEND_ID" "$1" "$FIXTURE_FRONT_ID" "$FIXTURE_COMPOSE_HASH" "$FIXTURE_ENV_HASH"
 }
 schema_two_manifest() {
-  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","embedded_front_image":"eldercare-front:%s","embedded_front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1" "$1" "$1"
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"%s","embedded_front_image":"eldercare-front:%s","embedded_front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$FIXTURE_BACKEND_ID" "$1" "$FIXTURE_INGRESS_ID" "$1" "$FIXTURE_FRONT_ID" "$FIXTURE_COMPOSE_HASH" "$FIXTURE_ENV_HASH"
 }
 schema_two_backend_ingress_manifest() {
-  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"sha256:api-ingress-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1"
+  printf '{"schema":"2","sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"%s","api_ingress_image":"eldercare-api-ingress:%s","api_ingress_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"normal-test.dump","timestamp":"2026-08-12T00:00:00Z"}\n' "$1" "$1" "$FIXTURE_BACKEND_ID" "$1" "$FIXTURE_INGRESS_ID" "$FIXTURE_COMPOSE_HASH" "$FIXTURE_ENV_HASH"
 }
 pointer() {
   manifest "$1" > "$TMP/root/releases/$1.json"
@@ -117,7 +133,7 @@ pointer() {
 }
 manifest_with_dump() {
   dump=$2
-  printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"sha256:backend-%s","front_image":"eldercare-front:%s","front_image_id":"sha256:front-%s","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"%s","timestamp":"2026-07-11T00:00:00Z"}\n' "$1" "$1" "$1" "$1" "$1" "$dump"
+  printf '{"sha":"%s","backend_image":"eldercare-backend:%s","backend_image_id":"%s","front_image":"eldercare-front:%s","front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"2026-07-11T00:00:00Z"}\n' "$1" "$1" "$FIXTURE_BACKEND_ID" "$1" "$FIXTURE_FRONT_ID" "$FIXTURE_COMPOSE_HASH" "$FIXTURE_ENV_HASH" "$dump"
 }
 pointer_with_dump() {
   manifest_with_dump "$1" "$3" > "$TMP/root/releases/$1.json"
@@ -128,6 +144,11 @@ run_deploy() {
   PATH="$TMP/bin:$PATH" APP_ROOT="$TMP/root" APP_DIR="$REPO_ROOT" ENV_FILE="$TMP/host.env" \
   MEMORY_MIN_MB="${TEST_MEMORY_MIN_MB:-1}" DISK_MIN_MB=1 MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
   sh "$SCRIPT" "$@" 2>&1
+}
+run_deploy_without_node() {
+  PATH="$NO_NODE_BIN" APP_ROOT="$TMP/root" APP_DIR="$REPO_ROOT" ENV_FILE="$TMP/host.env" \
+  MEMORY_MIN_MB=1 DISK_MIN_MB=1 MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
+  "$NO_NODE_BIN/sh" "$SCRIPT" "$@" 2>&1
 }
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) printf 'unexpected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; *) ;; esac; }
@@ -307,7 +328,7 @@ cp "$TMP/root/shared/release-images.env" "$TMP/release-env.before-unknown-schema
 set +e
 output=$(run_deploy --sha "$SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Unsupported release manifest schema'
+assert_failure "$status"; assert_contains "$output" 'Invalid release manifest canonical form'
 [ ! -s "$TMP/mock.log" ]
 cmp -s "$TMP/current.before-unknown-schema" "$TMP/root/releases/current.json"
 cmp -s "$TMP/release-env.before-unknown-schema" "$TMP/root/shared/release-images.env"
@@ -424,7 +445,7 @@ release_state_before=$(release_state)
 set +e
 output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback "$ROLLBACK_SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Invalid release manifest shape'
+assert_failure "$status"; assert_contains "$output" 'Invalid release manifest canonical form'
 log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_not_contains "$log" 'docker '
 cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" || {
@@ -437,7 +458,7 @@ cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" ||
 set +e
 output=$(run_deploy --sha "$SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Invalid release manifest shape'
+assert_failure "$status"; assert_contains "$output" 'Invalid release manifest canonical form'
 log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_not_contains "$log" 'docker '
 cmp -s "$TMP/release-images.env.before" "$TMP/root/shared/release-images.env" || {
@@ -499,7 +520,7 @@ set +e
 output=$(run_deploy --sha "$SHA"); status=$?
 set -e
 assert_failure "$status"
-assert_contains "$output" 'Malformed release manifest JSON'
+assert_contains "$output" 'Invalid release manifest canonical form'
 [ ! -s "$TMP/mock.log" ] || { printf 'malformed JSON reached Docker or DB\n' >&2; exit 1; }
 cmp -s "$TMP/release-env.before-malformed-json" "$TMP/root/shared/release-images.env" || {
   printf 'release-images.env changed after malformed JSON\n' >&2; exit 1
@@ -510,9 +531,117 @@ cmp -s "$TMP/release-env.before-malformed-json" "$TMP/root/shared/release-images
 release_env_checksum_after=$(cksum "$TMP/root/shared/release-images.env")
 printf 'malformed JSON deploy rejection proof: exit=%s release_env_before=%s release_env_after=%s docker_log_bytes=0 pointers_unchanged=yes\n' "$status" "$release_env_checksum_before" "$release_env_checksum_after"
 
+assert_manifest_rejected_before_side_effects() {
+  label=$1
+  expected=$2
+  runner=${3:-run_deploy}
+  cp "$TMP/root/releases/current.json" "$TMP/root/releases/$CURRENT_SHA.json"
+  printf 'BACKEND_IMAGE=sentinel\nAPI_INGRESS_IMAGE=sentinel\nFRONT_IMAGE=sentinel\n' > "$TMP/root/shared/release-images.env"
+  before=$(cksum "$TMP/root/shared/release-images.env")
+  release_state_before=$(release_state)
+  : > "$TMP/mock.log"
+  set +e
+  output=$($runner --sha "$SHA"); status=$?
+  set -e
+  assert_failure "$status"
+  assert_contains "$output" "$expected"
+  after=$(cksum "$TMP/root/shared/release-images.env")
+  [ "$before" = "$after" ] || { printf '%s changed release-images.env\n' "$label" >&2; exit 1; }
+  [ ! -s "$TMP/mock.log" ] || { printf '%s reached Docker or DB\n' "$label" >&2; exit 1; }
+  [ "$release_state_before" = "$(release_state)" ] || { printf '%s changed release state\n' "$label" >&2; exit 1; }
+  printf '%s rejection proof: exit=%s release_env_before=%s release_env_after=%s docker_log_bytes=0 pointers_unchanged=yes\n' "$label" "$status" "$before" "$after"
+}
+
+manifest "$CURRENT_SHA" | sed 's/}$/,"timestamp":"2026-08-13T00:00:00Z"}/' > "$TMP/root/releases/current.json"
+assert_manifest_rejected_before_side_effects duplicate-key 'Invalid release manifest canonical form'
+
+manifest "$CURRENT_SHA" | sed 's/2026-07-11T00:00:00Z/2026-07-11T00:00:00Z\\nINJECTED/' > "$TMP/root/releases/current.json"
+assert_manifest_rejected_before_side_effects decoded-newline 'Invalid release manifest canonical form'
+
+write_sized_spaces() {
+  total_bytes=$1
+  target=$2
+  { head -c "$((total_bytes - 1))" /dev/zero | tr '\000' ' '; printf '\n'; } > "$target"
+}
+write_sized_spaces 5242880 "$TMP/root/releases/current.json"
+assert_manifest_rejected_before_side_effects oversized 'Release manifest exceeds 4096 bytes'
+
+write_invalid_manifest() {
+  case_name=$1
+  target=$2
+  case "$case_name" in
+    duplicate-identical) manifest "$CURRENT_SHA" | sed 's/}$/,"timestamp":"2026-07-11T00:00:00Z"}/' > "$target" ;;
+    duplicate-differing) manifest "$CURRENT_SHA" | sed 's/}$/,"timestamp":"2026-08-13T00:00:00Z"}/' > "$target" ;;
+    unknown-key) manifest "$CURRENT_SHA" | sed 's/}$/,"unknown":"value"}/' > "$target" ;;
+    reordered) manifest "$CURRENT_SHA" | sed 's/{"sha":"\([^"]*\)","backend_image":"\([^"]*\)"/{"backend_image":"\2","sha":"\1"/' > "$target" ;;
+    whitespace) manifest "$CURRENT_SHA" | sed 's/":"/": "/' > "$target" ;;
+    leading-space) { printf ' '; manifest "$CURRENT_SHA"; } > "$target" ;;
+    trailing-space) manifest "$CURRENT_SHA" | sed 's/$/ /' > "$target" ;;
+    crlf) manifest "$CURRENT_SHA" | perl -pe 's/\n/\r\n/' > "$target" ;;
+    embedded-newline) manifest "$CURRENT_SHA" | perl -pe 's/T00:00:00Z/T00:00:\n00Z/' > "$target" ;;
+    literal-tab) { printf '\t'; manifest "$CURRENT_SHA"; } > "$target" ;;
+    nul) { manifest "$CURRENT_SHA" | tr -d '\n'; printf '\000\n'; } > "$target" ;;
+    del) { manifest "$CURRENT_SHA" | tr -d '\n'; printf '\177\n'; } > "$target" ;;
+    utf8) { manifest "$CURRENT_SHA" | tr -d '\n'; printf '\303\251\n'; } > "$target" ;;
+    unicode-escape) manifest "$CURRENT_SHA" | sed 's/"sha":"b/"sha":"\\u0062/' > "$target" ;;
+    quoted-dump) manifest "$CURRENT_SHA" | sed 's/normal-test.dump/normal-\\"test.dump/' > "$target" ;;
+    backslash-dump) manifest "$CURRENT_SHA" | sed 's/normal-test.dump/normal-\\\\test.dump/' > "$target" ;;
+    zero-byte) : > "$target" ;;
+    at-cap) write_sized_spaces 4096 "$target" ;;
+    cap-plus-one) write_sized_spaces 4097 "$target" ;;
+    five-mib) write_sized_spaces 5242880 "$target" ;;
+    missing-newline) manifest "$CURRENT_SHA" | tr -d '\n' > "$target" ;;
+    two-newlines) { manifest "$CURRENT_SHA"; printf '\n'; } > "$target" ;;
+    sha-39) manifest "$CURRENT_SHA" | sed 's/"sha":"b\{40\}"/"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"/' > "$target" ;;
+    sha-41) manifest "$CURRENT_SHA" | sed 's/"sha":"b\{40\}"/"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"/' > "$target" ;;
+    uppercase-sha) manifest "$CURRENT_SHA" | sed 's/"sha":"b/"sha":"B/' > "$target" ;;
+    image-id-63) manifest "$CURRENT_SHA" | sed "s/$FIXTURE_BACKEND_ID/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/" > "$target" ;;
+    image-id-65) manifest "$CURRENT_SHA" | sed "s/$FIXTURE_BACKEND_ID/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/" > "$target" ;;
+    image-sha-mismatch) manifest "$CURRENT_SHA" | sed 's/eldercare-backend:b\{40\}/eldercare-backend:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' > "$target" ;;
+    compose-hash-63) manifest "$CURRENT_SHA" | sed "s/$FIXTURE_COMPOSE_HASH/000000000000000000000000000000000000000000000000000000000000000/" > "$target" ;;
+    env-hash-65) manifest "$CURRENT_SHA" | sed "s/$FIXTURE_ENV_HASH/11111111111111111111111111111111111111111111111111111111111111111/" > "$target" ;;
+    uppercase-hash) manifest "$CURRENT_SHA" | sed "s/$FIXTURE_COMPOSE_HASH/A000000000000000000000000000000000000000000000000000000000000000/" > "$target" ;;
+    dump-slash) manifest "$CURRENT_SHA" | sed 's/normal-test.dump/normal-dir\/test.dump/' > "$target" ;;
+    dump-dotdot) manifest "$CURRENT_SHA" | sed 's/normal-test.dump/normal-..dump/' > "$target" ;;
+    dump-empty) manifest "$CURRENT_SHA" | sed 's/normal-test.dump//' > "$target" ;;
+    dump-overlength) manifest "$CURRENT_SHA" | awk '{ value=sprintf("%*s", 221, ""); gsub(/ /, "a", value); sub(/normal-test.dump/, "normal-" value ".dump"); print }' > "$target" ;;
+    bare-number) manifest "$CURRENT_SHA" | sed 's/"timestamp":"2026-07-11T00:00:00Z"/"timestamp":20260711/' > "$target" ;;
+    timestamp-offset) manifest "$CURRENT_SHA" | sed 's/2026-07-11T00:00:00Z/2026-07-11T00:00:00+09:00/' > "$target" ;;
+    timestamp-year) manifest "$CURRENT_SHA" | sed 's/2026-07-11T00:00:00Z/1999-07-11T00:00:00Z/' > "$target" ;;
+    timestamp-month) manifest "$CURRENT_SHA" | sed 's/2026-07-11T00:00:00Z/2026-13-11T00:00:00Z/' > "$target" ;;
+    timestamp-clock) manifest "$CURRENT_SHA" | sed 's/2026-07-11T00:00:00Z/2026-07-11T24:00:60Z/' > "$target" ;;
+    schema-unquoted) schema_two_manifest "$CURRENT_SHA" | sed 's/"schema":"2"/"schema":2/' > "$target" ;;
+    schema-one) schema_two_manifest "$CURRENT_SHA" | sed 's/"schema":"2"/"schema":"1"/' > "$target" ;;
+    schema-three) schema_two_manifest "$CURRENT_SHA" | sed 's/"schema":"2"/"schema":"3"/' > "$target" ;;
+    schema-wrong-position) schema_two_manifest "$CURRENT_SHA" | sed 's/{"schema":"2","sha":"\([^"]*\)"/{"sha":"\1","schema":"2"/' > "$target" ;;
+    front-ref-only) schema_two_manifest "$CURRENT_SHA" | sed '/./s/,"embedded_front_image_id":"[^"]*"//' > "$target" ;;
+    front-id-only) schema_two_manifest "$CURRENT_SHA" | sed '/./s/,"embedded_front_image":"[^"]*"//' > "$target" ;;
+    *) printf 'unknown invalid manifest case: %s\n' "$case_name" >&2; exit 1 ;;
+  esac
+}
+
+for invalid_case in duplicate-identical duplicate-differing unknown-key reordered whitespace leading-space trailing-space crlf embedded-newline literal-tab nul del utf8 unicode-escape quoted-dump backslash-dump zero-byte at-cap cap-plus-one five-mib missing-newline two-newlines sha-39 sha-41 uppercase-sha image-id-63 image-id-65 image-sha-mismatch compose-hash-63 env-hash-65 uppercase-hash dump-slash dump-dotdot dump-empty dump-overlength bare-number timestamp-offset timestamp-year timestamp-month timestamp-clock schema-unquoted schema-one schema-three schema-wrong-position front-ref-only front-id-only; do
+  write_invalid_manifest "$invalid_case" "$TMP/root/releases/current.json"
+  assert_manifest_rejected_before_side_effects "$invalid_case" 'manifest'
+done
+
+# A dependency-free deploy PATH validates a canonical manifest without Node or jq.
+pointer "$CURRENT_SHA" current
+printf 'BACKEND_IMAGE=sentinel\nAPI_INGRESS_IMAGE=sentinel\nFRONT_IMAGE=sentinel\n' > "$TMP/root/shared/release-images.env"
+before=$(cksum "$TMP/root/shared/release-images.env")
+: > "$TMP/mock.log"
+set +e
+output=$(run_deploy_without_node --sha "$CURRENT_SHA"); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'Refusing deploy of already-current SHA'
+after=$(cksum "$TMP/root/shared/release-images.env")
+[ "$before" = "$after" ] && [ ! -s "$TMP/mock.log" ] || { printf 'dependency-free validator path caused side effects\n' >&2; exit 1; }
+printf 'dependency-free deploy validator proof: handled_exit=%s release_env_before=%s release_env_after=%s docker_log_bytes=0\n' "$status" "$before" "$after"
+
 # A pointer must byte-match its immutable record before any Docker side effect.
 pointer "$CURRENT_SHA" current
-sed 's/"compose"/"different"/' "$TMP/root/releases/current.json" > "$TMP/root/releases/current.json.bad"
+sed "s/$FIXTURE_COMPOSE_HASH/2222222222222222222222222222222222222222222222222222222222222222/" "$TMP/root/releases/current.json" > "$TMP/root/releases/current.json.bad"
 mv "$TMP/root/releases/current.json.bad" "$TMP/root/releases/current.json"
 : > "$TMP/mock.log"
 set +e
@@ -565,17 +694,36 @@ assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-i
 assert_contains "$log" 'api-ingress wget'
 assert_contains "$log" 'front wget'
 # Schema-2 writer output is one canonical line with a fixed key order and all image IDs.
-grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:backend-[0-9a-f]{40}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:api-ingress-[0-9a-f]{40}","embedded_front_image":"eldercare-front:[0-9a-f]{40}","embedded_front_image_id":"sha256:front-[0-9a-f]{40}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[^"]+\.dump","timestamp":"[^"]+"\}$' "$TMP/root/releases/current.json" || {
+grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:[0-9a-f]{64}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:[0-9a-f]{64}","embedded_front_image":"eldercare-front:[0-9a-f]{40}","embedded_front_image_id":"sha256:[0-9a-f]{64}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[A-Za-z0-9._-]+\.dump","timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"\}$' "$TMP/root/releases/current.json" || {
   printf 'schema-2 writer did not emit canonical fixed-order manifest:\n' >&2
   cat "$TMP/root/releases/current.json" >&2
   exit 1
 }
+
+# The real writer output is accepted unchanged by the independently extracted
+# Jenkins resolver, proving the writer and both production validators stay in lockstep.
+WRITER_GIT_BIN=$TMP/writer-git-bin
+mkdir -p "$WRITER_GIT_BIN"
+writer_sha=$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$TMP/root/releases/current.json")
+cat > "$WRITER_GIT_BIN/git" <<EOF
+#!/bin/sh
+case "\$1 \$2" in
+  'fetch --no-tags'|'cat-file -e'|'merge-base --is-ancestor') exit 0 ;;
+  'ls-remote --tags') printf '%s\trefs/tags/v1.2.3\n' '$writer_sha'; exit 0 ;;
+esac
+exit 1
+EOF
+chmod +x "$WRITER_GIT_BIN/git"
+output=$(PATH="$WRITER_GIT_BIN:$PATH" RELEASES_DIR="$TMP/root/releases" sh "$REPO_ROOT/scripts/deploy/iwinv-resolve-release.sh")
+assert_contains "$output" "RELEASE_SHA=$writer_sha"
+assert_contains "$output" 'NO_OP=1'
 
 # Candidate image IDs are not inherited from the current release.
 NEXT_SHA=1111111111111111111111111111111111111111
 : > "$TMP/mock.log"
 output=$(MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA")
 assert_contains "$output" "Deploy complete. sha=$NEXT_SHA"
+printf 'real writer-to-validator lockstep proof: sha=%s deploy_reader=accepted resolver_reader=accepted bytes=unchanged\n' "$writer_sha"
 cmp -s "$TMP/root/releases/$NEXT_SHA.json" "$TMP/root/releases/current.json"
 cmp -s "$TMP/root/releases/$SHA.json" "$TMP/root/releases/previous.json"
 
