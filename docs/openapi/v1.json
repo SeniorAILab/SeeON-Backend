@@ -38,7 +38,8 @@
     "retryability": "Only HTTP 429, HTTP 503, and client-observed network or timeout failures are retryable. HTTP 409 requires state refresh or operator action and must not be blindly retried.",
     "credentialStorage": "The server persists only tokenId, a non-secret prefix, HMAC-SHA-256 digest, lifecycle, binding, and timestamps. Raw bearer values are displayed once and are never recoverable from storage.",
     "rotationGraceSeconds": 86400,
-    "omissionConfirmationTtlSeconds": 900
+    "omissionConfirmationTtlSeconds": 900,
+    "systemTestDashboardGate": "SYSTEM_TEST requires an active validation grant with explicit SYSTEM_TEST capability. It persists no camera, space, resident, person, or media identity; emits only the authorized facility in-app Alert/SSE/REST contract; and cannot enter external delivery infrastructure."
   },
   "x-error-status-map": {
     "400": ["INVALID_SCHEMA", "INVALID_TOPOLOGY"],
@@ -553,7 +554,7 @@
         "operationId": "createEdgeValidationRun",
         "tags": ["Edge credential administration"],
         "summary": "Create an isolated live-validation grant",
-        "description": "Creates a bounded validation-only grant for the expected installation generation. Validation events remain excluded from ordinary event, alert, dashboard, SSE, email, outbox, and search surfaces; only validation endpoints may read them.",
+        "description": "Creates a bounded validation grant for the expected installation generation. Capability is null by default. Only an explicit SYSTEM_TEST capability may admit the facility-level in-app SYSTEM_TEST contract; ordinary validation events remain excluded from alerts and dashboard delivery.",
         "security": [
           {
             "sessionCookie": []
@@ -798,7 +799,7 @@
         "operationId": "createMachineEvent",
         "tags": ["Machine API"],
         "summary": "Record an ML event",
-        "description": "The eft_v1 principal supplies facility, installation, and generation. Camera ownership is resolved server-side. Facility identity fields are not part of the v1 body. Previously deployed shared-token clients remain a separately metered compatibility path and do not gain eft_v1 authority.",
+        "description": "Normal events resolve camera ownership server-side. SYSTEM_TEST is a separate exact sentinel payload admitted only by an active validation grant with explicit SYSTEM_TEST capability; it contains no camera, space, room, person, resident, or media fields.",
         "security": [
           {
             "edgeBearer": []
@@ -1447,6 +1448,80 @@
           },
           "416": {
             "$ref": "#/components/responses/ClipRangeNotSatisfiable"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close": {
+      "post": {
+        "operationId": "closeEdgeValidationRun",
+        "tags": ["Edge credential administration"],
+        "summary": "Close a validation grant with audit history",
+        "description": "Idempotently closes the exact active validation grant under an idempotency key and writes VALIDATION_RUN_CLOSED provisioning audit. Resolve the SYSTEM_TEST Alert first; closed grants admit no new event.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EdgeInstallationId"
+          },
+          {
+            "name": "validationRunId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UuidV7"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseValidationRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Validation grant closed and audited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseValidationRunResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact idempotent close replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseValidationRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -3255,6 +3330,18 @@
             "type": "integer",
             "minimum": 60,
             "maximum": 3600
+          },
+          "capability": {
+            "oneOf": [
+              {
+                "type": "string",
+                "const": "SYSTEM_TEST"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         }
       },
@@ -3297,77 +3384,29 @@
           },
           "expiresAt": {
             "$ref": "#/components/schemas/Rfc3339MillisUtc"
-          }
-        }
-      },
-      "RecordEventRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["camera_id", "type", "detected_at"],
-        "properties": {
-          "camera_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
           },
-          "type": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "detected_at": {
-            "$ref": "#/components/schemas/Rfc3339MillisUtc"
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "config_version": {
-            "type": "number",
-            "minimum": 0
-          },
-          "model_version": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "detector_version": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "operating_threshold": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "snapshot_key": {
+          "capability": {
             "oneOf": [
               {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 512
+                "const": "SYSTEM_TEST"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "clip_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "clock_source": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "edge_event_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
           }
-        },
-        "description": "No facility identifier, connection URL, camera authentication material, or secret-shaped field is accepted."
+        }
+      },
+      "RecordEventRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NormalRecordEventRequest"
+          },
+          {
+            "$ref": "#/components/schemas/SystemTestRecordEventRequest"
+          }
+        ]
       },
       "RecordEventResponse": {
         "oneOf": [
@@ -3802,7 +3841,261 @@
             "maxLength": 128
           }
         }
+      },
+      "NormalRecordEventRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["camera_id", "type", "detected_at"],
+        "properties": {
+          "camera_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "config_version": {
+            "type": "number",
+            "minimum": 0
+          },
+          "model_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "detector_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "operating_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "snapshot_key": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "clock_source": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "edge_event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "description": "No facility identifier, connection URL, camera authentication material, or secret-shaped field is accepted."
+      },
+      "SystemTestRecordEventRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "test_mode",
+          "validation_run_id",
+          "edge_event_id",
+          "detected_at"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "test_mode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "validation_run_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edge_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        },
+        "description": "Exact no-camera, no-room, no-person, no-resident, no-media SYSTEM_TEST wire payload."
+      },
+      "CloseValidationRunRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "expectedStatus"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedStatus": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "CloseValidationRunResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "validationRunId",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "status",
+          "closedAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "validationRunId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "status": {
+            "type": "string",
+            "const": "CLOSED"
+          },
+          "closedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "SystemTestAlert": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "residentId",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "source",
+          "probability",
+          "snapshotKey",
+          "detectedAt",
+          "status",
+          "testMode",
+          "label",
+          "ttsText"
+        ],
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "residentId": {
+            "type": "null"
+          },
+          "cameraId": {
+            "type": "null"
+          },
+          "spaceId": {
+            "type": "null"
+          },
+          "room": {
+            "type": "null"
+          },
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "source": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "probability": {
+            "type": "null"
+          },
+          "snapshotKey": {
+            "type": "null"
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "testMode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "label": {
+            "type": "string",
+            "const": "SYSTEM TEST - NOT A RESIDENT ALERT"
+          },
+          "ttsText": {
+            "type": "string",
+            "const": "System test emergency notification"
+          }
+        }
       }
     }
+  },
+  "x-system-test-dashboard-contract": {
+    "sentinel": "SYSTEM_TEST",
+    "label": "SYSTEM TEST - NOT A RESIDENT ALERT",
+    "ttsText": "System test emergency notification",
+    "restPath": "/api/v1/alerts?status=NEW",
+    "ssePath": "/api/v1/dashboard/stream",
+    "resolvePath": "/api/v1/alerts/{alertId}/resolve",
+    "retentionDays": 30,
+    "schema": {
+      "$ref": "#/components/schemas/SystemTestAlert"
+    },
+    "externalChannels": false
   }
 }

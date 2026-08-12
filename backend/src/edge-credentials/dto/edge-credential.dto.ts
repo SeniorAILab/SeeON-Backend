@@ -53,6 +53,12 @@ export class CreateValidationRunRequestDto {
   @IsIn([1]) schemaVersion!: 1;
   @IsInt() @Min(1) expectedEnrollmentGeneration!: number;
   @IsInt() @Min(1) @Max(3600) durationSeconds!: number;
+  @IsOptional() @IsIn(['SYSTEM_TEST']) capability?: 'SYSTEM_TEST';
+}
+
+export class CloseValidationRunRequestDto {
+  @IsIn([1]) schemaVersion!: 1;
+  @IsIn(['ACTIVE']) expectedStatus!: 'ACTIVE';
 }
 
 export class OwnershipTransferItemRequestDto {

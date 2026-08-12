@@ -41,7 +41,7 @@ describe('compiled CSRF route inventory', () => {
 
   afterAll(async () => app.close());
 
-  it('matches all 68 compiled application routes and explicit classifications', () => {
+  it('matches all 69 compiled application routes and explicit classifications', () => {
     const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder().setTitle('inventory').build(),
@@ -58,10 +58,10 @@ describe('compiled CSRF route inventory', () => {
       CSRF_ROUTE_INVENTORY.map(([method, path]) => `${method} ${path}`),
     );
     expect([...compiled].sort()).toEqual([...expected].sort());
-    expect(CSRF_ROUTE_INVENTORY).toHaveLength(68);
+    expect(CSRF_ROUTE_INVENTORY).toHaveLength(69);
     expect(
       CSRF_ROUTE_INVENTORY.filter((route) => route[2] === 'BROWSER'),
-    ).toHaveLength(32);
+    ).toHaveLength(33);
     expect(
       CSRF_ROUTE_INVENTORY.filter((route) => route[2] === 'EDGE'),
     ).toHaveLength(9);

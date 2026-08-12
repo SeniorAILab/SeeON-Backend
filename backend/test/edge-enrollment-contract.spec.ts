@@ -11,6 +11,8 @@ import { PrismaClient, Role } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AuthModule } from '../src/auth/auth.module.js';
+import { DashboardModule } from '../src/dashboard/dashboard.module.js';
+import { DashboardStreamController } from '../src/dashboard/sse.controller.js';
 import {
   JwtAuthGuard,
   type RequestWithAuth,
@@ -22,6 +24,7 @@ import {
 } from '../src/edge-credentials/edge-clock.js';
 import { EdgeCredentialsModule } from '../src/edge-credentials/edge-credentials.module.js';
 import { EventRecorderService } from '../src/events/event-recorder.service.js';
+import { EventsModule } from '../src/events/events.module.js';
 import { PrismaModule } from '../src/prisma/prisma.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { sha256CanonicalJson } from './helpers/edge-contract-fixtures.js';
@@ -35,6 +38,7 @@ import {
   EDGE_ENROLLMENT_SPACE_ID as SPACE_ID,
 } from './helpers/edge-enrollment-db-fixture.js';
 import {
+  readArray,
   readObject,
   readObjectField,
   readStringField,
@@ -71,6 +75,7 @@ describe('edge enrollment v1 contract', () => {
   let admin: PrismaClient;
   let clock: FakeClock;
   let sequence = 0;
+  const streamCleanups: Array<() => void> = [];
 
   beforeAll(async () => {
     clock = new FakeClock();
@@ -80,6 +85,8 @@ describe('edge enrollment v1 contract', () => {
         PrismaModule,
         AuthModule,
         EdgeCredentialsModule,
+        EventsModule,
+        DashboardModule,
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -103,6 +110,10 @@ describe('edge enrollment v1 contract', () => {
     await admin.$connect();
     await cleanup();
     await seedFacilities();
+  });
+
+  afterEach(() => {
+    for (const cleanup of streamCleanups.splice(0)) cleanup();
   });
 
   afterAll(async () => {
@@ -330,6 +341,7 @@ describe('edge enrollment v1 contract', () => {
     const recorder = new EventRecorderService(
       prisma,
       cameras as unknown as CamerasService,
+      clock,
     );
     const validationRunId = readStringField(
       readObject(grant.body, 'validation grant'),
@@ -345,6 +357,326 @@ describe('edge enrollment v1 contract', () => {
     });
     expect(recorded.event.validationRunId).toBe(validationRunId);
     expect((await recorder.list(FACILITY_ID)).items).toHaveLength(0);
+
+    const deniedEdgeEventId = uuidV4();
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${issued.token}`)
+      .send({
+        type: 'SYSTEM_TEST',
+        test_mode: 'SYSTEM_TEST',
+        validation_run_id: validationRunId,
+        edge_event_id: deniedEdgeEventId,
+        detected_at: '2026-01-01T00:02:00.000Z',
+      })
+      .expect(403);
+    await expect(
+      admin.event.count({
+        where: { facilityId: FACILITY_ID, edgeEventId: deniedEdgeEventId },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it('delivers one capability-gated facility SYSTEM_TEST in-app and cleans it up visibly', async () => {
+    const issued = await issue();
+    await verify(issued, uuidV4()).expect(200);
+    const grantResponse = await mutate(
+      `/api/v1/admin/edge-installations/${issued.edgeInstallationId}/validation-runs`,
+      {
+        schemaVersion: 1,
+        expectedEnrollmentGeneration: 1,
+        durationSeconds: 900,
+        capability: 'SYSTEM_TEST',
+      },
+    ).expect(201);
+    const grant = readObject(grantResponse.body, 'SYSTEM_TEST grant');
+    const validationRunId = readStringField(grant, 'validationRunId');
+    expect(grant.capability).toBe('SYSTEM_TEST');
+
+    const stream = app.get(DashboardStreamController);
+    const alertFrames: string[] = [];
+    let alertFrameResolve: ((frame: string) => void) | undefined;
+    let updateFrameResolve: ((frame: string) => void) | undefined;
+    const emitted = new Promise<string>((resolve) => {
+      alertFrameResolve = resolve;
+    });
+    const updated = new Promise<string>((resolve) => {
+      updateFrameResolve = resolve;
+    });
+    let closeStream: (() => void) | undefined;
+    await stream.sse(
+      {
+        headers: {},
+        effectiveFacilityId: FACILITY_ID,
+        user: {
+          id: 'task-9-super-admin',
+          facilityId: null,
+          role: Role.SUPER_ADMIN,
+          email: 'task-9@example.invalid',
+          nickname: 'Task 9',
+          sessionVersion: 1,
+        },
+        socket: { on: jest.fn() },
+        on: jest.fn((_event: string, callback: () => void) => {
+          closeStream = callback;
+        }),
+      } as never,
+      {
+        flushHeaders: jest.fn(),
+        flush: jest.fn(),
+        end: jest.fn(),
+        write: jest.fn((chunk: string) => {
+          if (chunk.includes('event: alert\n')) {
+            alertFrames.push(chunk);
+            alertFrameResolve?.(chunk);
+          }
+          if (chunk.includes('event: alert-updated\n')) {
+            updateFrameResolve?.(chunk);
+          }
+          return true;
+        }),
+      } as never,
+    );
+    if (closeStream === undefined) throw new Error('SSE close hook missing');
+    streamCleanups.push(closeStream);
+    const otherFacilityFrames: string[] = [];
+    let closeOtherStream: (() => void) | undefined;
+    await stream.sse(
+      {
+        headers: {},
+        effectiveFacilityId: OTHER_FACILITY_ID,
+        user: {
+          id: 'task-9-super-admin',
+          facilityId: null,
+          role: Role.SUPER_ADMIN,
+          email: 'task-9@example.invalid',
+          nickname: 'Task 9',
+          sessionVersion: 1,
+        },
+        socket: { on: jest.fn() },
+        on: jest.fn((_event: string, callback: () => void) => {
+          closeOtherStream = callback;
+        }),
+      } as never,
+      {
+        flushHeaders: jest.fn(),
+        flush: jest.fn(),
+        end: jest.fn(),
+        write: jest.fn((chunk: string) => {
+          if (chunk.includes('event: alert\n')) otherFacilityFrames.push(chunk);
+          return true;
+        }),
+      } as never,
+    );
+    if (closeOtherStream === undefined) {
+      throw new Error('other-facility SSE close hook missing');
+    }
+    streamCleanups.push(closeOtherStream);
+    const edgeEventId = uuidV4();
+    const detectedAt = '2026-01-01T00:01:00.000Z';
+    const body = {
+      type: 'SYSTEM_TEST',
+      test_mode: 'SYSTEM_TEST',
+      validation_run_id: validationRunId,
+      edge_event_id: edgeEventId,
+      detected_at: detectedAt,
+    };
+    const outboxBefore = await admin.alertEvent.count();
+    const deliveryBefore = await admin.deliveryAttempt.count();
+    const acceptedAt = clock.now();
+
+    const accepted = await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${issued.token}`)
+      .send(body)
+      .expect(201);
+    const eventId = readStringField(
+      readObject(accepted.body, 'SYSTEM_TEST receipt'),
+      'event_id',
+    );
+    const alertFrame = await withDeadline(emitted, 'SYSTEM_TEST alert');
+    const alert = JSON.parse(alertFrame.split('data: ')[1]) as Record<
+      string,
+      unknown
+    >;
+    expect(alert).toMatchObject({
+      backendEventId: eventId,
+      cameraId: null,
+      spaceId: null,
+      room: null,
+      type: 'SYSTEM_TEST',
+      source: 'SYSTEM_TEST',
+      probability: null,
+      snapshotKey: null,
+      residentId: null,
+      testMode: 'SYSTEM_TEST',
+      label: 'SYSTEM TEST - NOT A RESIDENT ALERT',
+      ttsText: 'System test emergency notification',
+    });
+
+    const replay = await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${issued.token}`)
+      .send(body)
+      .expect(201);
+    expect(readObject(replay.body, 'SYSTEM_TEST replay')).toMatchObject({
+      event_id: eventId,
+      edge_event_id: edgeEventId,
+      status: 'accepted',
+    });
+    expect(alertFrames).toHaveLength(1);
+    expect(otherFacilityFrames).toHaveLength(0);
+    await expect(
+      admin.event.count({ where: { facilityId: FACILITY_ID, edgeEventId } }),
+    ).resolves.toBe(1);
+    await expect(
+      admin.alert.count({
+        where: { facilityId: FACILITY_ID, type: 'SYSTEM_TEST' },
+      }),
+    ).resolves.toBe(1);
+    await expect(admin.alertEvent.count()).resolves.toBe(outboxBefore);
+    await expect(admin.deliveryAttempt.count()).resolves.toBe(deliveryBefore);
+
+    const listed = await request(app.getHttpServer())
+      .get('/api/v1/alerts?status=NEW')
+      .set('X-Facility-Id', FACILITY_ID)
+      .expect(200);
+    const [listedAlert] = readArray(listed.body, 'SYSTEM_TEST alerts');
+    expect(readObject(listedAlert, 'SYSTEM_TEST alert')).toMatchObject({
+      backendEventId: eventId,
+      cameraId: null,
+      spaceId: null,
+      room: null,
+      type: 'SYSTEM_TEST',
+      source: 'SYSTEM_TEST',
+      probability: null,
+      snapshotKey: null,
+      testMode: 'SYSTEM_TEST',
+      label: 'SYSTEM TEST - NOT A RESIDENT ALERT',
+      ttsText: 'System test emergency notification',
+    });
+    const otherFacilityList = await request(app.getHttpServer())
+      .get('/api/v1/alerts?status=NEW')
+      .set('X-Facility-Id', OTHER_FACILITY_ID)
+      .expect(200);
+    expect(readArray(otherFacilityList.body, 'other facility alerts')).toEqual(
+      [],
+    );
+
+    const invalidId = uuidV4();
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set(
+        'Authorization',
+        `${issued.token.slice(0, -1)}${issued.token.endsWith('A') ? 'B' : 'A'}`,
+      )
+      .send({ ...body, edge_event_id: invalidId })
+      .expect(401);
+    await expect(
+      admin.event.count({
+        where: { facilityId: FACILITY_ID, edgeEventId: invalidId },
+      }),
+    ).resolves.toBe(0);
+
+    const alertId = readStringField(
+      readObject(listedAlert, 'SYSTEM_TEST alert'),
+      'id',
+    );
+    await request(app.getHttpServer())
+      .patch(`/api/v1/alerts/${alertId}/resolve`)
+      .set('X-Facility-Id', FACILITY_ID)
+      .expect(200);
+    const updateFrame = await withDeadline(updated, 'SYSTEM_TEST resolve');
+    expect(JSON.parse(updateFrame.split('data: ')[1])).toMatchObject({
+      id: alertId,
+      spaceId: null,
+      status: 'RESOLVED',
+    });
+    closeOtherStream();
+    streamCleanups.pop();
+    closeStream();
+    streamCleanups.pop();
+    const activeAfterResolve = await request(app.getHttpServer())
+      .get('/api/v1/alerts?status=NEW')
+      .set('X-Facility-Id', FACILITY_ID)
+      .expect(200);
+    expect(readArray(activeAfterResolve.body, 'active alerts')).toEqual([]);
+
+    const closePath = `/api/v1/admin/edge-installations/${issued.edgeInstallationId}/validation-runs/${validationRunId}/close`;
+    const closeBody = { schemaVersion: 1, expectedStatus: 'ACTIVE' } as const;
+    const closeKey = uuidV7();
+    const closed = await mutateWithKey(closePath, closeBody, closeKey).expect(
+      201,
+    );
+    const closeReplay = await mutateWithKey(
+      closePath,
+      closeBody,
+      closeKey,
+    ).expect(201);
+    expect(closeReplay.body).toEqual(closed.body);
+    await expect(
+      admin.edgeProvisioningAudit.count({
+        where: { facilityId: FACILITY_ID, action: 'VALIDATION_RUN_CLOSED' },
+      }),
+    ).resolves.toBe(1);
+    const rejectedAfterCloseId = uuidV4();
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${issued.token}`)
+      .send({ ...body, edge_event_id: rejectedAfterCloseId })
+      .expect(403);
+    await expect(
+      admin.event.count({
+        where: {
+          facilityId: FACILITY_ID,
+          edgeEventId: rejectedAfterCloseId,
+        },
+      }),
+    ).resolves.toBe(0);
+    const retained = await admin.event.findUniqueOrThrow({
+      where: {
+        facilityId_edgeEventId: { facilityId: FACILITY_ID, edgeEventId },
+      },
+    });
+    expect(retained.retentionExpiresAt?.toISOString()).toBe(
+      new Date(acceptedAt.getTime() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
+    );
+  });
+
+  it('rejects SYSTEM_TEST camera/media fields before persistence', async () => {
+    const issued = await issue();
+    await verify(issued, uuidV4()).expect(200);
+    const grantResponse = await mutate(
+      `/api/v1/admin/edge-installations/${issued.edgeInstallationId}/validation-runs`,
+      {
+        schemaVersion: 1,
+        expectedEnrollmentGeneration: 1,
+        durationSeconds: 900,
+        capability: 'SYSTEM_TEST',
+      },
+    ).expect(201);
+    const validationRunId = readStringField(
+      readObject(grantResponse.body, 'SYSTEM_TEST grant'),
+      'validationRunId',
+    );
+    const edgeEventId = uuidV4();
+
+    await request(app.getHttpServer())
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${issued.token}`)
+      .send({
+        type: 'SYSTEM_TEST',
+        test_mode: 'SYSTEM_TEST',
+        validation_run_id: validationRunId,
+        edge_event_id: edgeEventId,
+        detected_at: '2026-01-01T00:01:00.000Z',
+        camera_id: CAMERA_ID,
+        clip_id: 'forbidden-media',
+      })
+      .expect(400);
+    await expect(
+      admin.event.count({ where: { facilityId: FACILITY_ID, edgeEventId } }),
+    ).resolves.toBe(0);
   });
 
   it('limits verify to five attempts per source IP and twenty per facility code', async () => {
@@ -424,7 +756,35 @@ describe('edge enrollment v1 contract', () => {
     return `8b0f5ba2-d359-4d8e-948f-${sequence.toString(16).padStart(12, '0')}`;
   }
 
+  async function withDeadline<T>(
+    signal: Promise<T>,
+    label: string,
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        signal,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${label} timeout`)),
+            2_000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
   async function seedFacilities(): Promise<void> {
+    await admin.user.create({
+      data: {
+        id: 'task-9-super-admin',
+        email: 'task-9@example.invalid',
+        nickname: 'Task 9',
+        role: Role.SUPER_ADMIN,
+      },
+    });
     await admin.facility.createMany({
       data: [
         { id: FACILITY_ID, name: 'Test Facility' },
@@ -461,5 +821,6 @@ describe('edge enrollment v1 contract', () => {
 
   async function cleanup(): Promise<void> {
     await cleanupEdgeEnrollmentFixtures(admin);
+    await admin.user.deleteMany({ where: { id: 'task-9-super-admin' } });
   }
 });

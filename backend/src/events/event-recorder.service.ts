@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,12 +11,21 @@ import * as crypto from 'crypto';
 import { CamerasService } from '../cameras/cameras.service.js';
 import { AlertEventTypes } from '../alerts/dto/alert-events.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EDGE_CLOCK, type EdgeClock } from '../edge-credentials/edge-clock.js';
 import type { ListEventsQueryDto } from './dto/event.dto.js';
+import {
+  SYSTEM_TEST_MODE,
+  SYSTEM_TEST_RETENTION_DAYS,
+  type SystemTestMode,
+} from './system-test.constants.js';
 
-const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
+const ALLOWED_EVENT_TYPES = [
+  ...Object.values(AlertEventTypes),
+  SYSTEM_TEST_MODE,
+];
 const ALLOWED_EVENT_TYPE_SET = new Set<string>(ALLOWED_EVENT_TYPES);
 export interface RecordEventInput {
-  cameraId: string;
+  cameraId: string | null;
   type: string;
   detectedAt: Date;
   confidence?: number;
@@ -28,6 +39,8 @@ export interface RecordEventInput {
   edgeEventId?: string;
   facilityId?: string;
   validationRunId?: string;
+  validationCapability?: SystemTestMode;
+  testMode?: SystemTestMode;
 }
 
 export interface RecordedEventResult {
@@ -44,13 +57,13 @@ export class EventRecorderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cameras: CamerasService,
+    @Inject(EDGE_CLOCK) private readonly clock: EdgeClock,
   ) {}
 
   async record(input: RecordEventInput): Promise<RecordedEventResult> {
     const edgeEventId = normalizeEdgeEventId(input.edgeEventId);
-    const cameraId = input.cameraId.trim();
     const type = normalizeEventType(input.type);
-    if (!cameraId) throw new BadRequestException('camera_id is required');
+    const systemTest = type === SYSTEM_TEST_MODE;
     if (Number.isNaN(input.detectedAt.getTime())) {
       throw new BadRequestException('detected_at must be a valid timestamp');
     }
@@ -58,75 +71,94 @@ export class EventRecorderService {
       throw new BadRequestException('confidence must be a finite number');
     }
 
-    const camera = await this.cameras.resolveForEventIngest(cameraId);
-    if (
-      input.facilityId !== undefined &&
-      input.facilityId !== camera.facilityId
-    ) {
-      throw new NotFoundException('unknown_camera');
+    let facilityId: string;
+    let cameraId: string | null;
+    let spaceId: string | null;
+    if (systemTest) {
+      assertSystemTestInput(input, edgeEventId);
+      facilityId = input.facilityId as string;
+      cameraId = null;
+      spaceId = null;
+    } else {
+      if (
+        input.testMode !== undefined ||
+        input.validationCapability !== undefined
+      ) {
+        throw new BadRequestException('test mode requires SYSTEM_TEST type');
+      }
+      cameraId = input.cameraId?.trim() ?? '';
+      if (!cameraId) throw new BadRequestException('camera_id is required');
+      const camera = await this.cameras.resolveForEventIngest(cameraId);
+      if (
+        input.facilityId !== undefined &&
+        input.facilityId !== camera.facilityId
+      ) {
+        throw new NotFoundException('unknown_camera');
+      }
+      facilityId = camera.facilityId;
+      spaceId = camera.spaceId;
     }
     const detectedAt = input.detectedAt;
     const dedupKey = edgeEventId
       ? buildEdgeEventDedupKey(edgeEventId)
-      : buildEventDedupKey(cameraId, detectedAt, type);
+      : buildEventDedupKey(cameraId as string, detectedAt, type);
 
     try {
-      const event = await this.prisma.withFacilityContext(
-        camera.facilityId,
-        (tx) =>
-          tx.event.create({
-            data: {
-              facilityId: camera.facilityId,
-              cameraId: camera.id,
-              spaceId: camera.spaceId,
-              type,
-              confidence: input.confidence,
-              detectedAt,
-              dedupKey,
-              clipId: input.clipId ?? null,
-              configVersion: input.configVersion ?? null,
-              modelVersion: input.modelVersion ?? null,
-              detectorVersion: input.detectorVersion ?? null,
-              operatingThreshold: input.operatingThreshold ?? null,
-              // PR-B0(f): snapshot key is ALWAYS server-derived via
-              // PUT /events/:eventId/snapshot. Any client-supplied snapshot_key
-              // is ignored at create; that upload route is the sole non-null setter.
-              snapshotKey: null,
-              clockSource: input.clockSource ?? null,
-              edgeEventId,
-              validationRunId: input.validationRunId ?? null,
-            },
-          }),
+      const event = await this.prisma.withFacilityContext(facilityId, (tx) =>
+        tx.event.create({
+          data: {
+            facilityId,
+            cameraId,
+            spaceId,
+            type,
+            confidence: systemTest ? null : input.confidence,
+            detectedAt,
+            dedupKey,
+            clipId: input.clipId ?? null,
+            configVersion: input.configVersion ?? null,
+            modelVersion: input.modelVersion ?? null,
+            detectorVersion: input.detectorVersion ?? null,
+            operatingThreshold: input.operatingThreshold ?? null,
+            // PR-B0(f): snapshot key is ALWAYS server-derived via
+            // PUT /events/:eventId/snapshot. Any client-supplied snapshot_key
+            // is ignored at create; that upload route is the sole non-null setter.
+            snapshotKey: null,
+            clockSource: input.clockSource ?? null,
+            edgeEventId,
+            validationRunId: input.validationRunId ?? null,
+            retentionExpiresAt: systemTest
+              ? addDays(this.clock.now(), SYSTEM_TEST_RETENTION_DAYS)
+              : null,
+          },
+        }),
       );
       return { event, duplicate: false };
     } catch (err: unknown) {
       if (edgeEventId && isUniqueConflict(err)) {
         const existing = await this.prisma.withFacilityContext(
-          camera.facilityId,
+          facilityId,
           (tx) =>
             tx.event.findUniqueOrThrow({
               where: {
                 facilityId_edgeEventId: {
-                  facilityId: camera.facilityId,
+                  facilityId,
                   edgeEventId,
                 },
               },
             }),
         );
-        if (!sameEdgeEvent(existing, input, camera.id, type, detectedAt)) {
+        if (!sameEdgeEvent(existing, input, cameraId, type, detectedAt)) {
           throw new ConflictException('edge_event_id payload conflict');
         }
         return { event: existing, duplicate: true };
       }
       if (!isDedupConflict(err)) throw err;
-      const existing = await this.prisma.withFacilityContext(
-        camera.facilityId,
-        (tx) =>
-          tx.event.findUniqueOrThrow({
-            where: {
-              facilityId_dedupKey: { facilityId: camera.facilityId, dedupKey },
-            },
-          }),
+      const existing = await this.prisma.withFacilityContext(facilityId, (tx) =>
+        tx.event.findUniqueOrThrow({
+          where: {
+            facilityId_dedupKey: { facilityId, dedupKey },
+          },
+        }),
       );
       return { event: existing, duplicate: true };
     }
@@ -236,7 +268,7 @@ function buildEdgeEventDedupKey(edgeEventId: string): string {
 function sameEdgeEvent(
   event: Event,
   input: RecordEventInput,
-  cameraId: string,
+  cameraId: string | null,
   type: string,
   detectedAt: Date,
 ): boolean {
@@ -251,7 +283,10 @@ function sameEdgeEvent(
     event.operatingThreshold === (input.operatingThreshold ?? null) &&
     event.clockSource === (input.clockSource ?? null) &&
     event.clipId === (input.clipId ?? null) &&
-    event.validationRunId === (input.validationRunId ?? null)
+    event.validationRunId === (input.validationRunId ?? null) &&
+    (type === SYSTEM_TEST_MODE
+      ? event.retentionExpiresAt !== null
+      : event.retentionExpiresAt === null)
   );
 }
 
@@ -269,7 +304,9 @@ export function buildEventDedupKey(
 }
 
 function normalizeEventType(rawType: string): string {
-  const type = rawType.trim().toLowerCase();
+  const trimmed = rawType.trim();
+  const type =
+    trimmed === SYSTEM_TEST_MODE ? SYSTEM_TEST_MODE : trimmed.toLowerCase();
   if (!ALLOWED_EVENT_TYPE_SET.has(type)) {
     throw new BadRequestException(
       `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
@@ -277,6 +314,44 @@ function normalizeEventType(rawType: string): string {
   }
   return type;
 }
+
+function assertSystemTestInput(
+  input: RecordEventInput,
+  edgeEventId: string | null,
+): void {
+  if (
+    input.validationRunId === undefined ||
+    input.validationCapability !== SYSTEM_TEST_MODE ||
+    input.facilityId === undefined
+  ) {
+    throw new ForbiddenException('SYSTEM_TEST validation capability required');
+  }
+  if (input.testMode !== SYSTEM_TEST_MODE || edgeEventId === null) {
+    throw new BadRequestException(
+      'SYSTEM_TEST requires test_mode and edge_event_id',
+    );
+  }
+  if (
+    input.cameraId !== null ||
+    input.confidence !== undefined ||
+    input.configVersion !== undefined ||
+    input.modelVersion !== undefined ||
+    input.detectorVersion !== undefined ||
+    input.operatingThreshold !== undefined ||
+    input.snapshotKey !== undefined ||
+    input.clockSource !== undefined ||
+    input.clipId !== undefined
+  ) {
+    throw new BadRequestException(
+      'SYSTEM_TEST accepts no camera, room, resident, person, or media fields',
+    );
+  }
+}
+
+function addDays(value: Date, days: number): Date {
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1_000);
+}
+
 function encodeListCursor(event: Pick<Event, 'detectedAt' | 'id'>): string {
   return Buffer.from(`${event.detectedAt.toISOString()}|${event.id}`).toString(
     'base64',

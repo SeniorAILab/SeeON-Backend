@@ -47,6 +47,11 @@ import { SuperAdminEdgeGuard } from './super-admin-edge.guard.js';
     LegacyEdgeMetrics,
     SuperAdminEdgeGuard,
   ],
-  exports: [EdgeCredentialAuthenticator, LegacyEdgeMetrics, EdgeAdminService],
+  exports: [
+    EDGE_CLOCK,
+    EdgeCredentialAuthenticator,
+    LegacyEdgeMetrics,
+    EdgeAdminService,
+  ],
 })
 export class EdgeCredentialsModule {}

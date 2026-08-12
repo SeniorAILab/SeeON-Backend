@@ -51,6 +51,45 @@ describe('formatAlertEvent', () => {
   });
 });
 
+describe('formatSystemTestAlertEvent', () => {
+  it('serializes the exact SeeON-Front SYSTEM_TEST sentinel without room semantics', () => {
+    const frame = formatAlertEvent({
+      ...alertEvent(4n, 'alert-system-test'),
+      cameraId: null,
+      spaceId: null,
+      room: null,
+      space: null,
+      type: 'SYSTEM_TEST',
+      probability: null,
+      testMode: 'SYSTEM_TEST',
+    } as never);
+    const payload = JSON.parse(frame.split('data: ')[1]) as Record<
+      string,
+      unknown
+    >;
+
+    expect(payload).toEqual({
+      id: 'alert-system-test',
+      backendEventId: 'event-alert-system-test',
+      alertSeq: '4',
+      facilityId: 'facility-1',
+      spaceId: null,
+      cameraId: null,
+      type: 'SYSTEM_TEST',
+      source: 'SYSTEM_TEST',
+      status: 'NEW',
+      probability: null,
+      detectedAt: '2026-06-22T00:00:04.000Z',
+      testMode: 'SYSTEM_TEST',
+      label: 'SYSTEM TEST - NOT A RESIDENT ALERT',
+      ttsText: 'System test emergency notification',
+      snapshotKey: null,
+      residentId: null,
+      room: null,
+    });
+  });
+});
+
 describe('formatAlertUpdateEvent', () => {
   it('serializes exactly the pinned alert-updated payload fields and NO id line', () => {
     const frame = formatAlertUpdateEvent({
