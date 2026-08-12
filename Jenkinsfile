@@ -187,25 +187,6 @@ pipeline {
       }
     }
 
-    stage('Build frontend') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
-      steps {
-        sh '''#!/usr/bin/env sh
-          set -eu
-          VITE_EVENT_CLIPS_ENABLED=$(sh scripts/deploy/validate-event-clip-env.sh "$DEPLOY_ROOT/shared/.env" --print-front-flag)
-          export VITE_EVENT_CLIPS_ENABLED
-          docker buildx build --builder "$BUILDX_BUILDER" --load \
-            --resource memory=2g --resource memory-swap=3g \
-            --build-arg DEPLOY_SHA="$RELEASE_SHA" \
-            --build-arg NODE_OPTIONS="$NODE_OPTIONS" \
-            --build-arg VITE_EVENT_CLIPS_ENABLED="$VITE_EVENT_CLIPS_ENABLED" \
-            --tag "eldercare-front:$RELEASE_SHA" --file front/Dockerfile .
-        '''
-      }
-    }
-
     stage('Deploy') {
       when {
         expression { env.NO_OP != '1' }

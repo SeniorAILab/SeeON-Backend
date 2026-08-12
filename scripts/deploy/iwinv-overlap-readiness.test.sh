@@ -12,6 +12,7 @@ cat > "$TMP/host.env" <<'EOF'
 NODE_ENV=production
 FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
 AUTH_COOKIE_SECURE=auto
+AUTH_COOKIE_SAME_SITE=strict
 ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 POSTGRES_USER=fall
 POSTGRES_PASSWORD=test
@@ -29,7 +30,6 @@ MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
 EVENT_CLIPS_ENABLED=false
-VITE_EVENT_CLIPS_ENABLED=false
 EOF
 chmod 600 "$TMP/host.env"
 printf '%s\n' fixture-manifest > "$TMP/media/event-media-fixture/MANIFEST"
@@ -51,7 +51,6 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   case "$image" in
     eldercare-backend:*) printf '%s\n' sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
     eldercare-api-ingress:*) printf '%s\n' sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc ;;
-    eldercare-front:*) printf '%s\n' sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff ;;
     *) exit 1 ;;
   esac
   exit 0

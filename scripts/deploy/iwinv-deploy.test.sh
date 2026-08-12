@@ -67,7 +67,9 @@ if [ "${1:-}" = compose ]; then
     *' up -d --wait --wait-timeout 120 backend api-ingress front '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
     *' up -d --wait --wait-timeout 120 backend api-ingress '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
     *' up -d --wait --wait-timeout 120 backend front '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
+    *' up -d --wait --wait-timeout 120 backend '*) [ "${MOCK_APP_START_FAIL:-0}" != 1 ] || exit 1 ;;
     *' stop front api-ingress backend '*) ;;
+    *' stop api-ingress backend '*) ;;
     *'prisma migrate deploy'*) [ "${MOCK_MIGRATE_FAIL:-0}" != 1 ] || exit 1 ;;
     *'seed-super-admin.js'*) ;;
     *) printf 'unexpected docker compose command: %s\n' "$*" >&2; exit 1 ;;
@@ -112,6 +114,7 @@ DATABASE_URL=postgresql://fall_app:test@db/fall_prod
 DIRECT_URL=postgresql://fall:test@db/fall_prod
 FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
 AUTH_COOKIE_SECURE=auto
+AUTH_COOKIE_SAME_SITE=strict
 ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 SESSION_JWT_SECRET=secret
 SMTP_HOST=mail
@@ -119,7 +122,6 @@ SMTP_USER=user
 SMTP_PASSWORD=password
 EDGE_FACILITY_TOKEN=token
 EVENT_CLIPS_ENABLED=false
-VITE_EVENT_CLIPS_ENABLED=false
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -264,11 +266,11 @@ output=$(run_deploy --sha "$SHA" --dry-run)
 assert_contains "$output" 'compose pull db'
 assert_not_contains "$output" 'compose pull backend'
 assert_not_contains "$output" 'compose pull front'
-assert_contains "$output" "would verify exact local images eldercare-backend:$SHA, eldercare-api-ingress:$SHA, and eldercare-front:$SHA"
+assert_contains "$output" "would verify exact local images eldercare-backend:$SHA and eldercare-api-ingress:$SHA"
 assert_contains "$output" 'would create and validate pre-migration dump'
 assert_contains "$output" 'would sync app role, audit Prisma migration history, run migrate deploy, and bootstrap super-admin'
 assert_not_contains "$output" "docker image rm eldercare-backend:$SHA"
-assert_not_contains "$output" "docker image rm eldercare-front:$SHA"
+assert_contains "$output" "docker image rm eldercare-front:$SHA"
 # Normal deploy rejects a preexisting target manifest or current SHA before Docker, backups, or database work.
 manifest "$SHA" > "$TMP/root/releases/$SHA.json"
 : > "$TMP/mock.log"
@@ -343,12 +345,13 @@ manifest "$ROLLBACK_SHA" > "$TMP/root/releases/$ROLLBACK_SHA.json"
 cp "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/previous.json"
 : > "$TMP/mock.log"
 output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback)
-assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend front'
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend'
+assert_not_contains "$output" 'backend front'
 cmp -s "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/current.json"
 cmp -s "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/previous.json"
 log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_contains "$log" 'image inspect --format {{.Id}} eldercare-backend:'
-assert_contains "$log" 'image inspect --format {{.Id}} eldercare-front:'
+assert_not_contains "$log" 'image inspect --format {{.Id}} eldercare-front:'
 assert_not_contains "$log" 'image inspect --format {{.Id}} eldercare-api-ingress:'
 assert_contains "$log" 'image rm eldercare-api-ingress:cccccccccccccccccccccccccccccccccccccccc'
 
@@ -408,7 +411,8 @@ assert_contains "$log" 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGR
 assert_not_contains "$log" '--no-privileges'
 assert_contains "$log" 'exec -T db sh'
 assert_contains "$log" 'has_table_privilege'
-assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend front'
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend'
+assert_not_contains "$output" 'backend front'
 assert_order "$log" 'exec -T db sh' 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"'
 assert_order "$log" 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' 'has_table_privilege'
 : > "$TMP/mock.log"
@@ -429,7 +433,8 @@ log=$(sed -n '1,240p' "$TMP/mock.log")
 assert_contains "$log" 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction'
 assert_not_contains "$log" '--no-privileges'
 assert_contains "$log" 'has_function_privilege'
-assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend front'
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend'
+assert_not_contains "$output" 'backend front'
 manifest "$SHA" > "$TMP/root/releases/$SHA.json"
 # The post-readiness check is one attempt and includes the backend HTTP/body diagnostic.
 : > "$TMP/mock.log"
@@ -441,26 +446,8 @@ assert_contains "$output" 'status=503'; assert_contains "$output" 'body={"sha":"
 log=$(sed -n '1,200p' "$TMP/mock.log")
 health_calls=$(printf '%s\n' "$log" | grep -c 'backend node' || :)
 [ "$health_calls" -eq 1 ] || { printf 'expected exactly one backend health attempt, got %s\n' "$health_calls" >&2; exit 1; }
-# A wrong or malformed frontend version fails after one request and includes the response diagnostic.
-for front_version in "$ROLLBACK_SHA" 'not-a-sha'; do
-  : > "$TMP/mock.log"
-  set +e
-  output=$(MOCK_FRONT_VERSION="$front_version" run_deploy --rollback "$SHA"); status=$?
-  set -e
-  assert_failure "$status"; assert_contains "$output" 'Frontend exact-SHA verification failed'
-  assert_contains "$output" "$front_version"
-  log=$(sed -n '1,200p' "$TMP/mock.log")
-  front_version_calls=$(printf '%s\n' "$log" | grep -c 'front wget' || :)
-  [ "$front_version_calls" -eq 1 ] || { printf 'expected exactly one frontend version attempt, got %s\n' "$front_version_calls" >&2; exit 1; }
-done
-: > "$TMP/mock.log"
-set +e
-output=$(MOCK_FRONT_VERSION="$(printf '%s\nextra' "$SHA")" run_deploy --rollback "$SHA"); status=$?
-set -e
-assert_failure "$status"; assert_contains "$output" 'Frontend exact-SHA verification failed'
-log=$(sed -n '1,200p' "$TMP/mock.log")
-front_version_calls=$(printf '%s\n' "$log" | grep -c 'front wget' || :)
-[ "$front_version_calls" -eq 1 ] || { printf 'expected exactly one frontend version attempt, got %s\n' "$front_version_calls" >&2; exit 1; }
+# Legacy frontend metadata remains readable but is never activated or probed.
+assert_not_contains "$log" 'front wget'
 
 
 # Explicit rollback to the active release is rejected before any service, database, pointer, manifest, or image change.
@@ -528,7 +515,8 @@ pointer "$ROLLBACK_SHA" previous
 manifest "$SHA" > "$TMP/root/releases/$SHA.json"
 : > "$TMP/mock.log"
 output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback "$ROLLBACK_SHA")
-assert_contains "$output" "compose up -d --wait --wait-timeout 120 backend front"
+assert_contains "$output" "compose up -d --wait --wait-timeout 120 backend"
+assert_not_contains "$output" 'backend front'
 [ "$(sed -n 's/.*"sha":"\([^"]*\)".*/\1/p' "$TMP/root/releases/current.json")" = "$ROLLBACK_SHA" ]
 [ "$(sed -n 's/.*"sha":"\([^"]*\)".*/\1/p' "$TMP/root/releases/previous.json")" = "$CURRENT_SHA" ]
 [ ! -e "$TMP/root/releases/$SHA.json" ] || { printf 'stale immutable manifest was retained\n' >&2; exit 1; }
@@ -742,19 +730,20 @@ assert_failure "$status"; assert_contains "$output" 'Release manifest references
 : > "$TMP/mock.log"
 output=$(run_deploy --sha "$SHA")
 log=$(sed -n '1,320p' "$TMP/mock.log")
-assert_order "$log" 'stop front api-ingress backend' 'pg_dump'
+assert_order "$log" 'stop api-ingress backend' 'pg_dump'
 assert_order "$log" 'pg_dump' 'pull db'
 assert_order "$log" 'pg_restore --list' 'pull db'
-assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-ingress front'
+assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend api-ingress'
+assert_not_contains "$output" 'backend api-ingress front'
 assert_contains "$output" 'audit Prisma migration history before migrate deploy'
 assert_contains "$log" 'api-ingress wget'
-assert_contains "$log" 'front wget'
+assert_not_contains "$log" 'front wget'
 assert_contains "$log" 'OVERLAP_SMOKE_OK'
 assert_contains "$log" 'edge_observations'
 assert_order "$log" 'finished_at IS NULL AND rolled_back_at IS NULL' 'prisma migrate deploy'
 [ -f "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" ] || { printf '%s\n' 'post-deploy Edge receipt was not published' >&2; exit 1; }
 # Schema-2 writer output is one canonical line with a fixed key order and all image IDs.
-grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:[0-9a-f]{64}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:[0-9a-f]{64}","embedded_front_image":"eldercare-front:[0-9a-f]{40}","embedded_front_image_id":"sha256:[0-9a-f]{64}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[A-Za-z0-9._-]+\.dump","timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"\}$' "$TMP/root/releases/current.json" || {
+grep -Eq '^\{"schema":"2","sha":"[0-9a-f]{40}","backend_image":"eldercare-backend:[0-9a-f]{40}","backend_image_id":"sha256:[0-9a-f]{64}","api_ingress_image":"eldercare-api-ingress:[0-9a-f]{40}","api_ingress_image_id":"sha256:[0-9a-f]{64}","compose_sha256":"[0-9a-f]{64}","env_sha256":"[0-9a-f]{64}","pre_migration_dump":"normal-[A-Za-z0-9._-]+\.dump","timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"\}$' "$TMP/root/releases/current.json" || {
   printf 'schema-2 writer did not emit canonical fixed-order manifest:\n' >&2
   cat "$TMP/root/releases/current.json" >&2
   exit 1
@@ -909,12 +898,11 @@ output=$(MOCK_AUTH_RESULT=invalid MOCK_SHA="$FAIL_SHA" run_deploy --restore-db "
 set -e
 assert_failure "$status"
 [ -f "$TMP/root/releases/pending.json" ] || { printf 'failed acknowledged recovery cleared pending ownership\n' >&2; exit 1; }
-for recovery_failure in app_start backend_health frontend_health; do
+for recovery_failure in app_start backend_health; do
   set +e
   case "$recovery_failure" in
     app_start) output=$(MOCK_APP_START_FAIL=1 MOCK_SHA="$FAIL_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$? ;;
     backend_health) output=$(MOCK_BACKEND_FAIL=1 MOCK_SHA="$FAIL_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$? ;;
-    frontend_health) output=$(MOCK_FRONT_VERSION=wrong MOCK_SHA="$FAIL_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$? ;;
   esac
   set -e
   assert_failure "$status"
@@ -993,7 +981,7 @@ assert_contains "$jenkins" 'sh scripts/deploy/iwinv-deploy.sh --preflight-only'
 assert_order "$jenkins" "stage('Resolve release')" "stage('Build backend')"
 assert_contains "$jenkins" '--build-arg DEPLOY_SHA="$RELEASE_SHA"'
 assert_contains "$jenkins" '--tag "eldercare-backend:$RELEASE_SHA"'
-assert_contains "$jenkins" '--tag "eldercare-front:$RELEASE_SHA"'
+assert_not_contains "$jenkins" '--tag "eldercare-front:$RELEASE_SHA"'
 assert_contains "$jenkins" 'sh scripts/deploy/event-media-backup.sh'
 assert_contains "$jenkins" 'docker buildx rm "$BUILDX_BUILDER"'
 assert_contains "$jenkins" 'docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --buildkitd-config "$config" --use'

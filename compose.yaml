@@ -1,5 +1,5 @@
-# Host stack: db + backend + standalone API ingress + front (nginx).
-# App services (backend, api-ingress, front) are gated behind the `full` profile so the default
+# Backend stack: db + backend + standalone API ingress.
+# App services (backend, api-ingress) are gated behind the `full` profile so the default
 # `docker compose up` / `pnpm backend:db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
@@ -51,6 +51,7 @@ services:
       # Singular compatibility fallback only when FRONT_ORIGINS is absent.
       FRONT_ORIGIN: ${FRONT_ORIGIN:-}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE:-strict}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
       EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:-}
       # Fail-closed by default: only the literal string 'true' activates the
@@ -85,21 +86,6 @@ services:
       dockerfile: infra/api-ingress/Dockerfile
     ports:
       - "127.0.0.1:${API_INGRESS_PORT:-3001}:3000"
-    depends_on:
-      - backend
-    networks:
-      - private_ingress
-
-  front:
-    profiles: [full]
-    build:
-      context: .
-      dockerfile: front/Dockerfile
-      target: runner
-    # nginx serves the built SPA and reverse-proxies /api to the
-    # backend (same-origin), so no NEXT_PUBLIC_*/API_INTERNAL_URL is needed.
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
     depends_on:
       - backend
     networks:

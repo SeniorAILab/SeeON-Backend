@@ -109,6 +109,24 @@ test('host role ignores retired CD text outside deployment surfaces', () => {
   }
 });
 
+test('backend role rejects embedded frontend and Vercel ownership', () => {
+  const repo = fixture();
+  try {
+    repo.file('front/package.json');
+    repo.file('vercel.json');
+    repo.file('Jenkinsfile', 'docker build -f front/Dockerfile -t eldercare-front:sha .');
+
+    const result = check(repo.root, 'backend');
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /embedded frontend path/);
+    assert.match(result.stderr, /Vercel ownership path/);
+    assert.match(result.stderr, /embedded frontend build or image/);
+  } finally {
+    repo.cleanup();
+  }
+});
+
 test('ml role enforces the flattened edge layout and rejects host coupling', () => {
   const repo = fixture();
   try {

@@ -1,4 +1,4 @@
-# Production overlay for the host stack (db + backend + API ingress + front[nginx]).
+# Production overlay for the backend stack (db + backend + API ingress).
 services:
   db:
     ports: !reset []
@@ -51,6 +51,7 @@ services:
       # 요양보호사 TV가 상시 로그인 상태를 유지해야 하므로 짧게 두지 말 것.
       JWT_TTL: ${JWT_TTL:-30d}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-auto}
+      AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE:-strict}
       NOKYANG_ADMIN_PASSWORD: ${NOKYANG_ADMIN_PASSWORD:-}
       SUPER_ADMIN_MANAGED_KEY: ${SUPER_ADMIN_MANAGED_KEY:-}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
@@ -81,20 +82,6 @@ services:
       - "127.0.0.1:3001:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 18
-      start_period: 30s
-
-  front:
-    image: ${FRONT_IMAGE:?FRONT_IMAGE is required in prod}
-    build: !reset null
-    pull_policy: never
-    restart: unless-stopped
-    ports: !override
-      - "127.0.0.1:3000:3000"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 18

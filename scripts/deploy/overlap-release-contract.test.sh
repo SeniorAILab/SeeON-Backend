@@ -43,10 +43,11 @@ assert_contains "$media_backup" 'FORMAT=seeon-event-media-backup-receipt-v1'
 assert_contains "$media_backup" 'MANIFEST_SHA256='
 assert_order "$media_backup" 'sh "$SCRIPT_DIR/validate-event-media-backup.sh" "$STAGE"' 'FORMAT=seeon-event-media-backup-receipt-v1'
 
-# First schema-2 writer remains transitional and deploy activation occurs only
-# after health/CORS/SSE/auth/Edge receipts and all exact image IDs are verified.
+# New schema-2 releases are backend-only; transitional frontend metadata remains
+# readable for existing host-state validation and image-pruning protection.
 assert_contains "$deploy" 'API_INGRESS_IMAGE=eldercare-api-ingress:$SHA'
-assert_contains "$deploy" 'FRONT_IMAGE=eldercare-front:$SHA'
+assert_contains "$deploy" "FRONT_IMAGE=''"
+assert_contains "$deploy" "HAS_FRONT=0"
 assert_contains "$deploy" 'embedded_front_image'
 assert_contains "$deploy" 'verify_overlap_receipts'
 assert_order "$deploy" 'verify_overlap_receipts' 'verify_image_ids'

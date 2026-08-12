@@ -56,8 +56,8 @@ function parseArgs(argv) {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  if (options.repoRole !== 'host' && options.repoRole !== 'ml') {
-    throw new Error('--repo-role must be host or ml.');
+  if (!['backend', 'host', 'ml'].includes(options.repoRole)) {
+    throw new Error('--repo-role must be backend, host, or ml.');
   }
   return options;
 }
@@ -155,6 +155,44 @@ function hostViolations(root, files) {
   return violations;
 }
 
+function backendViolations(root, files) {
+  const violations = hostViolations(root, files);
+  const legacyManifestReaderPaths = new Set([
+    'scripts/deploy/iwinv-deploy.sh',
+    'scripts/deploy/iwinv-deploy.test.sh',
+    'scripts/deploy/iwinv-resolve-release.sh',
+    'scripts/deploy/iwinv-resolve-release.test.sh',
+    'scripts/deploy/event-clips-disable.test.sh',
+    'scripts/deploy/overlap-release-contract.test.sh',
+  ]);
+  for (const path of ['front', 'DESIGN.md']) {
+    if (hasPath(root, path)) {
+      violations.push(violation(path, 'backend repository retains an embedded frontend path'));
+    }
+  }
+  for (const path of ['vercel.json', '.vercel']) {
+    if (hasPath(root, path)) {
+      violations.push(violation(path, 'backend repository retains a Vercel ownership path'));
+    }
+  }
+  for (const path of files) {
+    if (
+      selfPaths.has(path) ||
+      legacyManifestReaderPaths.has(path) ||
+      path.startsWith('docs/provenance/') ||
+      path.endsWith('/AGENTS.md') ||
+      path === '.github/AGENTS.md'
+    ) continue;
+    const text = fileText(root, path);
+    if (/front\/Dockerfile|eldercare-front:/i.test(text)) {
+      violations.push(
+        violation(path, 'backend repository retains an embedded frontend build or image'),
+      );
+    }
+  }
+  return violations;
+}
+
 function mlViolations(root, files) {
   const violations = [];
   const requiredPaths = [
@@ -187,13 +225,18 @@ function run(options) {
   const root = resolve(options.root);
   if (!existsSync(root) || !lstatSync(root).isDirectory()) throw new Error(`Repository root does not exist: ${root}`);
   const files = collectFiles(root);
-  const violations = options.repoRole === 'host' ? hostViolations(root, files) : mlViolations(root, files);
+  const violations =
+    options.repoRole === 'backend'
+      ? backendViolations(root, files)
+      : options.repoRole === 'host'
+        ? hostViolations(root, files)
+        : mlViolations(root, files);
   const blocked = violations.filter(({ path }) => !options.allow.has(path));
   return { allowed: violations.length - blocked.length, blocked, scanned: files.length };
 }
 
 function printUsage() {
-  process.stdout.write('Usage: node scripts/repo-residue-check.mjs --repo-role host|ml [--root <path>] [--allow <path>:<reason>]\n');
+  process.stdout.write('Usage: node scripts/repo-residue-check.mjs --repo-role backend|host|ml [--root <path>] [--allow <path>:<reason>]\n');
 }
 
 try {
