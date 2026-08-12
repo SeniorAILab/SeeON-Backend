@@ -6,8 +6,13 @@ const packageJsonUrl = new URL('../../package.json', import.meta.url);
 const packageJson = JSON.parse(await readFile(packageJsonUrl, 'utf8'));
 const scripts = packageJson.scripts;
 
-test('Given root package scripts When daily dev commands are inspected Then they are owner-level and MECE', () => {
-  assert.equal(scripts['dev:front'], 'pnpm --filter front dev');
+test('Given root package scripts When daily dev commands are inspected Then they are backend-only and MECE', () => {
+  assert.equal(Object.hasOwn(scripts, 'dev:front'), false);
+  assert.equal(Object.hasOwn(scripts, 'build:front'), false);
+  assert.equal(Object.hasOwn(scripts, 'release:product-ready:check'), false);
+  assert.equal(Object.hasOwn(scripts, 'test:product-ready'), false);
+  assert.equal(scripts.typecheck, 'pnpm --filter backend exec tsc --noEmit');
+  assert.equal(scripts.lint, 'pnpm --filter backend lint');
   assert.equal(scripts['dev:backend'], 'node scripts/dev/dev-local.mjs backend');
   assert.equal(
     scripts['dev:backend:fresh'],

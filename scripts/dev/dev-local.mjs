@@ -16,8 +16,8 @@ const backendDir = resolve(repoRoot, 'backend');
 
 async function main() {
   const [mode, ...restArgs] = process.argv.slice(2);
-  if (mode !== 'backend' && mode !== 'local') {
-    throw new LocalEnvError(['usage: node scripts/dev/dev-local.mjs backend|local [--reset] [--dry-run] [--env-file <path>]']);
+  if (mode !== 'backend') {
+    throw new LocalEnvError(['usage: node scripts/dev/dev-local.mjs backend [--reset] [--dry-run] [--env-file <path>]']);
   }
 
   const common = parseCommonArgs(restArgs);
@@ -56,22 +56,11 @@ async function main() {
     );
   }
 
-  if (mode === 'backend') {
-    await runLongRunning(
-      [{ label: 'dev:backend', args: ['--filter', 'backend', 'start:dev'] }],
-      childEnv,
-      common.dryRun,
-    );
-  } else {
-    await runLongRunning(
-      [
-        { label: 'dev:backend', args: ['--filter', 'backend', 'start:dev'] },
-        { label: 'dev:front', args: ['--filter', 'front', 'dev'] },
-      ],
-      childEnv,
-      common.dryRun,
-    );
-  }
+  await runLongRunning(
+    [{ label: 'dev:backend', args: ['--filter', 'backend', 'start:dev'] }],
+    childEnv,
+    common.dryRun,
+  );
 }
 
 function runDbUp(envFile, env, dryRun) {
