@@ -1,3 +1,4 @@
+import { edgeTopologyUuidV7 as uuidV7 } from './edge-topology-fixture-values.js';
 import type { EdgeTopologyHarness } from './edge-topology-harness.js';
 import {
   FACILITY_ID,
@@ -310,8 +311,4 @@ function multiRoomClaimBody() {
     },
   ];
   return body;
-}
-
-function uuidV7(sequence: number): string {
-  return `0197f671-3a31-7a6c-a6e4-${sequence.toString(16).padStart(12, '0')}`;
 }

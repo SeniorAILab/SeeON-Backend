@@ -5,6 +5,12 @@ import {
   readStringField,
 } from './json-response.js';
 
+export const CLOUD_EDGE_IDEMPOTENCY_KEY_PREFIX = '0197f671-3a31-7a6c-a6e4-e130';
+
+export function cloudEdgeUuidV7(sequence: number): string {
+  return `${CLOUD_EDGE_IDEMPOTENCY_KEY_PREFIX}${sequence.toString(16).padStart(8, '0')}`;
+}
+
 export type IssuedCredential = {
   readonly idempotencyKey: string;
   readonly operationId: string;
@@ -153,7 +159,7 @@ export class CloudEdgeHttpClient {
 
   uuidV7(): string {
     this.sequence += 1;
-    return `0197f671-3a31-7a6c-a6e4-${this.sequence.toString(16).padStart(12, '0')}`;
+    return cloudEdgeUuidV7(this.sequence);
   }
 
   uuidV4(): string {

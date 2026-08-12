@@ -24,3 +24,24 @@ export const MULTI_PRODUCT_ROOM_ID_1 = 'sp_edge-topology-fixture-201';
 export const MULTI_PRODUCT_ROOM_ID_2 = 'sp_edge-topology-fixture-202';
 export const MULTI_PRODUCT_CAMERA_ID_1 = 'cam_edge-topology-fixture-201';
 export const MULTI_PRODUCT_CAMERA_ID_2 = 'cam_edge-topology-fixture-202';
+
+export const EDGE_TOPOLOGY_FIXTURE_IDS = [
+  FACILITY_ID,
+  OTHER_FACILITY_ID,
+  INSTALLATION_ID,
+  OTHER_INSTALLATION_ID,
+  PRODUCT_FLOOR_ID,
+  PRODUCT_ROOM_ID,
+  PRODUCT_CAMERA_ID,
+  MULTI_PRODUCT_FLOOR_ID,
+  MULTI_PRODUCT_ROOM_ID_1,
+  MULTI_PRODUCT_ROOM_ID_2,
+  MULTI_PRODUCT_CAMERA_ID_1,
+  MULTI_PRODUCT_CAMERA_ID_2,
+  SNAPSHOT_ID,
+] as const;
+export const EDGE_TOPOLOGY_COUNTER_PREFIX = '0197f671-3a31-7a6c-a6e4-e120';
+
+export function edgeTopologyUuidV7(sequence: number): string {
+  return `${EDGE_TOPOLOGY_COUNTER_PREFIX}${sequence.toString(16).padStart(8, '0')}`;
+}

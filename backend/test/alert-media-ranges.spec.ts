@@ -38,7 +38,10 @@ describe('alert media byte serving (e2e)', () => {
     expect(responseBytes(headResponse)).toHaveLength(0);
     expectMediaHeaders(getResponse, mediaBytes.length);
     expectMediaHeaders(headResponse, mediaBytes.length);
-    expect(headResponse.headers).toMatchObject(getResponse.headers);
+    const mirroredHeaders = { ...getResponse.headers };
+    delete mirroredHeaders.date;
+    expect(headResponse.headers).toMatchObject(mirroredHeaders);
+    expect(headResponse.headers.date).toEqual(expect.any(String));
   });
 
   it.each([
