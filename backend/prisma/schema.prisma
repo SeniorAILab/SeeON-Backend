@@ -198,6 +198,7 @@ model Facility {
   edgeOwnershipTransfers  EdgeOwnershipTransfer[]
   edgeValidationGrants    EdgeValidationGrant[]
   edgeProvisioningAudits  EdgeProvisioningAudit[]
+  systemTestPurgeAudits   SystemTestPurgeAudit[]
   mediaDownloadAudits     MediaDownloadAudit[]
   mediaDownloadOutboxJobs MediaDownloadOutboxJob[]
 
@@ -404,6 +405,7 @@ model Event {
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
   @@index([facilityId, validationRunId])
+  @@index([facilityId, type, retentionExpiresAt], map: "events_system_test_retention_idx")
   @@map("events")
 }
 
@@ -825,6 +827,23 @@ model EdgeProvisioningAudit {
   @@index([facilityId, occurredAt])
   @@index([operationId])
   @@map("edge_provisioning_audit_history")
+}
+
+/// Durable non-private receipt for an atomic SYSTEM_TEST retention purge.
+model SystemTestPurgeAudit {
+  receiptId               String   @id @map("receipt_id") @db.Uuid
+  jobId                   String   @unique @map("job_id") @db.Uuid
+  facilityId              String   @map("facility_id")
+  purgedEvents            Int      @map("purged_events")
+  purgedAlerts            Int      @map("purged_alerts")
+  purgedDashboardReceipts Int      @map("purged_dashboard_receipts")
+  purgedAlertNotes        Int      @map("purged_alert_notes")
+  purgedAt                DateTime @default(now()) @map("purged_at")
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([facilityId, purgedAt], map: "system_test_purge_audit_facility_purged_idx")
+  @@map("system_test_purge_audit_history")
 }
 
 model MediaDownloadProcessHeartbeat {

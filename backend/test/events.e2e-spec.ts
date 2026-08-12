@@ -91,6 +91,7 @@ describe('Events API (e2e)', () => {
     app = moduleFixture.createNestApplication();
     configureVersionedTestApp(app);
     await app.init();
+    await app.listen(0, '127.0.0.1');
   });
 
   afterEach(async () => {

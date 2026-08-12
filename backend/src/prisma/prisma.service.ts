@@ -16,6 +16,7 @@ const TENANT_MODELS = new Set([
   'Alert',
   'AlertNote',
   'DashboardReceipt',
+  'SystemTestPurgeAudit',
   'Event',
   'MediaClip',
   'EventMediaBinding',
