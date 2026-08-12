@@ -103,7 +103,7 @@ or media mutation.
 2. Rehash the plan and verify the final seal.
 3. Verify the capacity, queue, volume, backup, and previous-release readback.
 4. Publish the next unused stable release containing the sealed AI SHA. Jenkins
-   resolves the tag once and builds exact-SHA backend/front images.
+   resolves the tag once and builds exact-SHA backend and API-ingress images.
 5. Verify `/health` reports the sealed SHA and database `ok`.
 6. Verify the v1 issuance, enrollment, topology, event, media, and download
    routes while legacy clients continue to work.

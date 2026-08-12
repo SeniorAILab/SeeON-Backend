@@ -1,19 +1,21 @@
 # Deploy script agent rules — iwinv release CD
 
 ## Overview
-`scripts/deploy/**` owns iwinv host bootstrap and deploy execution. Jenkins builds
-and deploys server-side application images; direct host use is limited to an
-explicit rollback or database restore.
+`scripts/deploy/**` owns iwinv host bootstrap and deploy execution for this
+backend-only repository. Jenkins builds and deploys the backend and API ingress
+images; direct host use is limited to an explicit rollback or database restore.
+The SeeON-Front dashboard deploys from its own repository and is never built,
+imaged, or started here.
 
 ## Where to look
 - `Jenkinsfile` — resolves a published production release, requires its GitHub
-  `CI gate=success`, builds exact-SHA backend/API-ingress/transitional-front
-  images, takes safety receipts, then invokes deploy.
+  `CI gate=success`, builds exact-SHA backend and API-ingress images, takes
+  safety receipts, then invokes deploy.
 - `iwinv-deploy.sh` — deploys exact local SHA-tagged images, backs up PostgreSQL,
   migrates, starts Compose, and verifies health/version.
 - `iwinv-deploy.test.sh` — mocked dry-run and production-path contracts for
   gating, retention, rollback/restore ordering, health, and failure propagation.
-- `front-version-image.test.sh` — Docker-level exact-SHA version artifact contract.
+- `api-ingress-image.test.sh` — Docker-level exact-SHA API ingress image contract.
 - `iwinv-workflow-contract.test.mjs` — release trigger provenance, token,
   payload, and bounded-delivery contract.
 - `/opt/eldercare-fall-ai/shared/.env` — host-only production environment contract;
@@ -31,7 +33,11 @@ explicit rollback or database restore.
 - Roll back with `iwinv-deploy.sh --rollback`. Rollback remains an explicit
   operator action.
 - Release manifests are dual-read: absent `schema` is schema 1; quoted
-  `"schema":"2"` is schema 2. Writers publish schema 2. Both readers use the
+  `"schema":"2"` is schema 2. Writers publish backend-only schema 2 (backend +
+  API ingress images). Schema-1 and transitional schema-2 manifests, which name
+  an embedded frontend image from the pre-extraction combined repository,
+  remain readable for historical pointer compatibility only; no such image is
+  built or deployed anymore. Both readers use the
   dependency-free POSIX fixed-grammar validator: one canonical printable-ASCII
   JSON line, one final LF, at most 4096 bytes, exact key order, and strict field
   forms. Node and jq are deliberately not runtime dependencies. Task 7 host
@@ -40,23 +46,22 @@ explicit rollback or database restore.
   Once schema 2 is current, a schema-1-only deploy script must never be restored
   independently: it cannot read the current pointer. Restore or roll back
   application releases only with a dual-read deploy script.
-- Backend, API ingress, and transitional frontend images use commit SHA tags
-  only. Never use `latest` or a release-tag image.
+- Backend and API ingress images use commit SHA tags only. Never use `latest`
+  or a release-tag image.
 
 ## Invariants
 - Jenkins resolves the release tag once through the deploy-key authenticated
   remote lookup, then deploys only the resulting 40-character lowercase SHA.
   Never infer a branch, SHA, image, env file, or Compose profile.
 - Server-side application builds are allowed only inside Jenkins and only as
-  `eldercare-backend:<sha>`, `eldercare-api-ingress:<sha>`, and during overlap
-  `eldercare-front:<sha>`. The host must provision jq for GitHub API JSON plus
-  every POSIX command listed in the release-manifest validator contract; none is
+  `eldercare-backend:<sha>` and `eldercare-api-ingress:<sha>`. The host must
+  provision jq for GitHub API JSON plus every POSIX command listed in the release-manifest validator contract; none is
   optional.
 - Repository checkout is `/opt/eldercare-fall-ai/repo`; backups are under
   `/opt/eldercare-fall-ai/backups/db/`, releases under
-  `/opt/eldercare-fall-ai/releases/`. Frontend and API ingress bind only host
-  loopback (`127.0.0.1:3000` and `127.0.0.1:3001`); backend and database remain
-  internal. Caddy owns public exposure.
+  `/opt/eldercare-fall-ai/releases/` (legacy host paths retained on the
+  server). The API ingress binds only host loopback (`127.0.0.1:3001`); backend
+  and database remain internal. Caddy owns public exposure of the API.
 - Before migration, require a fresh content-addressed off-host media backup
   receipt, capture an Edge heartbeat seed, create a `pg_dump -Fc` backup, and
   validate it with `pg_restore --list`. Audit Prisma history before `migrate
@@ -82,3 +87,5 @@ explicit rollback or database restore.
   or automatic retry/rollback path.
 - No ML deployment, ML image build, or ML service in this CD path; ML remains
   edge-only.
+- No frontend image build, frontend service, or frontend Compose entry;
+  transitional frontend fields exist only in the manifest READ path.
