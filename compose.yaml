@@ -1,5 +1,5 @@
-# Host stack: db + backend + front (nginx).
-# App services (backend, front) are gated behind the `full` profile so the default
+# Host stack: db + backend + standalone API ingress + front (nginx).
+# App services (backend, api-ingress, front) are gated behind the `full` profile so the default
 # `docker compose up` / `pnpm backend:db:up` brings up db only (daily dev is native hot reload).
 # Bring up the whole host stack with `docker compose --profile full up -d --build`.
 #
@@ -74,6 +74,16 @@ services:
         condition: service_healthy
     networks:
       - private_ingress
+
+  api-ingress:
+    profiles: [full]
+    build:
+      context: .
+      dockerfile: infra/api-ingress/Dockerfile
+    ports:
+      - "127.0.0.1:${API_INGRESS_PORT:-3001}:3000"
+    depends_on:
+      - backend
 
   front:
     profiles: [full]

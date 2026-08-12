@@ -6,25 +6,85 @@ RELEASES_DIR=${RELEASES_DIR:-/opt/eldercare-fall-ai/releases}
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 valid_sha() { [ "${#1}" -eq 40 ] && printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
-json_value() { sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1"; }
+json_line_value() { printf '%s\n' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"; }
+validate_manifest() {
+  manifest=$1
+  [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
+  manifest_snapshot=$(mktemp "${TMPDIR:-/tmp}/iwinv-manifest.XXXXXX") || fail "Unable to create release manifest snapshot: $manifest"
+  trap 'rm -f "$manifest_snapshot"' 0 HUP INT TERM
+  cat "$manifest" > "$manifest_snapshot" || fail "Unable to capture release manifest: $manifest"
+  manifest_size=$(wc -c < "$manifest_snapshot" | awk '{print $1}')
+  case "$manifest_size" in ''|*[!0-9]*) fail "Unable to determine release manifest size: $manifest" ;; esac
+  [ "$manifest_size" -le 4096 ] || fail "Release manifest exceeds 4096 bytes: $manifest"
+  [ "$manifest_size" -gt 0 ] || fail "Invalid release manifest canonical form: $manifest"
+  allowed_size=$(LC_ALL=C tr -cd '\40-\176\n' < "$manifest_snapshot" | wc -c | awk '{print $1}')
+  [ "$allowed_size" = "$manifest_size" ] || fail "Invalid release manifest byte alphabet: $manifest"
+  newline_count=$(LC_ALL=C tr -cd '\n' < "$manifest_snapshot" | wc -c | awk '{print $1}')
+  [ "$newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
+  final_newline_count=$(tail -c 1 "$manifest_snapshot" | LC_ALL=C tr -cd '\n' | wc -c | awk '{print $1}')
+  [ "$final_newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
+
+  RELEASE_MANIFEST_LINE=$(cat "$manifest_snapshot")
+  [ "$((${#RELEASE_MANIFEST_LINE} + 1))" -eq "$manifest_size" ] || fail "Invalid release manifest captured bytes: $manifest"
+  rm -f "$manifest_snapshot"
+  trap - 0 HUP INT TERM
+
+  hex40='[0-9a-f]{40}'
+  hex64='[0-9a-f]{64}'
+  timestamp='20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z'
+  dump='normal-[A-Za-z0-9._-]{1,200}\.dump'
+  schema_one="^\\{\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"front_image\":\"eldercare-front:$hex40\",\"front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+  schema_two="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+  schema_two_transitional="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"embedded_front_image\":\"eldercare-front:$hex40\",\"embedded_front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+
+  if printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_one"; then
+    MANIFEST_SCHEMA=1
+  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two"; then
+    MANIFEST_SCHEMA=2
+  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two_transitional"; then
+    MANIFEST_SCHEMA=2
+  else
+    fail "Invalid release manifest canonical form: $manifest"
+  fi
+  manifest_dump=$(json_line_value "$RELEASE_MANIFEST_LINE" pre_migration_dump)
+  case "$manifest_dump" in *..*|*/*|'') fail "Invalid release manifest dump field: $manifest" ;; esac
+}
 
 validate_current_manifest() {
   current_manifest=$RELEASES_DIR/current.json
   [ -f "$current_manifest" ] || fail "Release pointer is not a regular file: $current_manifest"
 
-  current_sha=$(json_value "$current_manifest" sha)
-  backend_image=$(json_value "$current_manifest" backend_image)
-  front_image=$(json_value "$current_manifest" front_image)
-  backend_id=$(json_value "$current_manifest" backend_image_id)
-  front_id=$(json_value "$current_manifest" front_image_id)
+  validate_manifest "$current_manifest"
+  schema=$MANIFEST_SCHEMA
 
+  current_sha=$(json_line_value "$RELEASE_MANIFEST_LINE" sha)
+  backend_image=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image)
+  backend_id=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image_id)
   valid_sha "$current_sha" || fail "Invalid SHA in manifest: $current_manifest"
-  [ "$backend_image" = "eldercare-backend:$current_sha" ] && [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
-  [ -n "$backend_id" ] && [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+  [ "$backend_image" = "eldercare-backend:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+  [ -n "$backend_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+
+  if [ "$schema" = 1 ]; then
+    front_image=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image)
+    front_id=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image_id)
+    [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+    [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+  else
+    api_ingress_image=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image)
+    api_ingress_id=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image_id)
+    front_image=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image)
+    front_id=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image_id)
+    [ "$api_ingress_image" = "eldercare-api-ingress:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+    [ -n "$api_ingress_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+    if [ -n "$front_image" ] || [ -n "$front_id" ]; then
+      [ "$front_image" = "eldercare-front:$current_sha" ] || fail "Invalid image tags in manifest: $current_manifest"
+      [ -n "$front_id" ] || fail "Missing image IDs in manifest: $current_manifest"
+    fi
+  fi
 
   immutable_manifest=$RELEASES_DIR/$current_sha.json
   [ -f "$immutable_manifest" ] || fail "Release pointer immutable manifest not found: $immutable_manifest"
-  cmp -s "$current_manifest" "$immutable_manifest" || fail "Release pointer does not match immutable manifest: $current_manifest"
+  printf '%s\n' "$RELEASE_MANIFEST_LINE" | cmp -s - "$immutable_manifest" || fail "Release pointer does not match immutable manifest: $current_manifest"
 }
 
 git fetch --no-tags "$GIT_REMOTE" +refs/heads/main:refs/remotes/origin/main

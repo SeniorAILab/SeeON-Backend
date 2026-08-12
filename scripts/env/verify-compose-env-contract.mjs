@@ -26,7 +26,11 @@ SMTP_SECURE=false
 NOKYANG_ADMIN_PASSWORD=prod-nokyang-password
 EDGE_FACILITY_TOKEN=prod-edge-facility-token-32-chars
 BACKEND_IMAGE=eldercare-backend:0123456789abcdef0123456789abcdef01234567
-FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567\nMEDIA_RETENTION_DAYS=60\nMEDIA_MIN_FREE_BYTES=1073741824\nMEDIA_CLIP_MAX_BYTES=268435456
+API_INGRESS_IMAGE=eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567
+FRONT_IMAGE=eldercare-front:0123456789abcdef0123456789abcdef01234567
+MEDIA_RETENTION_DAYS=60
+MEDIA_MIN_FREE_BYTES=1073741824
+MEDIA_CLIP_MAX_BYTES=268435456
 `;
 const implicitSecureHostEnv = completeHostEnv
   .replace('SMTP_PORT=587\n', 'SMTP_PORT=465\n')
@@ -139,18 +143,18 @@ function assertHostComposeContract(config) {
   }
 
   const serviceNames = Object.keys(services).sort();
-  const expectedServiceNames = ['backend', 'db', 'front'];
+  const expectedServiceNames = ['api-ingress', 'backend', 'db', 'front'];
   if (
     serviceNames.length !== expectedServiceNames.length ||
     serviceNames.some((name, index) => name !== expectedServiceNames[index])
   ) {
     throw new VerificationError(
-      'host prod service set must be exactly db, backend, front',
+      'host prod service set must be exactly db, backend, api-ingress, front',
       `Found: ${serviceNames.join(', ')}`,
     );
   }
 
-  const { backend, db, front } = services;
+  const { 'api-ingress': apiIngress, backend, db, front } = services;
   const backendEnvironment = backend.environment;
   if (
     backendEnvironment === null ||
@@ -173,24 +177,38 @@ function assertHostComposeContract(config) {
     );
   }
   const backendImage = backend.image;
+  const apiIngressImage = apiIngress.image;
   const frontImage = front.image;
   const backendMatch =
     typeof backendImage === 'string' &&
     /^eldercare-backend:([0-9a-f]{40})$/.exec(backendImage);
+  const apiIngressMatch =
+    typeof apiIngressImage === 'string' &&
+    /^eldercare-api-ingress:([0-9a-f]{40})$/.exec(apiIngressImage);
   const frontMatch =
     typeof frontImage === 'string' &&
     /^eldercare-front:([0-9a-f]{40})$/.exec(frontImage);
-  if (!backendMatch || !frontMatch || backendMatch[1] !== frontMatch[1]) {
+  if (
+    !backendMatch ||
+    !apiIngressMatch ||
+    !frontMatch ||
+    backendMatch[1] !== apiIngressMatch[1] ||
+    backendMatch[1] !== frontMatch[1]
+  ) {
     throw new VerificationError(
       'host prod app images must use matching lowercase 40-character SHA tags',
-      `backend: ${String(backendImage)}\nfront: ${String(frontImage)}`,
+      `backend: ${String(backendImage)}\napi-ingress: ${String(apiIngressImage)}\nfront: ${String(frontImage)}`,
     );
   }
 
   if (db.pull_policy !== 'always') {
     throw new VerificationError('host prod db must always pull its image');
   }
-  if (backend.pull_policy !== 'never' || front.pull_policy !== 'never') {
+  if (
+    backend.pull_policy !== 'never' ||
+    apiIngress.pull_policy !== 'never' ||
+    front.pull_policy !== 'never'
+  ) {
     throw new VerificationError('host prod app images must never be pulled');
   }
 
@@ -198,6 +216,20 @@ function assertHostComposeContract(config) {
     Array.isArray(service.ports) && service.ports.length > 0;
   if (hasPublishedPorts(db) || hasPublishedPorts(backend)) {
     throw new VerificationError('host prod db and backend must not publish ports');
+  }
+  const apiIngressPorts = apiIngress.ports;
+  if (
+    !Array.isArray(apiIngressPorts) ||
+    apiIngressPorts.length !== 1 ||
+    apiIngressPorts[0].host_ip !== '127.0.0.1' ||
+    apiIngressPorts[0].published !== '3001' ||
+    apiIngressPorts[0].target !== 3000 ||
+    apiIngressPorts[0].protocol !== 'tcp'
+  ) {
+    throw new VerificationError(
+      'host prod API ingress must exclusively publish 127.0.0.1:3001',
+      JSON.stringify(apiIngressPorts),
+    );
   }
   const frontPorts = front.ports;
   if (
@@ -369,6 +401,7 @@ function verify() {
         'NOKYANG_ADMIN_PASSWORD: prod-nokyang-password',
         'EDGE_FACILITY_TOKEN: prod-edge-facility-token-32-chars',
         'eldercare-backend:0123456789abcdef0123456789abcdef01234567',
+        'eldercare-api-ingress:0123456789abcdef0123456789abcdef01234567',
         'eldercare-front:0123456789abcdef0123456789abcdef01234567',
         'host_ip: 127.0.0.1',
         'published: "3000"',

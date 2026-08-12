@@ -16,7 +16,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' BACKEND_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' FRONT_ID='' PRE_DUMP='' HAS_CURRENT=0 PENDING_SHA='' PENDING_DUMP=''
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 PENDING_SHA='' PENDING_DUMP=''
 
 usage() {
   printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
@@ -78,7 +78,7 @@ if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
   preflight
   exit 0
 fi
-need docker; need curl; need grep; need sed; need cmp; need sha256sum
+need docker; need curl; need grep; need sed; need cmp; need sha256sum; need wc; need tr; need cat; need tail
 need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need head; need mktemp; need stat
 [ -d "$APP_DIR" ] || fail "Missing deployment directory: $APP_DIR"
 [ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
@@ -102,9 +102,9 @@ compose() {
     fi
   else
     if [ -f "$FEATURE_ENV" ]; then
-      BACKEND_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
     else
-      BACKEND_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only FRONT_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
     fi
   fi
 }
@@ -139,14 +139,83 @@ acquire_lock() {
 }
 
 json_value() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
+json_line_value() { printf '%s\n' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"; }
+validate_manifest() {
+  manifest=$1
+  [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
+  TEMP_FILE=$(mktemp "${TMPDIR:-/tmp}/iwinv-manifest.XXXXXX") || fail "Unable to create release manifest snapshot: $manifest"
+  cat "$manifest" > "$TEMP_FILE" || fail "Unable to capture release manifest: $manifest"
+  manifest_size=$(wc -c < "$TEMP_FILE" | awk '{print $1}')
+  case "$manifest_size" in ''|*[!0-9]*) fail "Unable to determine release manifest size: $manifest" ;; esac
+  [ "$manifest_size" -le 4096 ] || fail "Release manifest exceeds 4096 bytes: $manifest"
+  [ "$manifest_size" -gt 0 ] || fail "Invalid release manifest canonical form: $manifest"
+  allowed_size=$(LC_ALL=C tr -cd '\40-\176\n' < "$TEMP_FILE" | wc -c | awk '{print $1}')
+  [ "$allowed_size" = "$manifest_size" ] || fail "Invalid release manifest byte alphabet: $manifest"
+  newline_count=$(LC_ALL=C tr -cd '\n' < "$TEMP_FILE" | wc -c | awk '{print $1}')
+  [ "$newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
+  final_newline_count=$(tail -c 1 "$TEMP_FILE" | LC_ALL=C tr -cd '\n' | wc -c | awk '{print $1}')
+  [ "$final_newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
+
+  RELEASE_MANIFEST_LINE=$(cat "$TEMP_FILE")
+  [ "$((${#RELEASE_MANIFEST_LINE} + 1))" -eq "$manifest_size" ] || fail "Invalid release manifest captured bytes: $manifest"
+  rm -f "$TEMP_FILE"
+  TEMP_FILE=
+
+  hex40='[0-9a-f]{40}'
+  hex64='[0-9a-f]{64}'
+  timestamp='20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z'
+  dump='normal-[A-Za-z0-9._-]{1,200}\.dump'
+  schema_one="^\\{\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"front_image\":\"eldercare-front:$hex40\",\"front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+  schema_two="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+  schema_two_transitional="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"embedded_front_image\":\"eldercare-front:$hex40\",\"embedded_front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
+
+  if printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_one"; then
+    MANIFEST_SCHEMA=1
+  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two"; then
+    MANIFEST_SCHEMA=2
+  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two_transitional"; then
+    MANIFEST_SCHEMA=2
+  else
+    fail "Invalid release manifest canonical form: $manifest"
+  fi
+  manifest_dump=$(json_line_value "$RELEASE_MANIFEST_LINE" pre_migration_dump)
+  case "$manifest_dump" in *..*|*/*|'') fail "Invalid release manifest dump field: $manifest" ;; esac
+}
 read_manifest() {
   manifest=$1
   [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
-  SHA=$(json_value "$manifest" sha); BACKEND_IMAGE=$(json_value "$manifest" backend_image); FRONT_IMAGE=$(json_value "$manifest" front_image)
-  BACKEND_ID=$(json_value "$manifest" backend_image_id); FRONT_ID=$(json_value "$manifest" front_image_id)
+  validate_manifest "$manifest"
+  SHA=$(json_line_value "$RELEASE_MANIFEST_LINE" sha)
+  BACKEND_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image)
+  BACKEND_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image_id)
+  API_INGRESS_IMAGE=''; API_INGRESS_ID=''; FRONT_IMAGE=''; FRONT_ID=''; HAS_FRONT=0
   valid_sha "$SHA" || fail "Invalid SHA in manifest: $manifest"
-  [ "$BACKEND_IMAGE" = "eldercare-backend:$SHA" ] && [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
-  [ -n "$BACKEND_ID" ] && [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
+  [ "$BACKEND_IMAGE" = "eldercare-backend:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
+  [ -n "$BACKEND_ID" ] || fail "Missing image IDs in manifest: $manifest"
+  if [ "$MANIFEST_SCHEMA" = 1 ]; then
+    FRONT_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image)
+    FRONT_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image_id)
+    [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
+    [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
+    HAS_FRONT=1
+    APP_SERVICES='backend front'
+  else
+    API_INGRESS_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image)
+    API_INGRESS_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image_id)
+    [ "$API_INGRESS_IMAGE" = "eldercare-api-ingress:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
+    [ -n "$API_INGRESS_ID" ] || fail "Missing image IDs in manifest: $manifest"
+    FRONT_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image)
+    FRONT_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image_id)
+    if [ -n "$FRONT_IMAGE" ] || [ -n "$FRONT_ID" ]; then
+      [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
+      [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
+      HAS_FRONT=1
+      APP_SERVICES='backend api-ingress front'
+    else
+      HAS_FRONT=0
+      APP_SERVICES='backend api-ingress'
+    fi
+  fi
 }
 select_manifest() {
   if [ "$ROLLBACK" -eq 1 ]; then
@@ -173,7 +242,9 @@ write_release_env() {
   if [ "$DRY_RUN" -eq 1 ]; then log "would atomically write $RELEASE_ENV with exact image tags"; return; fi
   TEMP_FILE=$RELEASE_ENV.$$.tmp
   umask 077
-  printf 'BACKEND_IMAGE=%s\nFRONT_IMAGE=%s\n' "$BACKEND_IMAGE" "$FRONT_IMAGE" > "$TEMP_FILE"
+  release_api_ingress_image=${API_INGRESS_IMAGE:-restore-only}
+  release_front_image=${FRONT_IMAGE:-restore-only}
+  printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\nFRONT_IMAGE=%s\n' "$BACKEND_IMAGE" "$release_api_ingress_image" "$release_front_image" > "$TEMP_FILE"
   mv "$TEMP_FILE" "$RELEASE_ENV"
   TEMP_FILE=
 }
@@ -334,30 +405,53 @@ validate_restore_dump() {
 image_id() { docker image inspect --format '{{.Id}}' "$1"; }
 verify_image_ids() {
   actual_backend_id=$(image_id "$BACKEND_IMAGE") || fail "Backend image is unavailable: $BACKEND_IMAGE"
-  actual_front_id=$(image_id "$FRONT_IMAGE") || fail "Frontend image is unavailable: $FRONT_IMAGE"
   [ -z "$BACKEND_ID" ] || [ "$actual_backend_id" = "$BACKEND_ID" ] || fail 'Backend image ID differs from manifest.'
-  [ -z "$FRONT_ID" ] || [ "$actual_front_id" = "$FRONT_ID" ] || fail 'Frontend image ID differs from manifest.'
-  BACKEND_ID=$actual_backend_id; FRONT_ID=$actual_front_id
+  BACKEND_ID=$actual_backend_id
+  if [ "$MANIFEST_SCHEMA" = 2 ]; then
+    actual_api_ingress_id=$(image_id "$API_INGRESS_IMAGE") || fail "API ingress image is unavailable: $API_INGRESS_IMAGE"
+    [ -z "$API_INGRESS_ID" ] || [ "$actual_api_ingress_id" = "$API_INGRESS_ID" ] || fail 'API ingress image ID differs from manifest.'
+    API_INGRESS_ID=$actual_api_ingress_id
+  fi
+  if [ "$HAS_FRONT" -eq 1 ]; then
+    actual_front_id=$(image_id "$FRONT_IMAGE") || fail "Frontend image is unavailable: $FRONT_IMAGE"
+    [ -z "$FRONT_ID" ] || [ "$actual_front_id" = "$FRONT_ID" ] || fail 'Frontend image ID differs from manifest.'
+    FRONT_ID=$actual_front_id
+  fi
 }
 verify_services() {
   backend_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const body=await r.text(); console.log("status="+r.status+"\\nbody="+body); let value; try { value=JSON.parse(body); } catch (_) { process.exit(1); } process.exit(r.ok && value.sha===process.env.EXPECTED_SHA && value.database==="ok" ? 0 : 1);}).catch(error=>{console.log("request_error="+error.message);process.exit(1);})' 2>&1) || { printf 'Backend exact-SHA health verification failed:\n%s\n' "$backend_output" >&2; return 1; }
-  # The front check runs inside the front container (like the backend check) so the
-  # deploy works from any executor, including the Jenkins container, which cannot
-  # reach the host loopback where 127.0.0.1:3000 is published.
-  body=$(mktemp "$APP_ROOT/shared/front-body.XXXXXX") || fail 'Unable to create frontend health body capture.'
-  TEMP_FILE=$body
-  if ! compose exec -T front wget -q -O - http://127.0.0.1:3000/version.txt > "$body"; then
-    printf 'Frontend version request failed; body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
-    return 1
+  if [ "$MANIFEST_SCHEMA" = 2 ]; then
+    ingress_body=$(mktemp "$APP_ROOT/shared/api-ingress-body.XXXXXX") || fail 'Unable to create API ingress health body capture.'
+    TEMP_FILE=$ingress_body
+    if ! compose exec -T api-ingress wget -q -O - http://127.0.0.1:3000/health > "$ingress_body"; then
+      printf 'API ingress health request failed; body:\n' >&2; sed -n '1,120p' "$ingress_body" >&2 || :
+      return 1
+    fi
+    if ! grep -Eq '"sha"[[:space:]]*:[[:space:]]*"'"$SHA"'"' "$ingress_body" || ! grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"' "$ingress_body"; then
+      printf 'API ingress exact-SHA health verification failed; body:\n' >&2
+      sed -n '1,120p' "$ingress_body" >&2 || :
+      return 1
+    fi
+    rm -f "$ingress_body" || fail 'Failed to remove API ingress health diagnostics.'
+    TEMP_FILE=
   fi
-  version=$(sed -n '1p' "$body") || return 1
-  if ! printf '%s\n' "$SHA" | cmp -s - "$body"; then
-    printf 'Frontend exact-SHA verification failed (expected %s, got %s); body:\n' "$SHA" "${version:-unreadable}" >&2
-    sed -n '1,120p' "$body" >&2 || :
-    return 1
+  if [ "$HAS_FRONT" -eq 1 ]; then
+    # Probe inside the container because Jenkins cannot reach host loopback.
+    body=$(mktemp "$APP_ROOT/shared/front-body.XXXXXX") || fail 'Unable to create frontend health body capture.'
+    TEMP_FILE=$body
+    if ! compose exec -T front wget -q -O - http://127.0.0.1:3000/version.txt > "$body"; then
+      printf 'Frontend version request failed; body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
+      return 1
+    fi
+    version=$(sed -n '1p' "$body") || return 1
+    if ! printf '%s\n' "$SHA" | cmp -s - "$body"; then
+      printf 'Frontend exact-SHA verification failed (expected %s, got %s); body:\n' "$SHA" "${version:-unreadable}" >&2
+      sed -n '1,120p' "$body" >&2 || :
+      return 1
+    fi
+    rm -f "$body" || fail 'Failed to remove frontend health diagnostics.'
+    TEMP_FILE=
   fi
-  rm -f "$body" || fail 'Failed to remove frontend health diagnostics.'
-  TEMP_FILE=
 }
 
 write_immutable_manifest() {
@@ -368,30 +462,45 @@ write_immutable_manifest() {
   env_hash=$(sha256sum "$ENV_FILE" | awk '{print $1}')
   TEMP_FILE=$RELEASE_DIR/.$SHA.$$.tmp
   umask 077
-  printf '{"sha":"%s","backend_image":"%s","backend_image_id":"%s","front_image":"%s","front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"%s"}\n' "$SHA" "$BACKEND_IMAGE" "$BACKEND_ID" "$FRONT_IMAGE" "$FRONT_ID" "$compose_hash" "$env_hash" "$PRE_DUMP" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$TEMP_FILE"
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ "$HAS_FRONT" -eq 1 ]; then
+    printf '{"schema":"2","sha":"%s","backend_image":"%s","backend_image_id":"%s","api_ingress_image":"%s","api_ingress_image_id":"%s","embedded_front_image":"%s","embedded_front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"%s"}\n' "$SHA" "$BACKEND_IMAGE" "$BACKEND_ID" "$API_INGRESS_IMAGE" "$API_INGRESS_ID" "$FRONT_IMAGE" "$FRONT_ID" "$compose_hash" "$env_hash" "$PRE_DUMP" "$timestamp" > "$TEMP_FILE"
+  else
+    printf '{"schema":"2","sha":"%s","backend_image":"%s","backend_image_id":"%s","api_ingress_image":"%s","api_ingress_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"%s"}\n' "$SHA" "$BACKEND_IMAGE" "$BACKEND_ID" "$API_INGRESS_IMAGE" "$API_INGRESS_ID" "$compose_hash" "$env_hash" "$PRE_DUMP" "$timestamp" > "$TEMP_FILE"
+  fi
   mv "$TEMP_FILE" "$manifest"
   TEMP_FILE=
 }
 validate_existing_pointers() {
   saved_sha=$SHA
+  saved_manifest_schema=$MANIFEST_SCHEMA
   saved_backend_image=$BACKEND_IMAGE
+  saved_api_ingress_image=$API_INGRESS_IMAGE
   saved_front_image=$FRONT_IMAGE
   saved_backend_id=$BACKEND_ID
+  saved_api_ingress_id=$API_INGRESS_ID
   saved_front_id=$FRONT_ID
+  saved_has_front=$HAS_FRONT
+  saved_app_services=$APP_SERVICES
   for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
     [ ! -e "$pointer_manifest" ] || {
       [ -f "$pointer_manifest" ] || fail "Release pointer is not a regular file: $pointer_manifest"
       read_manifest "$pointer_manifest"
       immutable_manifest=$RELEASE_DIR/$SHA.json
       [ -f "$immutable_manifest" ] || fail "Release pointer immutable manifest not found: $immutable_manifest"
-      cmp -s "$pointer_manifest" "$immutable_manifest" || fail "Release pointer does not match immutable manifest: $pointer_manifest"
+      printf '%s\n' "$RELEASE_MANIFEST_LINE" | cmp -s - "$immutable_manifest" || fail "Release pointer does not match immutable manifest: $pointer_manifest"
     }
   done
   SHA=$saved_sha
+  MANIFEST_SCHEMA=$saved_manifest_schema
   BACKEND_IMAGE=$saved_backend_image
+  API_INGRESS_IMAGE=$saved_api_ingress_image
   FRONT_IMAGE=$saved_front_image
   BACKEND_ID=$saved_backend_id
+  API_INGRESS_ID=$saved_api_ingress_id
   FRONT_ID=$saved_front_id
+  HAS_FRONT=$saved_has_front
+  APP_SERVICES=$saved_app_services
 }
 activate_manifest() {
   target_manifest=$1
@@ -411,11 +520,15 @@ activate_manifest() {
 }
 protected_images() {
   validate_existing_pointers
-  printf '%s\n' "$BACKEND_IMAGE" "$FRONT_IMAGE"
+  for selected_image in "$BACKEND_IMAGE" "$API_INGRESS_IMAGE" "$FRONT_IMAGE"; do
+    [ -z "$selected_image" ] || printf '%s\n' "$selected_image"
+  done
   for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
     [ -f "$pointer_manifest" ] || continue
-    json_value "$pointer_manifest" backend_image
-    json_value "$pointer_manifest" front_image
+    for image_key in backend_image api_ingress_image front_image embedded_front_image; do
+      pointer_image=$(json_value "$pointer_manifest" "$image_key")
+      [ -z "$pointer_image" ] || printf '%s\n' "$pointer_image"
+    done
   done
 }
 pointer_shas() {
@@ -440,7 +553,7 @@ prune_images() {
   log "protected image tags: $protected"
   images=$(docker images --format '{{.Repository}}:{{.Tag}}') || fail 'Unable to list Docker images for pruning.'
   while IFS= read -r image; do
-    case "$image" in eldercare-backend:*|eldercare-front:*)
+    case "$image" in eldercare-backend:*|eldercare-api-ingress:*|eldercare-front:*)
       printf '%s\n' "$protected" | grep -Fx "$image" >/dev/null || { log "docker image rm $image"; [ "$DRY_RUN" -eq 1 ] || docker image rm "$image" >/dev/null || fail "Unable to remove stale image: $image"; };;
     esac
   done <<EOF
@@ -448,7 +561,6 @@ $images
 EOF
 }
 
-acquire_lock
 validate_existing_pointers
 load_pending_recovery
 [ -f "$RELEASE_DIR/current.json" ] && HAS_CURRENT=1
@@ -468,12 +580,18 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   fi
   [ ! -e "$RELEASE_DIR/$deploy_sha.json" ] || fail "Immutable release manifest already exists: $RELEASE_DIR/$deploy_sha.json"
   SHA=$deploy_sha
+  MANIFEST_SCHEMA=2
   BACKEND_IMAGE=eldercare-backend:$SHA
+  API_INGRESS_IMAGE=eldercare-api-ingress:$SHA
   FRONT_IMAGE=eldercare-front:$SHA
   BACKEND_ID=''
+  API_INGRESS_ID=''
   FRONT_ID=''
+  HAS_FRONT=1
+  APP_SERVICES='backend api-ingress front'
 fi
 
+acquire_lock
 preflight
 if [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 0 ]; then
   run compose config >/dev/null
@@ -489,20 +607,21 @@ fi
 write_release_env
 run compose config >/dev/null
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "would verify exact local images $BACKEND_IMAGE and $FRONT_IMAGE"
+  log "would verify exact local images $BACKEND_IMAGE, $API_INGRESS_IMAGE, and $FRONT_IMAGE"
 else
   verify_image_ids
 fi
 
 if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
-  run compose stop front backend
+  run compose stop front api-ingress backend
   assert_backend_stopped
   run compose up -d --wait --wait-timeout 120 db
   if [ "$RESTORE_COUNT" -eq 1 ]; then
     validate_restore_dump
     restore_database
   fi
-  run compose up -d --wait --wait-timeout 120 backend front
+  # shellcheck disable=SC2086 # APP_SERVICES is selected from validated schema layouts.
+  run compose up -d --wait --wait-timeout 120 $APP_SERVICES
   [ "$DRY_RUN" -eq 1 ] || verify_services
   if [ "$ROLLBACK" -eq 1 ]; then
     activate_manifest "$RELEASE_DIR/$SHA.json"
@@ -514,7 +633,7 @@ if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
 fi
 
 if [ "$HAS_CURRENT" -eq 1 ]; then
-  run compose stop front backend
+  run compose stop front api-ingress backend
   assert_backend_stopped
   if [ "$DRY_RUN" -eq 1 ]; then
     if [ -n "$PENDING_DUMP" ]; then
@@ -557,7 +676,8 @@ else
   run_migrations
   bootstrap_super_admin
 fi
-run compose up -d --wait --wait-timeout 120 backend front
+# shellcheck disable=SC2086 # APP_SERVICES is the fixed schema-2 overlap service set here.
+run compose up -d --wait --wait-timeout 120 $APP_SERVICES
 [ "$DRY_RUN" -eq 1 ] || verify_services
 write_immutable_manifest
 activate_manifest "$RELEASE_DIR/$SHA.json"
