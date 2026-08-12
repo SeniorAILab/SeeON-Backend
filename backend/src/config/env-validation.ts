@@ -1,7 +1,11 @@
+import {
+  FrontendOriginsValidationError,
+  parseFrontendOrigins,
+} from './frontend-origins.js';
+
 const REQUIRED_PROD_ENV = [
   'DATABASE_URL',
   'DIRECT_URL',
-  'FRONT_ORIGIN',
   'ALERT_DASHBOARD_URL',
   'SESSION_JWT_SECRET',
   'SMTP_HOST',
@@ -24,32 +28,46 @@ export class BackendEnvValidationError extends Error {
 export function validateBackendEnv(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (stringValue(config, 'NODE_ENV') !== 'production') {
-    return config;
-  }
-
   const errors: string[] = [];
-  for (const key of REQUIRED_PROD_ENV) {
-    const value = stringValue(config, key);
-    if (value === undefined) {
-      errors.push(`${key} is required in production`);
-    } else if (
-      LOCAL_ONLY_VALUES.some((localOnlyValue) => localOnlyValue === value)
-    ) {
-      errors.push(`${key} must not use a local development placeholder`);
-    }
-  }
+  validateFrontendOrigins(config, errors);
+  validateCookieSecurityMode(config, errors);
 
-  validateUrl(config, 'FRONT_ORIGIN', errors);
-  validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
-  validateSessionSecret(config, errors);
-  validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
-  validateBooleanFlag(config, 'SMTP_SECURE', errors);
+  if (stringValue(config, 'NODE_ENV') === 'production') {
+    for (const key of REQUIRED_PROD_ENV) {
+      const value = stringValue(config, key);
+      if (value === undefined) {
+        errors.push(`${key} is required in production`);
+      } else if (
+        LOCAL_ONLY_VALUES.some((localOnlyValue) => localOnlyValue === value)
+      ) {
+        errors.push(`${key} must not use a local development placeholder`);
+      }
+    }
+
+    validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
+    validateSessionSecret(config, errors);
+    validateBooleanFlag(config, 'SMTP_SECURE', errors);
+  }
 
   if (errors.length > 0) {
     throw new BackendEnvValidationError(errors);
   }
   return config;
+}
+
+function validateFrontendOrigins(
+  config: Record<string, unknown>,
+  errors: string[],
+): void {
+  try {
+    parseFrontendOrigins(config);
+  } catch (error) {
+    if (error instanceof FrontendOriginsValidationError) {
+      errors.push(...error.errors);
+      return;
+    }
+    throw error;
+  }
 }
 
 function stringValue(
@@ -90,6 +108,19 @@ function validateSessionSecret(
   const value = stringValue(config, 'SESSION_JWT_SECRET');
   if (value !== undefined && value.length < 32) {
     errors.push('SESSION_JWT_SECRET must be at least 32 characters');
+  }
+}
+
+function validateCookieSecurityMode(
+  config: Record<string, unknown>,
+  errors: string[],
+): void {
+  const value = stringValue(config, 'AUTH_COOKIE_SECURE');
+  if (value === undefined) {
+    return;
+  }
+  if (value !== 'true' && value !== 'false' && value !== 'auto') {
+    errors.push('AUTH_COOKIE_SECURE must be true, false, or auto');
   }
 }
 

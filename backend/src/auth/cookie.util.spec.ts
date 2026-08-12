@@ -1,74 +1,102 @@
-import type { CookieOptions, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 import { SESSION_COOKIE_NAME } from './auth.constants';
-import { setSessionCookie } from './cookie.util';
+import {
+  buildAuthCookieOptions,
+  clearSessionCookie,
+  setSessionCookie,
+} from './cookie.util';
 
 type CookieCall = readonly [
   name: string,
   value: string,
   options: CookieOptions,
 ];
+type ClearCookieCall = readonly [name: string, options: CookieOptions];
 
 describe('auth cookie utilities', () => {
-  const originalNodeEnv = process.env.NODE_ENV;
   const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
-  const originalFrontOrigin = process.env.FRONT_ORIGIN;
 
+  const makeRequest = (secure: boolean) => ({ secure }) as Request;
   const makeResponse = () =>
     ({
       cookie: jest.fn(),
-    }) as unknown as Response & { cookie: jest.Mock };
-
-  const cookieCall = (response: { readonly cookie: jest.Mock }): CookieCall =>
-    response.cookie.mock.calls[0] as CookieCall;
+      clearCookie: jest.fn(),
+    }) as unknown as Response & {
+      cookie: jest.Mock;
+      clearCookie: jest.Mock;
+    };
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
     if (originalAuthCookieSecure === undefined) {
       delete process.env.AUTH_COOKIE_SECURE;
     } else {
       process.env.AUTH_COOKIE_SECURE = originalAuthCookieSecure;
     }
-    if (originalFrontOrigin === undefined) {
-      delete process.env.FRONT_ORIGIN;
-    } else {
-      process.env.FRONT_ORIGIN = originalFrontOrigin;
-    }
   });
 
-  it('marks session cookies secure for HTTPS production origins', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.FRONT_ORIGIN = 'https://senai.example.com';
-    delete process.env.AUTH_COOKIE_SECURE;
+  it.each([
+    [true, true],
+    [false, false],
+  ])(
+    'uses request security in auto mode: req.secure=%s',
+    (secure, expected) => {
+      process.env.AUTH_COOKIE_SECURE = 'auto';
+
+      expect(buildAuthCookieOptions(makeRequest(secure)).secure).toBe(expected);
+    },
+  );
+
+  it.each([
+    ['true', false, true],
+    ['false', true, false],
+  ])(
+    'pins secure=%s independently of req.secure',
+    (configured, requestSecure, expected) => {
+      process.env.AUTH_COOKIE_SECURE = configured;
+
+      expect(buildAuthCookieOptions(makeRequest(requestSecure)).secure).toBe(
+        expected,
+      );
+    },
+  );
+
+  it('uses matching strict host-only attributes for session set and clear', () => {
+    process.env.AUTH_COOKIE_SECURE = 'auto';
+    const request = makeRequest(true);
     const response = makeResponse();
 
-    setSessionCookie(response, 'session-token', 60);
+    setSessionCookie(request, response, 'session-token', 60);
+    clearSessionCookie(request, response);
 
-    const [name, value, options] = cookieCall(response);
+    const [name, value, setOptions] = response.cookie.mock
+      .calls[0] as CookieCall;
+    const [clearName, clearOptions] = response.clearCookie.mock
+      .calls[0] as ClearCookieCall;
     expect(name).toBe(SESSION_COOKIE_NAME);
+    expect(clearName).toBe(SESSION_COOKIE_NAME);
     expect(value).toBe('session-token');
-    expect(options.secure).toBe(true);
+    expect(setOptions).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60_000,
+    });
+    expect(clearOptions).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+    });
+    expect(setOptions).not.toHaveProperty('domain');
+    expect(clearOptions).not.toHaveProperty('domain');
   });
 
-  it('keeps cookies secure for HTTP production origins unless explicitly overridden', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.FRONT_ORIGIN = 'http://192.0.2.10';
-    delete process.env.AUTH_COOKIE_SECURE;
-    const response = makeResponse();
+  it('rejects an invalid cookie security mode instead of guessing', () => {
+    process.env.AUTH_COOKIE_SECURE = 'https';
 
-    setSessionCookie(response, 'session-token', 60);
-
-    const [, , options] = cookieCall(response);
-    expect(options.secure).toBe(true);
-  });
-
-  it('allows explicit insecure cookies for HTTP-only deployment smoke tests', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.AUTH_COOKIE_SECURE = 'false';
-    const response = makeResponse();
-
-    setSessionCookie(response, 'session-token', 60);
-
-    const [, , options] = cookieCall(response);
-    expect(options.secure).toBe(false);
+    expect(() => buildAuthCookieOptions(makeRequest(true))).toThrow(
+      'AUTH_COOKIE_SECURE must be true, false, or auto',
+    );
   });
 });

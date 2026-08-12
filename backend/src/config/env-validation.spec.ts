@@ -26,17 +26,62 @@ describe('validateBackendEnv', () => {
     expect(validateBackendEnv(env)).toBe(env);
   });
 
+  it('accepts the singular production frontend origin contract', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGIN: 'http://49.247.204.81',
+    };
+
+    expect(validateBackendEnv(env)).toBe(env);
+  });
+
+  it('accepts the plural production overlap allowlist without singular fallback', () => {
+    const env: Record<string, string> = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGINS: 'https://seeon.seniorsailab.com,http://49.247.204.81',
+    };
+    delete env.FRONT_ORIGIN;
+
+    expect(validateBackendEnv(env)).toBe(env);
+  });
+
+  it('rejects an invalid plural list even when the singular fallback is valid', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGINS: '*,https://seeon.seniorsailab.com/path',
+    };
+
+    expect(() => validateBackendEnv(env)).toThrow(BackendEnvValidationError);
+  });
+
   it('accepts a complete production environment', () => {
     expect(validateBackendEnv(VALID_PROD_ENV)).toBe(VALID_PROD_ENV);
   });
 
-  it('accepts an explicit production secure-cookie override', () => {
-    const env = {
-      ...VALID_PROD_ENV,
-      AUTH_COOKIE_SECURE: 'false',
-    };
+  it.each(['true', 'false', 'auto'])(
+    'accepts AUTH_COOKIE_SECURE=%s',
+    (mode) => {
+      const env = {
+        ...VALID_PROD_ENV,
+        AUTH_COOKIE_SECURE: mode,
+      };
 
-    expect(validateBackendEnv(env)).toBe(env);
+      expect(validateBackendEnv(env)).toBe(env);
+    },
+  );
+
+  it('rejects an invalid cookie mode outside production so boot fails closed', () => {
+    expect(() =>
+      validateBackendEnv({
+        NODE_ENV: 'development',
+        FRONT_ORIGIN: 'http://localhost:3000',
+        AUTH_COOKIE_SECURE: 'yes',
+      }),
+    ).toThrow(
+      new BackendEnvValidationError([
+        'AUTH_COOKIE_SECURE must be true, false, or auto',
+      ]),
+    );
   });
 
   it('rejects missing production values', () => {
@@ -83,7 +128,7 @@ describe('validateBackendEnv', () => {
 
     expect(() => validateBackendEnv(env)).toThrow(
       new BackendEnvValidationError([
-        'AUTH_COOKIE_SECURE must be either true or false',
+        'AUTH_COOKIE_SECURE must be true, false, or auto',
       ]),
     );
   });

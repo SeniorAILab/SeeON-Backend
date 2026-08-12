@@ -39,6 +39,17 @@ const CGNAT_IPV4 = /^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
 
 const IPV4 = /(?<![\w.-])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.-])/g;
 
+// The legacy product origin is an intentionally public browser contract during
+// cutover. Keep its exception exact and limited to the configuration and tests
+// that enforce that contract; all other routable addresses remain forbidden.
+const LEGACY_PRODUCT_IPV4 = '49.247.204.81';
+const LEGACY_PRODUCT_IPV4_FILES = new Set([
+  '.env.host.prod.example',
+  'backend/src/config/env-validation.spec.ts',
+  'backend/src/config/frontend-origins.spec.ts',
+  'backend/test/cors.spec.ts',
+]);
+
 /**
  * `ssh -i <키>` / `IdentityFile <키>` — 어느 키 파일을 쓰는지도 정찰 정보다.
  *
@@ -134,6 +145,12 @@ describe('공개 저장소 프라이버시 가드', () => {
       if (relative.endsWith('backend/test/public-repo-privacy.spec.ts'))
         continue;
       for (const hit of offendingIpv4(text)) {
+        if (
+          hit === LEGACY_PRODUCT_IPV4 &&
+          LEGACY_PRODUCT_IPV4_FILES.has(relative)
+        ) {
+          continue;
+        }
         violations.push(`${relative}: ${hit}`);
       }
     }

@@ -32,6 +32,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - private_ingress
 
   backend:
     profiles: [full]
@@ -70,6 +72,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - private_ingress
 
   front:
     profiles: [full]
@@ -83,6 +87,16 @@ services:
       - "${FRONT_PORT:-3000}:3000"
     depends_on:
       - backend
+    networks:
+      - private_ingress
+
+networks:
+  # Nest trusts forwarded protocol only from this immediate private ingress
+  # network. Production keeps Nest unexposed; nginx is the public HTTP hop.
+  private_ingress:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   pgdata:

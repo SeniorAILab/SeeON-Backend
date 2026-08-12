@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -9,6 +10,7 @@ import { setSessionCookie } from '../src/auth/cookie.util';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';
+const ORIGINAL_AUTH_COOKIE_SECURE = process.env.AUTH_COOKIE_SECURE;
 
 type AuthResponseBody = {
   user: {
@@ -31,9 +33,10 @@ describe('auth cookie attributes', () => {
     const sessionCookie = jest.fn();
     try {
       setSessionCookie(
+        { secure: false } as Request,
         { cookie: sessionCookie } as unknown as Parameters<
           typeof setSessionCookie
-        >[0],
+        >[1],
         'session-token',
         123,
       );
@@ -67,6 +70,7 @@ describe('JWT-cookie auth tenant boundary (e2e)', () => {
   beforeAll(async () => {
     process.env.SESSION_JWT_SECRET = TEST_SECRET;
     process.env.FRONT_ORIGIN = 'http://localhost:3000';
+    process.env.AUTH_COOKIE_SECURE = 'auto';
 
     direct = new PrismaClient({
       datasources: { db: { url: process.env.DIRECT_URL } },
@@ -107,6 +111,11 @@ describe('JWT-cookie auth tenant boundary (e2e)', () => {
 
   afterAll(async () => {
     await direct.$disconnect();
+    if (ORIGINAL_AUTH_COOKIE_SECURE === undefined) {
+      delete process.env.AUTH_COOKIE_SECURE;
+    } else {
+      process.env.AUTH_COOKIE_SECURE = ORIGINAL_AUTH_COOKIE_SECURE;
+    }
   });
 
   it('rejects unauthenticated protected requests with 401', async () => {
@@ -182,8 +191,11 @@ describe('JWT-cookie auth tenant boundary (e2e)', () => {
       .expect(200);
     const sessionCookie = extractSessionCookie(loggedIn.headers['set-cookie']);
     expect(sessionCookie).toContain('app_session=');
+    expect(sessionCookie).toContain('Path=/');
     expect(sessionCookie).toContain('HttpOnly');
     expect(sessionCookie).toContain('SameSite=Strict');
+    expect(sessionCookie).not.toContain('; Secure');
+    expect(sessionCookie).not.toContain('Domain=');
     expect(sessionCookie.split(';')[0].split('=')[1].split('.')).toHaveLength(
       3,
     );
@@ -202,10 +214,17 @@ describe('JWT-cookie auth tenant boundary (e2e)', () => {
       .set('cookie', sessionCookie)
       .expect(200);
 
-    await request(app.getHttpServer())
+    const loggedOut = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
       .set('cookie', sessionCookie)
       .expect(204);
+    const clearedCookie = extractSessionCookie(loggedOut.headers['set-cookie']);
+    for (const attribute of ['Path=/', 'HttpOnly', 'SameSite=Strict']) {
+      expect(clearedCookie).toContain(attribute);
+    }
+    expect(clearedCookie).not.toContain('; Secure');
+    expect(clearedCookie).not.toContain('Domain=');
+    expect(clearedCookie).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
 
     await request(app.getHttpServer())
       .get('/api/v1/auth/me')

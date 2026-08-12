@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { readCookie } from '../auth/cookie.util.js';
+import { buildAuthCookieOptions, readCookie } from '../auth/cookie.util.js';
 import {
   readFacilityScopeHeader,
   type RequestWithAuth,
@@ -37,13 +37,11 @@ export class AlertMediaFacilityGuard implements CanActivate {
     if (selectedFromHeader !== null) {
       requireSafeFacilityId(selectedFromHeader);
       request.effectiveFacilityId = selectedFromHeader;
-      response.cookie(MEDIA_FACILITY_COOKIE_NAME, selectedFromHeader, {
-        httpOnly: true,
-        secure: secureCookiesEnabled(),
-        sameSite: 'strict',
-        path: '/api/v1/alerts',
-        maxAge: MEDIA_FACILITY_COOKIE_MAX_AGE_MS,
-      });
+      response.cookie(
+        MEDIA_FACILITY_COOKIE_NAME,
+        selectedFromHeader,
+        buildAuthCookieOptions(request, MEDIA_FACILITY_COOKIE_MAX_AGE_MS),
+      );
       return true;
     }
 
@@ -64,14 +62,4 @@ function requireSafeFacilityId(facilityId: string): void {
   if (!FACILITY_ID_PATTERN.test(facilityId)) {
     throw new ForbiddenException('Selected facility is invalid');
   }
-}
-
-function secureCookiesEnabled(): boolean {
-  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
-  if (configured === 'true') return true;
-  if (configured === 'false') return false;
-  return (
-    process.env.NODE_ENV === 'production' ||
-    process.env.FRONT_ORIGIN?.trim().startsWith('https://') === true
-  );
 }
