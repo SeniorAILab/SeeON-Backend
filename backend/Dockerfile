@@ -25,7 +25,7 @@ ENV NODE_OPTIONS="${NODE_OPTIONS}"
 COPY backend ./backend
 RUN pnpm --filter backend exec prisma generate \
   && pnpm --filter backend build \
-  && pnpm --filter backend exec swc prisma/seed.ts prisma/demo-nokyang.fixture.ts prisma/seed-super-admin.ts src/auth/password.ts -d dist-tools -C module.type=commonjs \
+  && pnpm --filter backend exec swc prisma/seed.ts prisma/demo-nokyang.fixture.ts prisma/seed-super-admin.ts prisma/reset-admin-password.ts src/auth/password.ts src/auth/password-policy.ts -d dist-tools -C module.type=commonjs \
   && pnpm --filter backend deploy --prod --legacy /prod/backend \
   && cp -R /app/backend/prisma /prod/backend/prisma \
   && pnpm --dir /prod/backend exec prisma generate --schema /prod/backend/prisma/schema.prisma
