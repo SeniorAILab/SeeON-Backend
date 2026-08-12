@@ -57,6 +57,11 @@ const LEGACY_PRODUCT_IPV4_FILES = new Set([
   'scripts/env/verify-event-clip-compose.mjs',
 ]);
 
+function isApprovedLegacyOrigin(relative: string, address: string): boolean {
+  return (
+    address === LEGACY_PRODUCT_IPV4 && LEGACY_PRODUCT_IPV4_FILES.has(relative)
+  );
+}
 
 /**
  * `ssh -i <키>` / `IdentityFile <키>` — 어느 키 파일을 쓰는지도 정찰 정보다.
@@ -153,10 +158,7 @@ describe('공개 저장소 프라이버시 가드', () => {
       if (relative.endsWith('backend/test/public-repo-privacy.spec.ts'))
         continue;
       for (const hit of offendingIpv4(text)) {
-        if (
-          hit === LEGACY_PRODUCT_IPV4 &&
-          LEGACY_PRODUCT_IPV4_FILES.has(relative)
-        ) {
+        if (isApprovedLegacyOrigin(relative, hit)) {
           continue;
         }
         violations.push(`${relative}: ${hit}`);
@@ -202,10 +204,10 @@ describe('프라이버시 가드 판정 로직', () => {
     expect(
       isApprovedLegacyOrigin(
         'scripts/deploy/iwinv-overlap-readiness.sh',
-        LEGACY_PUBLIC_ORIGIN_IPV4,
+        LEGACY_PRODUCT_IPV4,
       ),
     ).toBe(true);
-    expect(isApprovedLegacyOrigin('README.md', LEGACY_PUBLIC_ORIGIN_IPV4)).toBe(
+    expect(isApprovedLegacyOrigin('README.md', LEGACY_PRODUCT_IPV4)).toBe(
       false,
     );
     expect(

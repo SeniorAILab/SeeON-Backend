@@ -30,8 +30,22 @@ const validationLinkMigrationPath = join(
 const validationLinkMigration = existsSync(validationLinkMigrationPath)
   ? readFileSync(validationLinkMigrationPath, 'utf8')
   : '';
+// Placement ids are globally keyed, so every fixture owned by this suite uses
+// the same prefix as clearFixtures instead of generic cross-suite ids.
 const facilityA = 'edge-migration-facility-a';
 const facilityB = 'edge-migration-facility-b';
+const floorA = 'edge-migration-floor-a';
+const floorB = 'edge-migration-floor-b';
+const spaceA = 'edge-migration-space-a';
+const spaceB = 'edge-migration-space-b';
+const cameraA = 'edge-migration-camera-a';
+const cameraB = 'edge-migration-camera-b';
+const eventA = 'edge-migration-event-a';
+const validationEventA = 'edge-migration-validation-event-a';
+const clipA = 'edge-migration-clip-a';
+const managedUser = 'edge-migration-managed-user';
+const generationA = 'edge-migration-generation-a';
+const generationB = 'edge-migration-generation-b';
 const installationA = '11111111-1111-4111-8111-111111111111';
 const installationB = '22222222-2222-4222-8222-222222222222';
 const validationRunA = '55555555-5555-4555-8555-555555555555';
@@ -42,32 +56,32 @@ const completeTransferManifest = [
   {
     kind: 'FLOOR',
     edgeRef: 'floor-1',
-    canonicalId: 'floor-a',
+    canonicalId: floorA,
     parentCanonicalId: null,
   },
   {
     kind: 'ROOM',
     edgeRef: 'room-1',
-    canonicalId: 'space-a',
-    parentCanonicalId: 'floor-a',
+    canonicalId: spaceA,
+    parentCanonicalId: floorA,
   },
   {
     kind: 'CAMERA',
     edgeRef: 'camera-1',
-    canonicalId: 'camera-a',
-    parentCanonicalId: 'space-a',
+    canonicalId: cameraA,
+    parentCanonicalId: spaceA,
   },
 ] as const;
 const setupStatements = [
   `INSERT INTO facilities (id,name) VALUES ('${facilityA}','A'),('${facilityB}','B')`,
-  `INSERT INTO floors (id,facility_id,name,order_index) VALUES ('floor-a','${facilityA}','1F',1),('floor-b','${facilityB}','1F',1)`,
-  `INSERT INTO spaces (id,facility_id,floor_id,name,type,capacity) VALUES ('space-a','${facilityA}','floor-a','A','ROOM',1),('space-b','${facilityB}','floor-b','B','ROOM',1)`,
-  `INSERT INTO cameras (id,facility_id,space_id,label) VALUES ('camera-a','${facilityA}','space-a','A'),('camera-b','${facilityB}','space-b','B')`,
-  `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key) VALUES ('event-a','${facilityA}','camera-a','space-a','fall',now(),now(),'event-a')`,
-  `INSERT INTO media_clips (id,facility_id,camera_id,external_clip_id,updated_at) VALUES ('clip-a','${facilityA}','camera-a','clip-a',now())`,
-  `INSERT INTO users (id,nickname) VALUES ('managed-user','Managed')`,
+  `INSERT INTO floors (id,facility_id,name,order_index) VALUES ('${floorA}','${facilityA}','1F',1),('${floorB}','${facilityB}','1F',1)`,
+  `INSERT INTO spaces (id,facility_id,floor_id,name,type,capacity) VALUES ('${spaceA}','${facilityA}','${floorA}','A','ROOM',1),('${spaceB}','${facilityB}','${floorB}','B','ROOM',1)`,
+  `INSERT INTO cameras (id,facility_id,space_id,label) VALUES ('${cameraA}','${facilityA}','${spaceA}','A'),('${cameraB}','${facilityB}','${spaceB}','B')`,
+  `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key) VALUES ('${eventA}','${facilityA}','${cameraA}','${spaceA}','fall',now(),now(),'${eventA}')`,
+  `INSERT INTO media_clips (id,facility_id,camera_id,external_clip_id,updated_at) VALUES ('${clipA}','${facilityA}','${cameraA}','${clipA}',now())`,
+  `INSERT INTO users (id,nickname) VALUES ('${managedUser}','Managed')`,
   `INSERT INTO edge_installations (id,facility_id,current_generation,updated_at) VALUES ('${installationA}','${facilityA}',1,now()),('${installationB}','${facilityB}',1,now())`,
-  `INSERT INTO edge_installation_generations (id,facility_id,edge_installation_id,enrollment_generation,updated_at) VALUES ('generation-a','${facilityA}','${installationA}',1,now()),('generation-b','${facilityB}','${installationB}',1,now())`,
+  `INSERT INTO edge_installation_generations (id,facility_id,edge_installation_id,enrollment_generation,updated_at) VALUES ('${generationA}','${facilityA}','${installationA}',1,now()),('${generationB}','${facilityB}','${installationB}',1,now())`,
 ] as const;
 const cleanupTables = [
   'media_download_outbox_jobs',
@@ -185,12 +199,12 @@ describe('edge provisioning persistence migration', () => {
     // When: a post-v1 event links its grant and a cross-facility link is attempted.
     await sql(
       direct,
-      `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key,validation_run_id) VALUES ('validation-event-a','${facilityA}','camera-a','space-a','fall',now(),now(),'validation-event-a','${validationRunA}')`,
+      `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key,validation_run_id) VALUES ('${validationEventA}','${facilityA}','${cameraA}','${spaceA}','fall',now(),now(),'${validationEventA}','${validationRunA}')`,
     );
     await expect(
       sql(
         direct,
-        `UPDATE events SET validation_run_id='${validationRunB}' WHERE id='event-a'`,
+        `UPDATE events SET validation_run_id='${validationRunB}' WHERE id='${eventA}'`,
       ),
     ).rejects.toThrow();
 
@@ -205,12 +219,12 @@ describe('edge provisioning persistence migration', () => {
       FROM events event_row
       LEFT JOIN edge_validation_grants grant_row
         ON grant_row.facility_id=event_row.facility_id AND grant_row.id=event_row.validation_run_id
-      WHERE event_row.id IN ('event-a','validation-event-a')
+      WHERE event_row.id IN (${eventA},${validationEventA})
       ORDER BY event_row.id`;
     expect(rows).toEqual([
-      { event_id: 'event-a', validation_run_id: null, grant_id: null },
+      { event_id: eventA, validation_run_id: null, grant_id: null },
       {
-        event_id: 'validation-event-a',
+        event_id: validationEventA,
         validation_run_id: validationRunA,
         grant_id: validationRunA,
       },
@@ -222,55 +236,55 @@ describe('edge provisioning persistence migration', () => {
     await sql(
       direct,
       aliasSql(
-        'alias-room-a',
+        'edge-migration-alias-room-a',
         facilityA,
         installationA,
         'ROOM',
         'room-1',
-        'space-a',
-        'floor-a',
+        spaceA,
+        floorA,
       ),
     );
     await sql(
       direct,
       aliasSql(
-        'alias-room-b',
+        'edge-migration-alias-room-b',
         facilityB,
         installationB,
         'ROOM',
         'room-1',
-        'space-b',
-        'floor-b',
+        spaceB,
+        floorB,
       ),
     );
     await sql(
       direct,
       aliasSql(
-        'alias-floor-a',
+        'edge-migration-alias-floor-a',
         facilityA,
         installationA,
         'FLOOR',
         'floor-1',
-        'floor-a',
+        floorA,
         null,
       ),
     );
     await sql(
       direct,
       aliasSql(
-        'alias-camera-a',
+        'edge-migration-alias-camera-a',
         facilityA,
         installationA,
         'CAMERA',
         'camera-1',
-        'camera-a',
-        'space-a',
+        cameraA,
+        spaceA,
       ),
     );
     const transferFloor = () =>
       sql(
         direct,
-        `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+        `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='${floorA}'`,
       );
 
     // When: duplicate/cross-facility claims and an alias-only transfer are attempted.
@@ -278,13 +292,13 @@ describe('edge provisioning persistence migration', () => {
       sql(
         direct,
         aliasSql(
-          'duplicate',
+          'edge-migration-duplicate',
           facilityA,
           installationA,
           'ROOM',
           'room-1',
-          'space-a',
-          'floor-a',
+          spaceA,
+          floorA,
         ),
       ),
     ).rejects.toThrow();
@@ -297,13 +311,13 @@ describe('edge provisioning persistence migration', () => {
         await sql(
           tx,
           aliasSql(
-            'cross',
+            'edge-migration-cross',
             facilityA,
             installationA,
             'ROOM',
             'room-cross',
-            'space-b',
-            'floor-b',
+            spaceB,
+            floorB,
           ),
         );
       }),
@@ -311,12 +325,12 @@ describe('edge provisioning persistence migration', () => {
     await expect(transferFloor()).rejects.toThrow();
     const legacy = await direct.$queryRaw<
       Array<{ event_id: string; clip_id: string }>
-    >`SELECT e.id AS event_id,m.id AS clip_id FROM events e JOIN media_clips m ON m.camera_id=e.camera_id WHERE e.id='event-a'`;
-    expect(legacy).toEqual([{ event_id: 'event-a', clip_id: 'clip-a' }]);
+    >`SELECT e.id AS event_id,m.id AS clip_id FROM events e JOIN media_clips m ON m.camera_id=e.camera_id WHERE e.id=${eventA}`;
+    expect(legacy).toEqual([{ event_id: eventA, clip_id: clipA }]);
     await expect(
       sql(
         direct,
-        `INSERT INTO cameras (id,facility_id,space_id,label) VALUES ('camera-a2','${facilityA}','space-a','A2')`,
+        `INSERT INTO cameras (id,facility_id,space_id,label) VALUES ('edge-migration-camera-a2','${facilityA}','${spaceA}','A2')`,
       ),
     ).rejects.toThrow();
     const transferId = '0197f671-3a31-7a6c-a6e4-83ed412de810';
@@ -325,7 +339,7 @@ describe('edge provisioning persistence migration', () => {
       await executeAll(tx, [
         `UPDATE edge_ownership_transfers SET status='SUCCEEDED',result='{"status":"SUCCEEDED"}'::jsonb,applied_server_revision=1,applied_at=now() WHERE id='${transferId}'`,
         `UPDATE facilities SET topology_revision=1 WHERE id='${facilityA}'`,
-        `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+        `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='${floorA}'`,
       ]);
     });
 
@@ -364,7 +378,7 @@ describe('edge provisioning persistence migration', () => {
         direct.$transaction(async (tx) => {
           await executeAll(tx, [
             `INSERT INTO edge_provisioning_audit_history (facility_id,action,outcome,request_id) VALUES ('${facilityA}','TRANSFER','STARTED','${transferId}')`,
-            `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+            `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='${floorA}'`,
           ]);
         }),
       ).rejects.toThrow();
@@ -387,7 +401,7 @@ describe('edge provisioning persistence migration', () => {
     await sql(direct, transferSql({ id: transferId, status: 'SUCCEEDED' }));
     await direct.$transaction(async (tx) => {
       await executeAll(tx, [
-        `INSERT INTO edge_installation_generations (id,facility_id,edge_installation_id,enrollment_generation,updated_at) VALUES ('generation-a-2','${facilityA}','${installationA}',2,now())`,
+        `INSERT INTO edge_installation_generations (id,facility_id,edge_installation_id,enrollment_generation,updated_at) VALUES ('edge-migration-generation-a-2','${facilityA}','${installationA}',2,now())`,
         `UPDATE edge_installations SET current_generation=2 WHERE id='${installationA}'`,
         `UPDATE facilities SET topology_revision=1 WHERE id='${facilityA}'`,
       ]);
@@ -480,16 +494,16 @@ describe('edge provisioning persistence migration', () => {
   it('persists immutable managed identity and recoverable download leases under forced RLS', async () => {
     // Given: a managed identity, process heartbeat, and one facility alias.
     await executeAll(direct, [
-      `UPDATE users SET managed_identity_key='senior-ai-lab-primary' WHERE id='managed-user'`,
+      `UPDATE users SET managed_identity_key='senior-ai-lab-primary' WHERE id='${managedUser}'`,
       `INSERT INTO media_download_process_heartbeats (process_id,heartbeat_at,lease_expires_at) VALUES ('${processId}',now(),now()+interval '180 seconds')`,
       aliasSql(
-        'rls-room',
+        'edge-migration-rls-room',
         facilityA,
         installationA,
         'ROOM',
         'room-rls',
-        'space-a',
-        'floor-a',
+        spaceA,
+        floorA,
       ),
     ]);
 
@@ -497,7 +511,7 @@ describe('edge provisioning persistence migration', () => {
     await expect(
       sql(
         direct,
-        `UPDATE users SET managed_identity_key='changed' WHERE id='managed-user'`,
+        `UPDATE users SET managed_identity_key='changed' WHERE id='${managedUser}'`,
       ),
     ).rejects.toThrow();
     await expect(sql(direct, downloadSql())).rejects.toThrow();
@@ -574,31 +588,31 @@ const transferSql = ({
 async function seedFacilityAAliases(db: SqlClient): Promise<void> {
   await executeAll(db, [
     aliasSql(
-      'transfer-floor-a',
+      'edge-migration-transfer-floor-a',
       facilityA,
       installationA,
       'FLOOR',
       'floor-1',
-      'floor-a',
+      floorA,
       null,
     ),
     aliasSql(
-      'transfer-room-a',
+      'edge-migration-transfer-room-a',
       facilityA,
       installationA,
       'ROOM',
       'room-1',
-      'space-a',
-      'floor-a',
+      spaceA,
+      floorA,
     ),
     aliasSql(
-      'transfer-camera-a',
+      'edge-migration-transfer-camera-a',
       facilityA,
       installationA,
       'CAMERA',
       'camera-1',
-      'camera-a',
-      'space-a',
+      cameraA,
+      spaceA,
     ),
   ]);
 }
@@ -609,7 +623,7 @@ const transferFloorWithAudit = (
   db.$transaction(async (tx) => {
     await executeAll(tx, [
       `INSERT INTO edge_provisioning_audit_history (facility_id,action,outcome,request_id) VALUES ('${facilityA}','TRANSFER','STARTED','${transferId}')`,
-      `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='floor-a'`,
+      `UPDATE floors SET provisioning_source='EDGE',edge_installation_id='${installationA}',edge_ref='floor-1' WHERE id='${floorA}'`,
     ]);
   });
 const transferState = (
@@ -621,12 +635,12 @@ const transferState = (
      FROM floors floor
      JOIN edge_ownership_transfers transfer ON transfer.id=$1::uuid
      LEFT JOIN edge_provisioning_audit_history audit ON audit.request_id=$1
-     WHERE floor.id='floor-a'
+     WHERE floor.id='${floorA}'
      GROUP BY floor.provisioning_source,transfer.result`,
     transferId,
   );
 const downloadSql = (): string =>
-  `INSERT INTO media_download_audits (id,facility_id,clip_id,alert_id,actor_user_id,actor_role,request_id,http_status,process_id,lease_version,stream_lease_expires_at,updated_at) VALUES ('${downloadId}','${facilityA}','clip-a','alert-a','managed-user','ADMIN','request',200,'${processId}',1,now()+interval '120 seconds',now())`;
+  `INSERT INTO media_download_audits (id,facility_id,clip_id,alert_id,actor_user_id,actor_role,request_id,http_status,process_id,lease_version,stream_lease_expires_at,updated_at) VALUES ('${downloadId}','${facilityA}','${clipA}','edge-migration-alert-a','${managedUser}','ADMIN','request',200,'${processId}',1,now()+interval '120 seconds',now())`;
 
 async function clearFixtures(db: PrismaClient): Promise<void> {
   await db.$transaction(async (tx) => {
@@ -638,7 +652,7 @@ async function clearFixtures(db: PrismaClient): Promise<void> {
     await executeAll(tx, [
       `DELETE FROM media_download_process_heartbeats WHERE process_id='${processId}'`,
       `DELETE FROM edge_installations WHERE facility_id LIKE 'edge-migration-%'`,
-      `DELETE FROM users WHERE id='managed-user'`,
+      `DELETE FROM users WHERE id='${managedUser}'`,
       `DELETE FROM facilities WHERE id LIKE 'edge-migration-%'`,
     ]);
   });
