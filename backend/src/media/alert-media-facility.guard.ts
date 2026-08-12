@@ -6,13 +6,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { buildAuthCookieOptions, readCookie } from '../auth/cookie.util.js';
+import {
+  buildAuthCookieOptions,
+  MEDIA_FACILITY_COOKIE_NAME,
+  readCookie,
+} from '../auth/cookie.util.js';
 import {
   readFacilityScopeHeader,
   type RequestWithAuth,
 } from '../auth/jwt-auth.guard.js';
 
-export const MEDIA_FACILITY_COOKIE_NAME = 'app_media_facility';
+export { MEDIA_FACILITY_COOKIE_NAME } from '../auth/cookie.util.js';
 const MEDIA_FACILITY_COOKIE_MAX_AGE_MS = 5 * 60 * 1_000;
 const FACILITY_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
 

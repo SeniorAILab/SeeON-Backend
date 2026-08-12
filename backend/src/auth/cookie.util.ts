@@ -1,7 +1,10 @@
 import type { CookieOptions, Request, Response } from 'express';
 import { SESSION_COOKIE_NAME } from './auth.constants';
 
+export const MEDIA_FACILITY_COOKIE_NAME = 'app_media_facility';
+
 type CookieSecurityMode = 'true' | 'false' | 'auto';
+type AuthCookieSameSite = 'strict' | 'none';
 
 export function readCookie(
   cookieHeader: string | undefined,
@@ -19,10 +22,11 @@ export function buildAuthCookieOptions(
   request: Request,
   maxAgeMilliseconds?: number,
 ): CookieOptions {
+  const sameSite = authCookieSameSite();
   const options: CookieOptions = {
     httpOnly: true,
-    secure: secureCookiesEnabled(request),
-    sameSite: 'strict',
+    secure: sameSite === 'none' ? true : secureCookiesEnabled(request),
+    sameSite,
     path: '/',
   };
   if (maxAgeMilliseconds !== undefined) {
@@ -46,6 +50,27 @@ export function setSessionCookie(
 
 export function clearSessionCookie(request: Request, response: Response): void {
   response.clearCookie(SESSION_COOKIE_NAME, buildAuthCookieOptions(request));
+}
+
+export function clearMediaFacilityCookie(
+  request: Request,
+  response: Response,
+): void {
+  response.clearCookie(
+    MEDIA_FACILITY_COOKIE_NAME,
+    buildAuthCookieOptions(request),
+  );
+}
+
+function authCookieSameSite(): AuthCookieSameSite {
+  const configured = process.env.AUTH_COOKIE_SAME_SITE?.trim();
+  if (configured === undefined || configured.length === 0 || configured === 'strict') {
+    return 'strict';
+  }
+  if (configured === 'none') {
+    return 'none';
+  }
+  throw new Error('AUTH_COOKIE_SAME_SITE must be strict or none');
 }
 
 function secureCookiesEnabled(request: Request): boolean {

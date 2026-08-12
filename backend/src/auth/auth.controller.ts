@@ -15,7 +15,11 @@ import {
 import { ApiBody, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { clearSessionCookie, setSessionCookie } from './cookie.util';
+import {
+  clearMediaFacilityCookie,
+  clearSessionCookie,
+  setSessionCookie,
+} from './cookie.util';
 import {
   CreateFacilityRequestDto,
   LoginRequestDto,
@@ -137,6 +141,7 @@ export class AuthController {
     if (!request.user) throw new UnauthorizedException('Missing session');
     await this.auth.revokeAllSessions(request.user.id);
     clearSessionCookie(request, response);
+    clearMediaFacilityCookie(request, response);
   }
 
   @ApiOperation({

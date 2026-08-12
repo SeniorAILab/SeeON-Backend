@@ -17,6 +17,7 @@ const REQUIRED_PROD_ENV = [
 const LOCAL_ONLY_VALUES = [
   'dev-only-session-secret-change-me-32chars-min',
 ] as const;
+const TEMPORARY_BRIDGE_ORIGIN = 'https://seeon-front.vercel.app';
 
 export class BackendEnvValidationError extends Error {
   constructor(readonly errors: readonly string[]) {
@@ -31,6 +32,7 @@ export function validateBackendEnv(
   const errors: string[] = [];
   validateFrontendOrigins(config, errors);
   validateCookieSecurityMode(config, errors);
+  validateCookieSameSiteMode(config, errors);
 
   if (stringValue(config, 'NODE_ENV') === 'production') {
     for (const key of REQUIRED_PROD_ENV) {
@@ -51,6 +53,11 @@ export function validateBackendEnv(
 
   if (errors.length > 0) {
     throw new BackendEnvValidationError(errors);
+  }
+  if (cookieSameSiteMode(config) === 'none') {
+    console.warn(
+      'WARNING: temporary cross-site auth bridge enabled; third-party cookie blocking is unsupported',
+    );
   }
   return config;
 }
@@ -122,6 +129,48 @@ function validateCookieSecurityMode(
   if (value !== 'true' && value !== 'false' && value !== 'auto') {
     errors.push('AUTH_COOKIE_SECURE must be true, false, or auto');
   }
+}
+
+function validateCookieSameSiteMode(
+  config: Record<string, unknown>,
+  errors: string[],
+): void {
+  const configured = stringValue(config, 'AUTH_COOKIE_SAME_SITE');
+  if (configured !== undefined && configured !== 'strict' && configured !== 'none') {
+    errors.push('AUTH_COOKIE_SAME_SITE must be strict or none');
+    return;
+  }
+  if (cookieSameSiteMode(config) !== 'none') {
+    return;
+  }
+  if (stringValue(config, 'NODE_ENV') !== 'production') {
+    errors.push('AUTH_COOKIE_SAME_SITE=none is allowed only in production');
+  }
+  if (stringValue(config, 'AUTH_COOKIE_SECURE') !== 'true') {
+    errors.push('AUTH_COOKIE_SAME_SITE=none requires AUTH_COOKIE_SECURE=true');
+  }
+  if (!Object.prototype.hasOwnProperty.call(config, 'FRONT_ORIGINS')) {
+    errors.push('AUTH_COOKIE_SAME_SITE=none requires explicit FRONT_ORIGINS');
+    return;
+  }
+  try {
+    const origins = parseFrontendOrigins(config);
+    if (origins.length !== 1 || origins[0] !== TEMPORARY_BRIDGE_ORIGIN) {
+      errors.push(
+        'AUTH_COOKIE_SAME_SITE=none requires the exact temporary bridge origin',
+      );
+    }
+  } catch {
+    // validateFrontendOrigins already reports the precise malformed-origin error.
+  }
+}
+
+function cookieSameSiteMode(
+  config: Record<string, unknown>,
+): 'strict' | 'none' {
+  return stringValue(config, 'AUTH_COOKIE_SAME_SITE') === 'none'
+    ? 'none'
+    : 'strict';
 }
 
 function validateBooleanFlag(
