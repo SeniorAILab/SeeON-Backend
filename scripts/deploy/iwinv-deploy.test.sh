@@ -1039,6 +1039,10 @@ assert_not_contains "$jenkins" 'REGISTER-ONLY'
 assert_not_contains "$jenkins" 'params.SHA'
 
 seed=$(cat "$REPO_ROOT/scripts/deploy/jenkins-job-seed.groovy")
+assert_contains "$jenkins" "sshagent(credentials: ['seeon-backend-github-deploy-key'])"
+assert_not_contains "$jenkins" 'eldercare-github-deploy-key'
+assert_contains "$seed" "credentials('seeon-backend-github-deploy-key')"
+assert_not_contains "$seed" 'eldercare-github-deploy-key'
 assert_contains "$seed" "pipelineJob('eldercare-fall-ai-cd')"
 assert_contains "$seed" "tokenCredentialId('eldercare-webhook-token')"
 assert_contains "$seed" 'printContributedVariables(false)'

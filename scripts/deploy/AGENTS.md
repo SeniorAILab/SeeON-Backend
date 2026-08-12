@@ -17,6 +17,8 @@ imaged, or started here.
 - `iwinv-deploy.test.sh` — mocked dry-run and production-path contracts for
   gating, retention, rollback/restore ordering, health, and failure propagation.
 - `api-ingress-image.test.sh` — Docker-level exact-SHA API ingress image contract.
+- `jenkins-controller-image.test.sh` — linux/amd64 controller image, pinned plugin,
+  jq CI-gate predicate, and host-mounted Docker CLI service contract.
 - `iwinv-workflow-contract.test.mjs` — release trigger provenance, token,
   payload, and bounded-delivery contract.
 - `/opt/eldercare-fall-ai/shared/.env` — host-only production environment contract;
@@ -55,9 +57,9 @@ imaged, or started here.
   remote lookup, then deploys only the resulting 40-character lowercase SHA.
   Never infer a branch, SHA, image, env file, or Compose profile.
 - Server-side application builds are allowed only inside Jenkins and only as
-  `eldercare-backend:<sha>` and `eldercare-api-ingress:<sha>`. The host must
-  provision jq for GitHub API JSON plus every POSIX command listed in the release-manifest validator contract; none is
-  optional.
+  `eldercare-backend:<sha>` and `eldercare-api-ingress:<sha>`. The pinned
+  controller image must provide jq for GitHub API JSON; every POSIX command
+  listed in the release-manifest validator contract remains required.
 - Repository checkout is `/opt/eldercare-fall-ai/repo`; backups are under
   `/opt/eldercare-fall-ai/backups/db/`, releases under
   `/opt/eldercare-fall-ai/releases/` (legacy host paths retained on the
@@ -87,11 +89,18 @@ imaged, or started here.
   `DIRECT_URL` and `NOKYANG_ADMIN_PASSWORD` and never logs secrets. Routine
   deploys still run only migrate deploy + super-admin bootstrap.
 
-## Jenkins job seed
+## Jenkins controller and job seed
+- `infra/jenkins/` is the versioned source of truth for the pinned controller
+  image, plugin lock, and `/opt/jenkins` Compose service contract. Replace it
+  only through `docs/rules/jenkins-controller-replacement.md`; preserve the
+  bind-mounted Jenkins home and immediate prior-image rollback.
 - `scripts/deploy/jenkins-job-seed.groovy` is the versioned source of truth for
   the Jenkins Job DSL seed. The server copy at `/opt/jenkins/jobs.groovy` is
   reapplied by CasC on every Jenkins restart and must stay byte-identical to
   this file; update both in the same change.
+- Both the seed checkout and the release resolver use the repository-owned
+  `seeon-backend-github-deploy-key`; do not restore the source-repository
+  `eldercare-github-deploy-key` pipeline reference.
 
 ## Anti-patterns
 - No GHCR, GitHub Actions image build, SSH deploy, `latest`, fallback ref/image/env,

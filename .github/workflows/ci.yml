@@ -44,7 +44,7 @@ jobs:
             env_contract:
               - 'compose*.yaml'
               - '.env*.example'
-              - 'infra/api-ingress/**'
+              - 'infra/**'
               - 'scripts/env/**'
               - 'scripts/deploy/**'
               - 'scripts/release/**'
@@ -54,7 +54,7 @@ jobs:
             deploy_contract:
               - 'compose*.yaml'
               - '.env.host.prod.example'
-              - 'infra/api-ingress/**'
+              - 'infra/**'
               - 'scripts/deploy/**'
               - 'scripts/release/**'
               - 'Jenkinsfile'

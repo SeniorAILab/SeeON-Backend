@@ -24,7 +24,7 @@ External repositories, not owned here:
 ```text
 .
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, media clips, Prisma DB
-├── infra/          # api-ingress: nginx image, config, and config tests
+├── infra/          # API ingress plus the pinned Jenkins controller image/service contract
 ├── docs/           # decisions (2 ADRs), rules, provenance, openapi
 ├── scripts/        # git/backend/env/release/deploy guards and automation
 ├── .github/        # CI, PR gates, release→Jenkins signal
@@ -49,6 +49,7 @@ on by routing or CI.
 | Media clips | `backend/src/media/AGENTS.md` | Largest backend module; clip lifecycle + access audit. |
 | Backend tests | `backend/test/AGENTS.md` | Integration/e2e placement, real-Postgres harnesses. |
 | API ingress | `infra/api-ingress/` | nginx config + `nginx-config.test.sh`. |
+| Jenkins controller | `infra/jenkins/`, `docs/rules/jenkins-controller-replacement.md` | Pinned image/plugins, host service contract, replacement and rollback. |
 | Scripts / guards | `scripts/AGENTS.md`, `scripts/deploy/AGENTS.md` | Hard gates and deploy/release automation. |
 | CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | CI gates, PR policy, release signal. |
 
