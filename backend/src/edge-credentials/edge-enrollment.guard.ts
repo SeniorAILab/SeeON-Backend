@@ -1,4 +1,8 @@
-import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import {
   EdgeCredentialAuthenticator,
@@ -24,16 +28,16 @@ export class EdgeEnrollmentGuard implements CanActivate {
     if (!this.limiter.consume(sourceIp(request), facilityCode)) {
       throw edgeHttpError(429, EDGE_ERROR_CODES.RATE_LIMITED, true);
     }
-    request.edgeEnrollment =
-      await this.authenticator.authenticateForEnrollment(
-        bearerToken(request.headers.authorization),
-      );
+    request.edgeEnrollment = await this.authenticator.authenticateForEnrollment(
+      bearerToken(request.headers.authorization),
+    );
     return true;
   }
 }
 
 function readFacilityCode(body: unknown): string {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) return '';
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    return '';
   const value = (body as Record<string, unknown>).facilityCode;
   return typeof value === 'string' ? value : '';
 }
@@ -42,7 +46,7 @@ function bearerToken(value: string | undefined): string {
   if (value === undefined) return '';
   const match = /^(\S+)\s+(\S+)$/.exec(value.trim());
   if (match === null) return '';
-  return match[1]?.toLowerCase() === 'bearer' ? (match[2] ?? '') : '';
+  return match[1].toLowerCase() === 'bearer' ? match[2] : '';
 }
 
 function sourceIp(request: Request): string {

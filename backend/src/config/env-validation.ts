@@ -136,7 +136,11 @@ function validateCookieSameSiteMode(
   errors: string[],
 ): void {
   const configured = stringValue(config, 'AUTH_COOKIE_SAME_SITE');
-  if (configured !== undefined && configured !== 'strict' && configured !== 'none') {
+  if (
+    configured !== undefined &&
+    configured !== 'strict' &&
+    configured !== 'none'
+  ) {
     errors.push('AUTH_COOKIE_SAME_SITE must be strict or none');
     return;
   }

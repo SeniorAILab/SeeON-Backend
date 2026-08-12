@@ -89,13 +89,32 @@ describe('validateBackendEnv', () => {
 
   it.each([
     [{ AUTH_COOKIE_SAME_SITE: 'None' }],
-    [{ AUTH_COOKIE_SAME_SITE: 'none', AUTH_COOKIE_SECURE: 'auto', FRONT_ORIGINS: 'https://seeon-front.vercel.app' }],
-    [{ AUTH_COOKIE_SAME_SITE: 'none', AUTH_COOKIE_SECURE: 'true', FRONT_ORIGIN: 'https://seeon-front.vercel.app' }],
-    [{ AUTH_COOKIE_SAME_SITE: 'none', AUTH_COOKIE_SECURE: 'true', FRONT_ORIGINS: 'https://seeon-front.vercel.app,https://seeon.seniorsailab.com' }],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'auto',
+        FRONT_ORIGINS: 'https://seeon-front.vercel.app',
+      },
+    ],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'true',
+        FRONT_ORIGIN: 'https://seeon-front.vercel.app',
+      },
+    ],
+    [
+      {
+        AUTH_COOKIE_SAME_SITE: 'none',
+        AUTH_COOKIE_SECURE: 'true',
+        FRONT_ORIGINS:
+          'https://seeon-front.vercel.app,https://seeon.seniorsailab.com',
+      },
+    ],
   ])('rejects an invalid temporary cookie bridge profile: %j', (override) => {
-    expect(() => validateBackendEnv({ ...VALID_PROD_ENV, ...override })).toThrow(
-      BackendEnvValidationError,
-    );
+    expect(() =>
+      validateBackendEnv({ ...VALID_PROD_ENV, ...override }),
+    ).toThrow(BackendEnvValidationError);
   });
 
   it('rejects an invalid cookie mode outside production so boot fails closed', () => {

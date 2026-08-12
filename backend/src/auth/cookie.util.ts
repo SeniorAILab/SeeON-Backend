@@ -64,7 +64,11 @@ export function clearMediaFacilityCookie(
 
 function authCookieSameSite(): AuthCookieSameSite {
   const configured = process.env.AUTH_COOKIE_SAME_SITE?.trim();
-  if (configured === undefined || configured.length === 0 || configured === 'strict') {
+  if (
+    configured === undefined ||
+    configured.length === 0 ||
+    configured === 'strict'
+  ) {
     return 'strict';
   }
   if (configured === 'none') {

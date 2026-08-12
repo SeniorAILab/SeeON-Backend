@@ -1,7 +1,7 @@
 import type { ExecutionContext } from '@nestjs/common';
-import { EdgeCredentialAuthenticator } from './edge-credential-authenticator.js';
+import type { EdgeCredentialAuthenticator } from './edge-credential-authenticator.js';
 import { EdgeEnrollmentGuard } from './edge-enrollment.guard.js';
-import { EnrollmentRateLimiter } from './enrollment-rate-limiter.js';
+import type { EnrollmentRateLimiter } from './enrollment-rate-limiter.js';
 
 function context(request: Record<string, unknown>): ExecutionContext {
   return {
