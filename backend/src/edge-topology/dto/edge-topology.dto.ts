@@ -15,6 +15,8 @@ import {
 
 const EDGE_REF = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+// Hub canonical ids are opaque (cuid, or hand-seeded like sp_201) — never assume UUID.
+const CANONICAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class EdgeTopologyCameraRequestDto {
   @IsString()
@@ -43,7 +45,8 @@ export class EdgeTopologyRoomRequestDto {
   capacity!: number;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @Matches(CANONICAL_ID)
   legacyCanonicalSpaceId?: string;
 
   @IsArray()

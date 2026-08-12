@@ -7,3 +7,12 @@ export const PRODUCT_ROOM_ID = 'a2222222-2222-4222-8222-222222222222';
 export const PRODUCT_CAMERA_ID = 'b3333333-3333-4333-8333-333333333333';
 export const SNAPSHOT_ID = '0197f671-3a31-7a6c-a6e4-83ed412de81a';
 export const TOKEN = `eft_v1.0123456789AB.${'A'.repeat(43)}`;
+
+// Hub-seeded ids in real facilities are opaque strings (e.g. "sp_201"), not
+// UUIDs — this fixture proves the DTO accepts them and exercises multi-room
+// legacy claims on a single PRODUCT floor.
+export const MULTI_PRODUCT_FLOOR_ID = 'flr_101';
+export const MULTI_PRODUCT_ROOM_ID_1 = 'sp_201';
+export const MULTI_PRODUCT_ROOM_ID_2 = 'sp_202';
+export const MULTI_PRODUCT_CAMERA_ID_1 = 'cam_201';
+export const MULTI_PRODUCT_CAMERA_ID_2 = 'cam_202';

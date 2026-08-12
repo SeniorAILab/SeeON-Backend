@@ -2,6 +2,11 @@ import type { EdgeTopologyHarness } from './edge-topology-harness.js';
 import {
   FACILITY_ID,
   INSTALLATION_ID,
+  MULTI_PRODUCT_CAMERA_ID_1,
+  MULTI_PRODUCT_CAMERA_ID_2,
+  MULTI_PRODUCT_FLOOR_ID,
+  MULTI_PRODUCT_ROOM_ID_1,
+  MULTI_PRODUCT_ROOM_ID_2,
   PRODUCT_CAMERA_ID,
   PRODUCT_FLOOR_ID,
   PRODUCT_ROOM_ID,
@@ -9,6 +14,7 @@ import {
   topologyBody,
 } from './edge-topology-harness.js';
 import {
+  readArrayField,
   readNumber,
   readObject,
   readObjectField,
@@ -143,6 +149,69 @@ export function registerTopologyLifecycleTests(
     ).toBe('PRODUCT');
   });
 
+  it('claims multiple rooms on one PRODUCT floor via opaque legacy ids in a single batch', async () => {
+    await harness.seedMultiRoomProductTopology();
+    const body = multiRoomClaimBody();
+    const response = await harness.put(body).expect(200);
+    const items = readArrayField(
+      readObjectField(
+        readObject(response.body, 'multiroom claim'),
+        'ownershipTransferRequired',
+      ),
+      'items',
+    ).map((value) => readObject(value, 'transfer item'));
+    expect(items).toHaveLength(5);
+    const byKind = (kind: string) => items.filter((item) => item.kind === kind);
+    expect(byKind('FLOOR')).toHaveLength(1);
+    expect(
+      readString(byKind('FLOOR')[0].canonicalId, 'floor canonicalId'),
+    ).toBe(MULTI_PRODUCT_FLOOR_ID);
+    expect(
+      byKind('ROOM')
+        .map((item) => readString(item.canonicalId, 'room canonicalId'))
+        .sort(),
+    ).toEqual([MULTI_PRODUCT_ROOM_ID_1, MULTI_PRODUCT_ROOM_ID_2].sort());
+    expect(
+      byKind('CAMERA')
+        .map((item) => readString(item.canonicalId, 'camera canonicalId'))
+        .sort(),
+    ).toEqual([MULTI_PRODUCT_CAMERA_ID_1, MULTI_PRODUCT_CAMERA_ID_2].sort());
+
+    const replay = await harness.put(body).expect(200);
+    expect(replay.body).toEqual(response.body);
+  });
+
+  it('rejects a partial legacy claim on a floor with a non-claiming room', async () => {
+    await harness.seedMultiRoomProductTopology();
+    const body = multiRoomClaimBody();
+    delete body.floors[0].rooms[1].legacyCanonicalSpaceId;
+    expectCode(
+      (await harness.put(body).expect(409)).body,
+      'TOPOLOGY_TRANSFER_CONFLICT',
+    );
+  });
+
+  it('rejects two rooms on the same floor claiming the same legacy canonical space id', async () => {
+    await harness.seedMultiRoomProductTopology();
+    const body = multiRoomClaimBody();
+    body.floors[0].rooms[1].legacyCanonicalSpaceId = MULTI_PRODUCT_ROOM_ID_1;
+    expectCode(
+      (await harness.put(body).expect(409)).body,
+      'TOPOLOGY_TRANSFER_CONFLICT',
+    );
+  });
+
+  it('rejects a snapshot floor whose claimed rooms resolve to different PRODUCT floors', async () => {
+    await harness.seedProductTopology();
+    await harness.seedMultiRoomProductTopology();
+    const body = multiRoomClaimBody();
+    body.floors[0].rooms[1].legacyCanonicalSpaceId = PRODUCT_ROOM_ID;
+    expectCode(
+      (await harness.put(body).expect(409)).body,
+      'TOPOLOGY_TRANSFER_CONFLICT',
+    );
+  });
+
   it('converges approved aliases on the same canonical IDs before omissions apply', async () => {
     const transfer = await aliasSnapshot(harness);
     await harness.approveTransfer(transfer.digest, transfer.items, 0);
@@ -218,6 +287,29 @@ function confirmationBody(preview: Preview) {
 
 function emptyTopology(clientRevision: number, serverRevision: number) {
   return { ...topologyBody(clientRevision, serverRevision), floors: [] };
+}
+
+function multiRoomClaimBody() {
+  const body = topologyBody();
+  body.floors[0].rooms = [
+    {
+      edgeRef: 'room-201',
+      name: 'Room 201',
+      type: 'ROOM',
+      capacity: 1,
+      legacyCanonicalSpaceId: MULTI_PRODUCT_ROOM_ID_1,
+      cameras: [{ edgeRef: 'camera-201', label: 'Camera 201' }],
+    },
+    {
+      edgeRef: 'room-202',
+      name: 'Room 202',
+      type: 'ROOM',
+      capacity: 1,
+      legacyCanonicalSpaceId: MULTI_PRODUCT_ROOM_ID_2,
+      cameras: [{ edgeRef: 'camera-202', label: 'Camera 202' }],
+    },
+  ];
+  return body;
 }
 
 function uuidV7(sequence: number): string {

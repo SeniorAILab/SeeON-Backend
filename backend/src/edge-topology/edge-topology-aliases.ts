@@ -8,7 +8,12 @@ import {
   TOPOLOGY_ERROR_CODES,
   TopologyDomainError,
 } from './edge-topology.errors.js';
-import type { CanonicalSnapshot, TransferItem } from './edge-topology.types.js';
+import type {
+  CanonicalFloor,
+  CanonicalRoom,
+  CanonicalSnapshot,
+  TransferItem,
+} from './edge-topology.types.js';
 
 export type PendingAliases = {
   readonly floorRefs: ReadonlySet<string>;
@@ -26,11 +31,13 @@ export async function resolveTopologyAliases(
   facilityId: string,
 ): Promise<PendingAliases> {
   for (const floor of snapshot.floors) {
-    for (const room of floor.rooms) {
-      if (room.legacyCanonicalSpaceId !== undefined) {
-        await persistLegacyClaim(tx, snapshot, facilityId, floor, room);
-      }
+    const claiming = floor.rooms.filter(
+      (room) => room.legacyCanonicalSpaceId !== undefined,
+    );
+    if (claiming.length === 0) {
+      continue;
     }
+    await persistLegacyClaims(tx, snapshot, facilityId, floor, claiming);
   }
   const aliases = await tx.edgeTopologyAlias.findMany({
     where: {
@@ -62,48 +69,57 @@ export async function resolveTopologyAliases(
   };
 }
 
-async function persistLegacyClaim(
+async function persistLegacyClaims(
   tx: Prisma.TransactionClient,
   snapshot: CanonicalSnapshot,
   facilityId: string,
-  floor: CanonicalSnapshot['floors'][number],
-  room: CanonicalSnapshot['floors'][number]['rooms'][number],
+  floor: CanonicalFloor,
+  claiming: readonly CanonicalRoom[],
 ): Promise<void> {
-  const canonical = await tx.space.findFirst({
-    where: { id: room.legacyCanonicalSpaceId, facilityId },
-    include: { floor: true, camera: true },
-  });
-  if (
-    canonical === null ||
-    canonical.provisioningSource !== ProvisioningSource.PRODUCT ||
-    canonical.floor.provisioningSource !== ProvisioningSource.PRODUCT ||
-    floor.rooms.length !== 1 ||
-    room.cameras.length !== (canonical.camera === null ? 0 : 1)
-  ) {
+  // A floor alias must be unambiguous: the reconciler silently drops
+  // non-aliased rooms on an aliased floor, so a partial claim is rejected.
+  if (claiming.length !== floor.rooms.length) {
     transferConflict();
   }
+  const resolved = await Promise.all(
+    claiming.map(async (room) => ({
+      room,
+      canonical: await resolveClaimedSpace(tx, facilityId, room),
+    })),
+  );
+  const floorIds = new Set(resolved.map(({ canonical }) => canonical.floorId));
+  if (floorIds.size !== 1) {
+    transferConflict();
+  }
+  const spaceIds = new Set(resolved.map(({ canonical }) => canonical.id));
+  if (spaceIds.size !== resolved.length) {
+    transferConflict();
+  }
+  const commonFloorId = resolved[0].canonical.floorId;
   const items: TransferItem[] = [
     {
       kind: 'FLOOR',
       edgeRef: floor.edgeRef,
-      canonicalId: canonical.floorId,
+      canonicalId: commonFloorId,
       parentCanonicalId: null,
     },
-    {
+  ];
+  for (const { room, canonical } of resolved) {
+    items.push({
       kind: 'ROOM',
       edgeRef: room.edgeRef,
       canonicalId: canonical.id,
-      parentCanonicalId: canonical.floorId,
-    },
-  ];
-  if (canonical.camera !== null) {
-    const requestedCamera = room.cameras[0];
-    items.push({
-      kind: 'CAMERA',
-      edgeRef: requestedCamera.edgeRef,
-      canonicalId: canonical.camera.id,
-      parentCanonicalId: canonical.id,
+      parentCanonicalId: commonFloorId,
     });
+    if (canonical.camera !== null) {
+      const requestedCamera = room.cameras[0];
+      items.push({
+        kind: 'CAMERA',
+        edgeRef: requestedCamera.edgeRef,
+        canonicalId: canonical.camera.id,
+        parentCanonicalId: canonical.id,
+      });
+    }
   }
   const existing = await tx.edgeTopologyAlias.findMany({
     where: {
@@ -142,6 +158,26 @@ async function persistLegacyClaim(
       parentCanonicalId: item.parentCanonicalId,
     })),
   });
+}
+
+async function resolveClaimedSpace(
+  tx: Prisma.TransactionClient,
+  facilityId: string,
+  room: CanonicalRoom,
+) {
+  const canonical = await tx.space.findFirst({
+    where: { id: room.legacyCanonicalSpaceId, facilityId },
+    include: { floor: true, camera: true },
+  });
+  if (
+    canonical === null ||
+    canonical.provisioningSource !== ProvisioningSource.PRODUCT ||
+    canonical.floor.provisioningSource !== ProvisioningSource.PRODUCT ||
+    room.cameras.length !== (canonical.camera === null ? 0 : 1)
+  ) {
+    transferConflict();
+  }
+  return canonical;
 }
 
 async function remainsProductOwned(

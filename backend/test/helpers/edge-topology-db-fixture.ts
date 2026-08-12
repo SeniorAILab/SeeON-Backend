@@ -3,6 +3,11 @@ import { tokenDigest } from '../../src/edge-credentials/edge-credential-crypto.j
 import {
   FACILITY_ID,
   INSTALLATION_ID,
+  MULTI_PRODUCT_CAMERA_ID_1,
+  MULTI_PRODUCT_CAMERA_ID_2,
+  MULTI_PRODUCT_FLOOR_ID,
+  MULTI_PRODUCT_ROOM_ID_1,
+  MULTI_PRODUCT_ROOM_ID_2,
   OTHER_FACILITY_ID,
   OTHER_INSTALLATION_ID,
   PRODUCT_CAMERA_ID,
@@ -83,6 +88,56 @@ export async function seedProductTopology(
       facilityId,
       spaceId: PRODUCT_ROOM_ID,
       label: 'Product Camera',
+    },
+  });
+}
+
+export async function seedMultiRoomProductTopology(
+  admin: PrismaClient,
+  facilityId: string,
+): Promise<void> {
+  await admin.floor.create({
+    data: {
+      id: MULTI_PRODUCT_FLOOR_ID,
+      facilityId,
+      name: 'Multi Product Floor',
+      orderIndex: 2,
+    },
+  });
+  await admin.space.create({
+    data: {
+      id: MULTI_PRODUCT_ROOM_ID_1,
+      facilityId,
+      floorId: MULTI_PRODUCT_FLOOR_ID,
+      name: 'Multi Product Room 1',
+      type: 'ROOM',
+      capacity: 1,
+    },
+  });
+  await admin.camera.create({
+    data: {
+      id: MULTI_PRODUCT_CAMERA_ID_1,
+      facilityId,
+      spaceId: MULTI_PRODUCT_ROOM_ID_1,
+      label: 'Multi Product Camera 1',
+    },
+  });
+  await admin.space.create({
+    data: {
+      id: MULTI_PRODUCT_ROOM_ID_2,
+      facilityId,
+      floorId: MULTI_PRODUCT_FLOOR_ID,
+      name: 'Multi Product Room 2',
+      type: 'ROOM',
+      capacity: 1,
+    },
+  });
+  await admin.camera.create({
+    data: {
+      id: MULTI_PRODUCT_CAMERA_ID_2,
+      facilityId,
+      spaceId: MULTI_PRODUCT_ROOM_ID_2,
+      label: 'Multi Product Camera 2',
     },
   });
 }

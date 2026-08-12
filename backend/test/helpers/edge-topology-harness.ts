@@ -10,12 +10,18 @@ import { readObject } from './json-response.js';
 import {
   cleanupTopologyDb,
   resetTopologyDb,
+  seedMultiRoomProductTopology,
   seedOtherInstallationTopology,
   seedProductTopology,
 } from './edge-topology-db-fixture.js';
 export {
   FACILITY_ID,
   INSTALLATION_ID,
+  MULTI_PRODUCT_CAMERA_ID_1,
+  MULTI_PRODUCT_CAMERA_ID_2,
+  MULTI_PRODUCT_FLOOR_ID,
+  MULTI_PRODUCT_ROOM_ID_1,
+  MULTI_PRODUCT_ROOM_ID_2,
   OTHER_FACILITY_ID,
   PRODUCT_CAMERA_ID,
   PRODUCT_FLOOR_ID,
@@ -102,6 +108,10 @@ export class EdgeTopologyHarness {
 
   async seedProductTopology(facilityId = FACILITY_ID): Promise<void> {
     await seedProductTopology(this.admin, facilityId);
+  }
+
+  async seedMultiRoomProductTopology(facilityId = FACILITY_ID): Promise<void> {
+    await seedMultiRoomProductTopology(this.admin, facilityId);
   }
 
   async seedOtherInstallationTopology(): Promise<void> {
