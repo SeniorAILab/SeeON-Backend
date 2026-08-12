@@ -21,7 +21,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in prod}
       DIRECT_URL: ${DIRECT_URL:?DIRECT_URL is required in prod}
-      FRONT_ORIGIN: ${FRONT_ORIGIN:?FRONT_ORIGIN is required in prod}
+      FRONT_ORIGINS: ${FRONT_ORIGINS:?FRONT_ORIGINS is required in prod}
+      # Singular compatibility fallback only; FRONT_ORIGINS above always wins.
+      FRONT_ORIGIN: ${FRONT_ORIGIN:-}
       ALERT_DASHBOARD_URL: ${ALERT_DASHBOARD_URL:?ALERT_DASHBOARD_URL is required in prod}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required in prod}
       EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:?EDGE_TOKEN_PEPPER is required in prod}

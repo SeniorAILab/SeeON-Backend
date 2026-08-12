@@ -3,13 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { configureHttpBodyParsing } from './common/json/strict-json-parser.js';
+import { configureFrontendCors } from './config/frontend-cors.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   configureHttpBodyParsing(app);
-  if (process.env.FRONT_ORIGIN) {
-    app.enableCors({ origin: process.env.FRONT_ORIGIN, credentials: true });
-  }
+  configureFrontendCors(app);
   app.setGlobalPrefix('api', {
     exclude: [
       { path: '/', method: RequestMethod.ALL },

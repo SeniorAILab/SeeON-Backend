@@ -1,7 +1,11 @@
+import {
+  FrontendOriginsValidationError,
+  parseFrontendOrigins,
+} from './frontend-origins.js';
+
 const REQUIRED_PROD_ENV = [
   'DATABASE_URL',
   'DIRECT_URL',
-  'FRONT_ORIGIN',
   'ALERT_DASHBOARD_URL',
   'SESSION_JWT_SECRET',
   'SMTP_HOST',
@@ -24,32 +28,46 @@ export class BackendEnvValidationError extends Error {
 export function validateBackendEnv(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (stringValue(config, 'NODE_ENV') !== 'production') {
-    return config;
-  }
-
   const errors: string[] = [];
-  for (const key of REQUIRED_PROD_ENV) {
-    const value = stringValue(config, key);
-    if (value === undefined) {
-      errors.push(`${key} is required in production`);
-    } else if (
-      LOCAL_ONLY_VALUES.some((localOnlyValue) => localOnlyValue === value)
-    ) {
-      errors.push(`${key} must not use a local development placeholder`);
-    }
-  }
+  validateFrontendOrigins(config, errors);
 
-  validateUrl(config, 'FRONT_ORIGIN', errors);
-  validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
-  validateSessionSecret(config, errors);
-  validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
-  validateBooleanFlag(config, 'SMTP_SECURE', errors);
+  if (stringValue(config, 'NODE_ENV') === 'production') {
+    for (const key of REQUIRED_PROD_ENV) {
+      const value = stringValue(config, key);
+      if (value === undefined) {
+        errors.push(`${key} is required in production`);
+      } else if (
+        LOCAL_ONLY_VALUES.some((localOnlyValue) => localOnlyValue === value)
+      ) {
+        errors.push(`${key} must not use a local development placeholder`);
+      }
+    }
+
+    validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
+    validateSessionSecret(config, errors);
+    validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
+    validateBooleanFlag(config, 'SMTP_SECURE', errors);
+  }
 
   if (errors.length > 0) {
     throw new BackendEnvValidationError(errors);
   }
   return config;
+}
+
+function validateFrontendOrigins(
+  config: Record<string, unknown>,
+  errors: string[],
+): void {
+  try {
+    parseFrontendOrigins(config);
+  } catch (error) {
+    if (error instanceof FrontendOriginsValidationError) {
+      errors.push(...error.errors);
+      return;
+    }
+    throw error;
+  }
 }
 
 function stringValue(

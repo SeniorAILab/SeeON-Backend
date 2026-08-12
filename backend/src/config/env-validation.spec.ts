@@ -26,6 +26,34 @@ describe('validateBackendEnv', () => {
     expect(validateBackendEnv(env)).toBe(env);
   });
 
+  it('accepts the singular production frontend origin contract', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGIN: 'http://49.247.204.81',
+    };
+
+    expect(validateBackendEnv(env)).toBe(env);
+  });
+
+  it('accepts the plural production overlap allowlist without singular fallback', () => {
+    const env: Record<string, string> = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGINS: 'https://seeon.seniorsailab.com,http://49.247.204.81',
+    };
+    delete env.FRONT_ORIGIN;
+
+    expect(validateBackendEnv(env)).toBe(env);
+  });
+
+  it('rejects an invalid plural list even when the singular fallback is valid', () => {
+    const env = {
+      ...VALID_PROD_ENV,
+      FRONT_ORIGINS: '*,https://seeon.seniorsailab.com/path',
+    };
+
+    expect(() => validateBackendEnv(env)).toThrow(BackendEnvValidationError);
+  });
+
   it('accepts a complete production environment', () => {
     expect(validateBackendEnv(VALID_PROD_ENV)).toBe(VALID_PROD_ENV);
   });
