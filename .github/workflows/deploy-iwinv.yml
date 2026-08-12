@@ -37,7 +37,7 @@ jobs:
     needs: classify
     if: >-
       needs.classify.outputs.is_production == 'true' &&
-      github.repository == 'SeniorAILab/eldercare-fall-ai'
+      github.repository == 'SeniorAILab/SeeON'
     runs-on: ubuntu-latest
     env:
       WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
