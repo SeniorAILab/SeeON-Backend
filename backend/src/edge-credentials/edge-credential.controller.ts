@@ -12,7 +12,6 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard, type RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import {
   IssueEdgeCredentialRequestDto,
@@ -30,6 +29,10 @@ import {
   type EdgeCredentialLifecycleName,
   UUID_V7_PATTERN,
 } from './edge-credential.types.js';
+import {
+  EdgeEnrollmentGuard,
+  type EdgeEnrollmentRequest,
+} from './edge-enrollment.guard.js';
 import { SuperAdminEdgeGuard } from './super-admin-edge.guard.js';
 
 @Controller({ path: 'admin/edge-credentials', version: '1' })
@@ -98,6 +101,7 @@ export class EdgeOperationAdminController {
 }
 
 @Controller({ path: 'edge/enrollments', version: '1' })
+@UseGuards(EdgeEnrollmentGuard)
 export class EdgeEnrollmentController {
   constructor(private readonly service: EdgeCredentialService) {}
 
@@ -105,11 +109,14 @@ export class EdgeEnrollmentController {
   @HttpCode(200)
   verify(
     @Body() body: VerifyEdgeEnrollmentRequestDto,
-    @Req() request: Request,
+    @Req() request: EdgeEnrollmentRequest,
   ) {
-    return this.service.verify({
-      fullToken: bearerToken(request.headers.authorization),
-      sourceIp: sourceIp(request),
+    const authenticated = request.edgeEnrollment;
+    if (authenticated === undefined) {
+      throw new UnauthorizedException('Missing Edge enrollment principal');
+    }
+    return this.service.verifyEnrollment({
+      authenticated,
       facilityCode: body.facilityCode,
       clientInstallationRef: body.clientInstallationRef,
     });
@@ -128,16 +135,6 @@ export function mutationContext(
   return { idempotencyKey: key, actorUserId: request.user.id };
 }
 
-function bearerToken(value: string | undefined): string {
-  if (value === undefined) return '';
-  const match = /^(\S+)\s+(\S+)$/.exec(value.trim());
-  if (match === null) return '';
-  const scheme = match[1];
-  const token = match[2];
-  if (!scheme || !token) return '';
-  return scheme.toLowerCase() === 'bearer' ? token : '';
-}
-
 function parseLifecycle(
   lifecycle: string | undefined,
 ): EdgeCredentialLifecycleName | undefined {
@@ -145,14 +142,4 @@ function parseLifecycle(
   const matched = EDGE_CREDENTIAL_LIFECYCLES.find((item) => item === lifecycle);
   if (matched === undefined) throw new BadRequestException('Unknown lifecycle');
   return matched;
-}
-
-function sourceIp(request: Request): string {
-  const forwarded = request.headers['x-forwarded-for'];
-  const first = Array.isArray(forwarded)
-    ? forwarded[0]
-    : forwarded?.split(',')[0];
-  return (
-    first?.trim() || request.ip || request.socket.remoteAddress || 'unknown'
-  );
 }
