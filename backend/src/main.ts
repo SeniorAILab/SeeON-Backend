@@ -4,9 +4,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { configureHttpBodyParsing } from './common/json/strict-json-parser.js';
 import { configureFrontendCors } from './config/frontend-cors.js';
+import { configureTrustedIngressProxy } from './config/trusted-ingress-proxy.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  configureTrustedIngressProxy(app);
   configureHttpBodyParsing(app);
   configureFrontendCors(app);
   app.setGlobalPrefix('api', {

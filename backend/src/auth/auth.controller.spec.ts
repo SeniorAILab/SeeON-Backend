@@ -1,5 +1,5 @@
 import type { User } from '@prisma/client';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import type { AuthService } from './auth.service';
 import type { RequestWithAuth } from './jwt-auth.guard';
@@ -89,7 +89,7 @@ describe('AuthController', () => {
     const response = makeResponse();
 
     await controller.logout(
-      { user: { id: 'user-1' } } as RequestWithAuth,
+      { secure: false, user: { id: 'user-1' } } as RequestWithAuth,
       response,
     );
 
@@ -111,6 +111,7 @@ describe('AuthController', () => {
 
     const body = await controller.login(
       { email: 'admin@sen.ai', password: '1234' },
+      { secure: false } as Request,
       response,
     );
 
@@ -149,6 +150,7 @@ describe('AuthController', () => {
         phone: '010-1111-2222',
         facilityName: 'ULW 요양원',
       },
+      { secure: false } as Request,
       response,
     );
 
@@ -183,7 +185,7 @@ describe('AuthController', () => {
 
     const body = await controller.createFacility(
       { facilityName: 'New Facility' },
-      { user: { id: 'user-1' } } as RequestWithAuth,
+      { secure: false, user: { id: 'user-1' } } as RequestWithAuth,
       response,
     );
 

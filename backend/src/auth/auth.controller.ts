@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBody, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { clearSessionCookie, setSessionCookie } from './cookie.util';
 import {
@@ -88,13 +88,14 @@ export class AuthController {
   @HttpCode(200)
   async login(
     @Body() body: LoginRequestDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     const session = await this.auth.loginWithPassword(
       typeof body.email === 'string' ? body.email : '',
       typeof body.password === 'string' ? body.password : '',
     );
-    setSessionCookie(response, session.token, session.maxAgeSeconds);
+    setSessionCookie(request, response, session.token, session.maxAgeSeconds);
     return { user: presentAuthUser(session.user) };
   }
 
@@ -106,6 +107,7 @@ export class AuthController {
   @Post('auth/register')
   async register(
     @Body() body: RegisterRequestDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     const session = await this.auth.registerWithPassword({
@@ -115,7 +117,7 @@ export class AuthController {
       phone: body.phone,
       facilityName: body.facilityName,
     });
-    setSessionCookie(response, session.token, session.maxAgeSeconds);
+    setSessionCookie(request, response, session.token, session.maxAgeSeconds);
     return { user: presentAuthUser(session.user) };
   }
 
@@ -134,7 +136,7 @@ export class AuthController {
   ): Promise<void> {
     if (!request.user) throw new UnauthorizedException('Missing session');
     await this.auth.revokeAllSessions(request.user.id);
-    clearSessionCookie(response);
+    clearSessionCookie(request, response);
   }
 
   @ApiOperation({
@@ -155,7 +157,7 @@ export class AuthController {
       request.user.id,
       body.facilityName,
     );
-    setSessionCookie(response, session.token, session.maxAgeSeconds);
+    setSessionCookie(request, response, session.token, session.maxAgeSeconds);
     return { user: presentAuthUser(session.user) };
   }
 }

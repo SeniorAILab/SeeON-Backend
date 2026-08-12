@@ -30,6 +30,7 @@ export function validateBackendEnv(
 ): Record<string, unknown> {
   const errors: string[] = [];
   validateFrontendOrigins(config, errors);
+  validateCookieSecurityMode(config, errors);
 
   if (stringValue(config, 'NODE_ENV') === 'production') {
     for (const key of REQUIRED_PROD_ENV) {
@@ -45,7 +46,6 @@ export function validateBackendEnv(
 
     validateUrl(config, 'ALERT_DASHBOARD_URL', errors);
     validateSessionSecret(config, errors);
-    validateBooleanFlag(config, 'AUTH_COOKIE_SECURE', errors);
     validateBooleanFlag(config, 'SMTP_SECURE', errors);
   }
 
@@ -108,6 +108,19 @@ function validateSessionSecret(
   const value = stringValue(config, 'SESSION_JWT_SECRET');
   if (value !== undefined && value.length < 32) {
     errors.push('SESSION_JWT_SECRET must be at least 32 characters');
+  }
+}
+
+function validateCookieSecurityMode(
+  config: Record<string, unknown>,
+  errors: string[],
+): void {
+  const value = stringValue(config, 'AUTH_COOKIE_SECURE');
+  if (value === undefined) {
+    return;
+  }
+  if (value !== 'true' && value !== 'false' && value !== 'auto') {
+    errors.push('AUTH_COOKIE_SECURE must be true, false, or auto');
   }
 }
 
