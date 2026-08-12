@@ -11,6 +11,12 @@ run() {
 
 run sh infra/api-ingress/nginx-config.test.sh
 for test_script in $(find scripts/deploy -maxdepth 1 -type f -name '*.test.sh' | LC_ALL=C sort); do
+  case "$test_script" in
+    scripts/deploy/event-media-backup-inputs.test.sh|scripts/deploy/event-media-restore-harness.test.sh|scripts/deploy/event-media-product-restore-harness.test.sh)
+      # Manual backup tooling has its own deploy:event-media:manual-test gate.
+      continue
+      ;;
+  esac
   run sh "$test_script"
 done
 run node scripts/deploy/verify-edge-provisioning-evidence.mjs --fixture

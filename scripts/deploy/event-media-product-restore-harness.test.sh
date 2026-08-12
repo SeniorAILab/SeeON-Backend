@@ -384,6 +384,20 @@ docker run --rm --network none \
   exit 1
 }
 
+# Cluster roles are not part of a database-format pg_dump. Recreate the
+# migration-owned NOLOGIN role before restoring ACLs that reference it.
+docker exec -i "$TARGET_CONTAINER" psql -v ON_ERROR_STOP=1 \
+  --username "$FIXTURE_DB_USER" --dbname "$FIXTURE_DB_NAME" <<'SQL' >/dev/null
+CREATE ROLE system_test_purge_owner WITH
+  NOLOGIN
+  NOSUPERUSER
+  NOBYPASSRLS
+  NOCREATEDB
+  NOCREATEROLE
+  NOREPLICATION
+  NOINHERIT;
+SQL
+
 docker exec -i "$TARGET_CONTAINER" pg_restore --username "$FIXTURE_DB_USER" \
   --dbname "$FIXTURE_DB_NAME" --no-owner --exit-on-error --single-transaction \
   < "$bundle/database.dump"

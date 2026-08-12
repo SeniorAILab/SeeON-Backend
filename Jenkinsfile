@@ -195,12 +195,6 @@ pipeline {
         lock(resource: 'eldercare-fall-ai-deploy') {
           sh '''#!/usr/bin/env sh
             set -eu
-            : "${EVENT_MEDIA_BACKUP_DESTINATION:?EVENT_MEDIA_BACKUP_DESTINATION is required}"
-            : "${EVENT_MEDIA_CLIP_VOLUME:?EVENT_MEDIA_CLIP_VOLUME is required}"
-            BACKUP_DESTINATION="$EVENT_MEDIA_BACKUP_DESTINATION" \
-              CLIP_VOLUME_NAME="$EVENT_MEDIA_CLIP_VOLUME" \
-              COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}" \
-              sh scripts/deploy/event-media-backup.sh
             sh scripts/deploy/iwinv-overlap-readiness.sh --capture-edge "$RELEASE_SHA"
             sh scripts/deploy/iwinv-overlap-readiness.sh --pre-deploy "$RELEASE_SHA"
             sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"

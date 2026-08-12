@@ -11,7 +11,6 @@ LOCK_DIR=$APP_ROOT/shared/deploy.lock
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
 RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
-MEDIA_RECEIPT=${MEDIA_RECEIPT:-$RECEIPT_DIR/media-backup.receipt}
 EDGE_RECEIPT=${EDGE_RECEIPT:-$RECEIPT_DIR/edge-continuity.receipt}
 EDGE_AFTER_RECEIPT=${EDGE_AFTER_RECEIPT:-$RECEIPT_DIR/edge-continuity-after.receipt}
 RECEIPT_MAX_AGE_SECONDS=${RECEIPT_MAX_AGE_SECONDS:-3600}
@@ -21,7 +20,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0
 
 usage() {
   printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
@@ -163,19 +162,8 @@ assert_fresh_receipt_epoch() {
   age=$((now - epoch))
   [ "$age" -ge 0 ] && [ "$age" -le "$RECEIPT_MAX_AGE_SECONDS" ] || fail "$label is stale."
 }
-verify_overlap_receipts() {
+verify_deploy_receipts() {
   [ "$MANIFEST_SCHEMA" = 2 ] || fail 'A normal deploy must use the schema-2 backend service set.'
-
-  owner_only_receipt "$MEDIA_RECEIPT" 'Media backup receipt'
-  [ "$(wc -l < "$MEDIA_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Media backup receipt is malformed.'
-  [ "$(receipt_value FORMAT "$MEDIA_RECEIPT")" = seeon-event-media-backup-receipt-v1 ] || fail 'Media backup receipt format is invalid.'
-  media_bundle=$(receipt_value BUNDLE "$MEDIA_RECEIPT")
-  case "$media_bundle" in /*) ;; *) fail 'Media backup receipt bundle path is invalid.' ;; esac
-  [ -d "$media_bundle" ] && [ ! -L "$media_bundle" ] && [ -f "$media_bundle/MANIFEST" ] || fail 'Media backup receipt bundle is unavailable.'
-  media_manifest_sha=$(receipt_value MANIFEST_SHA256 "$MEDIA_RECEIPT")
-  printf '%s\n' "$media_manifest_sha" | grep -Eq '^[0-9a-f]{64}$' || fail 'Media backup receipt checksum is invalid.'
-  [ "$(sha256sum "$media_bundle/MANIFEST" | awk '{print $1}')" = "$media_manifest_sha" ] || fail 'Media backup receipt checksum does not match its bundle.'
-  assert_fresh_receipt_epoch "$(receipt_value COMPLETED_EPOCH "$MEDIA_RECEIPT")" 'Media backup receipt'
 
   owner_only_receipt "$EDGE_RECEIPT" 'Edge continuity receipt'
   [ "$(wc -l < "$EDGE_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Edge continuity receipt is malformed.'
@@ -665,6 +653,7 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   deploy_sha=$SHA
   if [ "$HAS_CURRENT" -eq 1 ]; then
     read_manifest "$RELEASE_DIR/current.json"
+    CURRENT_RELEASE_SHA=$SHA
     [ "$deploy_sha" != "$SHA" ] || fail "Refusing deploy of already-current SHA: $deploy_sha"
   fi
   [ ! -e "$RELEASE_DIR/$deploy_sha.json" ] || fail "Immutable release manifest already exists: $RELEASE_DIR/$deploy_sha.json"
@@ -680,13 +669,17 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   APP_SERVICES='backend api-ingress'
 fi
 
-# Fail every overlap prerequisite before taking the deploy lock or touching
-# Compose, the database, release env, manifests, or pointers.
-if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
-  verify_overlap_receipts
-fi
+# Fail every normal-deploy prerequisite before taking the deploy lock or
+# mutating Compose, the database, release env, manifests, or pointers.
 preflight
 if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  verify_deploy_receipts
+  if [ -n "$CURRENT_RELEASE_SHA" ]; then
+    migration_classifier=$APP_DIR/scripts/deploy/verify-additive-migrations.sh
+    APP_DIR="$APP_DIR" sh "$migration_classifier" "$CURRENT_RELEASE_SHA" "$SHA"
+  fi
+  live_volume_verifier=$APP_DIR/scripts/deploy/verify-live-event-media-volume.sh
+  APP_DIR="$APP_DIR" ENV_FILE="$ENV_FILE" sh "$live_volume_verifier"
   verify_image_ids
 fi
 acquire_lock

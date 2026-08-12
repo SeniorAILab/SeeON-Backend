@@ -7,7 +7,6 @@ APP_ROOT=${APP_ROOT:-/opt/eldercare-fall-ai}
 APP_DIR=${APP_DIR:-$APP_ROOT/repo}
 ENV_FILE=${ENV_FILE:-$APP_ROOT/shared/.env}
 RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
-MEDIA_RECEIPT=${MEDIA_RECEIPT:-$RECEIPT_DIR/media-backup.receipt}
 EDGE_RECEIPT=${EDGE_RECEIPT:-$RECEIPT_DIR/edge-continuity.receipt}
 INGRESS_CONFIG=${INGRESS_CONFIG:-$APP_DIR/infra/api-ingress/nginx.conf}
 RECEIPT_MAX_AGE_SECONDS=${RECEIPT_MAX_AGE_SECONDS:-3600}
@@ -46,7 +45,6 @@ require_fresh_epoch() {
   age=$((now - value))
   [ "$age" -ge 0 ] && [ "$age" -le "$RECEIPT_MAX_AGE_SECONDS" ] || fail "$label is stale"
 }
-sha256_file() { sha256sum "$1" | awk '{print $1}'; }
 compose() {
   BACKEND_IMAGE="eldercare-backend:$SHA" \
   API_INGRESS_IMAGE="eldercare-api-ingress:$SHA" \
@@ -84,19 +82,6 @@ validate_pre_build() {
     cd "$APP_DIR"
     compose --profile full config >/dev/null
   ) || fail 'production Compose configuration is invalid'
-}
-validate_media_receipt() {
-  owner_only_file "$MEDIA_RECEIPT" 'media backup receipt'
-  [ "$(wc -l < "$MEDIA_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'media backup receipt is malformed'
-  [ "$(receipt_value FORMAT "$MEDIA_RECEIPT")" = seeon-event-media-backup-receipt-v1 ] || fail 'media backup receipt format is invalid'
-  bundle=$(receipt_value BUNDLE "$MEDIA_RECEIPT")
-  case "$bundle" in /*) ;; *) fail 'media backup receipt bundle path is invalid' ;; esac
-  [ -d "$bundle" ] && [ ! -L "$bundle" ] || fail 'media backup receipt bundle is unavailable'
-  expected=$(receipt_value MANIFEST_SHA256 "$MEDIA_RECEIPT")
-  case "$expected" in *[!0-9a-f]*|'') fail 'media backup receipt checksum is invalid' ;; esac
-  [ "${#expected}" -eq 64 ] || fail 'media backup receipt checksum is invalid'
-  [ -f "$bundle/MANIFEST" ] && [ "$(sha256_file "$bundle/MANIFEST")" = "$expected" ] || fail 'media backup receipt checksum does not match its bundle'
-  require_fresh_epoch "$(receipt_value COMPLETED_EPOCH "$MEDIA_RECEIPT")" 'media backup receipt'
 }
 validate_edge_receipt() {
   owner_only_file "$EDGE_RECEIPT" 'Edge continuity receipt'
@@ -146,7 +131,8 @@ case "$MODE" in
     ;;
   --pre-deploy)
     validate_pre_build
-    validate_media_receipt
+    live_volume_verifier=$APP_DIR/scripts/deploy/verify-live-event-media-volume.sh
+    APP_DIR="$APP_DIR" ENV_FILE="$ENV_FILE" sh "$live_volume_verifier"
     validate_edge_receipt
     verify_image "eldercare-backend:$SHA" backend
     verify_image "eldercare-api-ingress:$SHA" 'API ingress'

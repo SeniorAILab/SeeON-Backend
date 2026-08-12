@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Manual standalone operator tool. Deployment, Jenkins, and readiness do not
+# invoke this optional event-media recovery utility or consume its receipt.
 # shellcheck disable=SC2016 # Quoted commands expand environment inside containers.
 set -eu
 

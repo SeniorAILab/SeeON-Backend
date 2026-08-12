@@ -129,6 +129,11 @@ function assertContract(config) {
   ) {
     throw new VerificationError('backend clip storage source must be declared');
   }
+  if (config.volumes[source]?.name !== 'repo_clips') {
+    throw new VerificationError(
+      'production backend clip storage must use exact named volume repo_clips',
+    );
+  }
   for (const serviceName of ['db', 'api-ingress']) {
     const mounts = config.services?.[serviceName]?.volumes;
     if (
