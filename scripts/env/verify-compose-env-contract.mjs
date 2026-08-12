@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const completeHostEnv = `NODE_ENV=production
-FRONT_ORIGIN=https://senai.example.com
+FRONT_ORIGINS=https://seeon.senai.example.com,http://198.51.100.1
 ALERT_DASHBOARD_URL=https://senai.example.com
 POSTGRES_USER=fall_prod_admin
 POSTGRES_PASSWORD=prod-admin-password-32chars
