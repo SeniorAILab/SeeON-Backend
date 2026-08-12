@@ -61,16 +61,19 @@ gate_artifacts() {
   [ "$(sha256_file "$SEAL")" = "$SEAL_SHA256" ] || fail 'sealed RC content-address mismatch'
   [ "$(json_value "$SEAL" schemaVersion)" = 2 ] || fail 'sealed RC schema mismatch'
   [ "$(json_value "$SEAL" approvedPlanSha256)" = "$APPROVED_PLAN_SHA256" ] || fail 'sealed RC plan binding mismatch'
-  [ "$(json_value "$SEAL" ai repository)" = SeniorAILab/eldercare-fall-ai ] || fail 'sealed AI repository identity mismatch'
+  [ "$(json_value "$SEAL" ai repository)" = SeniorAILab/SeeON-Backend ] || fail 'sealed AI repository identity mismatch'
   [ "$(json_value "$SEAL" ml repository)" = SeniorAILab/eldercare-fall-ml-v2 ] || fail 'sealed ML repository identity mismatch'
+  if node -e 'const fs=require("node:fs"),v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.exit(Object.hasOwn(v.ai,"frontImage")?0:1)' "$SEAL"; then
+    fail 'sealed AI front image ownership is not allowed'
+  fi
   for repo in ai ml; do
     sha=$(json_value "$SEAL" "$repo" sha)
     tree=$(json_value "$SEAL" "$repo" tree)
     case "$sha$tree" in *[!0-9a-f]*) fail "sealed $repo commit provenance is invalid" ;; esac
     [ "${#sha}" -eq 40 ] && [ "${#tree}" -eq 40 ] || fail "sealed $repo commit provenance is invalid"
   done
-  check_sealed_image ai backendImage SeniorAILab/eldercare-fall-ai
-  check_sealed_image ai frontImage SeniorAILab/eldercare-fall-ai
+  check_sealed_image ai backendImage SeniorAILab/SeeON-Backend
+  check_sealed_image ai apiIngressImage SeniorAILab/SeeON-Backend
   check_sealed_image ml apiImage SeniorAILab/eldercare-fall-ml-v2
   check_sealed_image ml workerImage SeniorAILab/eldercare-fall-ml-v2
 }
@@ -131,7 +134,7 @@ fixture() {
   APPROVED_PLAN_SHA256=$(sha256_file "$tmp/plan.md")
   printf 'approved_plan_sha256: %s\nround_status: approved\n' "$APPROVED_PLAN_SHA256" >"$tmp/draft.md"
   cat >"$tmp/seal.json" <<EOF
-{"schemaVersion":2,"approvedPlanSha256":"$APPROVED_PLAN_SHA256","ai":{"repository":"SeniorAILab/eldercare-fall-ai","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":"1111111111111111111111111111111111111111","backendImage":{"ref":"local/backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","imageId":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","platform":"linux/arm64","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"SeniorAILab/eldercare-fall-ai"},"frontImage":{"ref":"local/front@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","imageId":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","platform":"linux/arm64","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"SeniorAILab/eldercare-fall-ai"}},"ml":{"repository":"SeniorAILab/eldercare-fall-ml-v2","sha":"dddddddddddddddddddddddddddddddddddddddd","tree":"2222222222222222222222222222222222222222","apiImage":{"ref":"local/api@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","imageId":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","platform":"linux/arm64","revision":"dddddddddddddddddddddddddddddddddddddddd","repository":"SeniorAILab/eldercare-fall-ml-v2"},"workerImage":{"ref":"local/worker@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","imageId":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","platform":"linux/amd64","revision":"dddddddddddddddddddddddddddddddddddddddd","repository":"SeniorAILab/eldercare-fall-ml-v2"}}}
+{"schemaVersion":2,"approvedPlanSha256":"$APPROVED_PLAN_SHA256","ai":{"repository":"SeniorAILab/SeeON-Backend","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":"1111111111111111111111111111111111111111","backendImage":{"ref":"local/backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","imageId":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","platform":"linux/arm64","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"SeniorAILab/SeeON-Backend"},"apiIngressImage":{"ref":"local/api-ingress@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","imageId":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","platform":"linux/arm64","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repository":"SeniorAILab/SeeON-Backend"}},"ml":{"repository":"SeniorAILab/eldercare-fall-ml-v2","sha":"dddddddddddddddddddddddddddddddddddddddd","tree":"2222222222222222222222222222222222222222","apiImage":{"ref":"local/api@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","imageId":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","platform":"linux/arm64","revision":"dddddddddddddddddddddddddddddddddddddddd","repository":"SeniorAILab/eldercare-fall-ml-v2"},"workerImage":{"ref":"local/worker@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","imageId":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","platform":"linux/amd64","revision":"dddddddddddddddddddddddddddddddddddddddd","repository":"SeniorAILab/eldercare-fall-ml-v2"}}}
 EOF
   snapshot='"database":"ok","deployLockAvailable":true,"jenkinsIdle":true,"memorySwapFreeMiB":1024,"diskFreeMiB":10240,"volumesHealthy":true,"queuesDrained":true,"backupVerified":true,"schemaIntegrity":true,"scopeVerified":true,"legacyCompatibility":true'
   executions=
@@ -160,7 +163,7 @@ EOF
   mv "$tmp/restart.txt.original" "$tmp/executions/restart.txt"
   printf '%s\n' 'AI_EXECUTION_CONTENT_ADDRESS_REJECTION_OK'
   cp "$SEAL" "$tmp/bad-seal.json"
-  node -e 'const fs=require("node:fs"),p=process.argv[1],v=JSON.parse(fs.readFileSync(p));v.ai.backendImage.platform="darwin/arm64";fs.writeFileSync(p,JSON.stringify(v))' "$tmp/bad-seal.json"
+  node -e 'const fs=require("node:fs"),p=process.argv[1],v=JSON.parse(fs.readFileSync(p));v.ai.apiIngressImage.platform="darwin/arm64";fs.writeFileSync(p,JSON.stringify(v))' "$tmp/bad-seal.json"
   original_seal=$SEAL original_seal_sha=$SEAL_SHA256 SEAL=$tmp/bad-seal.json SEAL_SHA256=$(sha256_file "$tmp/bad-seal.json")
   if (gate_artifacts) >/dev/null 2>&1; then fail 'invalid image provenance passed'; fi
   SEAL=$original_seal SEAL_SHA256=$original_seal_sha
