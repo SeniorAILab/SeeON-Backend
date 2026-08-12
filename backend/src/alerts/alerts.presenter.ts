@@ -1,4 +1,9 @@
 import type { Prisma } from '@prisma/client';
+import {
+  SYSTEM_TEST_LABEL,
+  SYSTEM_TEST_MODE,
+  SYSTEM_TEST_TTS_TEXT,
+} from '../events/system-test.constants.js';
 
 /**
  * Shared Alert read shape + presenter for the product `/api/v1/alerts` surface
@@ -34,6 +39,7 @@ export type AlertDetailWithContext = Prisma.AlertGetPayload<{
 }>;
 
 export function presentAlert(alert: AlertWithContext) {
+  const systemTest = alert.type === SYSTEM_TEST_MODE;
   return {
     alertSeq: alert.alertSeq.toString(),
     id: alert.id,
@@ -41,8 +47,17 @@ export function presentAlert(alert: AlertWithContext) {
     facilityId: alert.facilityId,
     cameraId: alert.cameraId,
     spaceId: alert.spaceId,
-    room: alert.space.name,
+    room: systemTest ? null : (alert.space?.name ?? null),
     type: alert.type,
+    ...(systemTest
+      ? {
+          source: SYSTEM_TEST_MODE,
+          residentId: null,
+          testMode: SYSTEM_TEST_MODE,
+          label: SYSTEM_TEST_LABEL,
+          ttsText: SYSTEM_TEST_TTS_TEXT,
+        }
+      : {}),
     probability: alert.probability,
     snapshotKey: alert.snapshotKey,
     detectedAt: alert.detectedAt,

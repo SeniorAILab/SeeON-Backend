@@ -38,7 +38,8 @@
     "retryability": "Only HTTP 429, HTTP 503, and client-observed network or timeout failures are retryable. HTTP 409 requires state refresh or operator action and must not be blindly retried.",
     "credentialStorage": "The server persists only tokenId, a non-secret prefix, HMAC-SHA-256 digest, lifecycle, binding, and timestamps. Raw bearer values are displayed once and are never recoverable from storage.",
     "rotationGraceSeconds": 86400,
-    "omissionConfirmationTtlSeconds": 900
+    "omissionConfirmationTtlSeconds": 900,
+    "systemTestDashboardGate": "SYSTEM_TEST requires an active validation grant with explicit SYSTEM_TEST capability. It persists no camera, space, resident, person, or media identity; emits only the authorized facility in-app Alert/SSE/REST contract; and cannot enter external delivery infrastructure."
   },
   "x-error-status-map": {
     "400": ["INVALID_SCHEMA", "INVALID_TOPOLOGY"],
@@ -553,7 +554,7 @@
         "operationId": "createEdgeValidationRun",
         "tags": ["Edge credential administration"],
         "summary": "Create an isolated live-validation grant",
-        "description": "Creates a bounded validation-only grant for the expected installation generation. Validation events remain excluded from ordinary event, alert, dashboard, SSE, email, outbox, and search surfaces; only validation endpoints may read them.",
+        "description": "Creates a bounded validation grant for the expected installation generation. Capability is null by default. Only an explicit SYSTEM_TEST capability may admit the facility-level in-app SYSTEM_TEST contract; ordinary validation events remain excluded from alerts and dashboard delivery.",
         "security": [
           {
             "sessionCookie": []
@@ -798,7 +799,7 @@
         "operationId": "createMachineEvent",
         "tags": ["Machine API"],
         "summary": "Record an ML event",
-        "description": "The eft_v1 principal supplies facility, installation, and generation. Camera ownership is resolved server-side. Facility identity fields are not part of the v1 body. Previously deployed shared-token clients remain a separately metered compatibility path and do not gain eft_v1 authority.",
+        "description": "Normal events resolve camera ownership server-side. SYSTEM_TEST is a separate exact sentinel payload admitted only by an active validation grant with explicit SYSTEM_TEST capability; it contains no camera, space, room, person, resident, or media fields.",
         "security": [
           {
             "edgeBearer": []
@@ -1450,6 +1451,377 @@
           }
         }
       }
+    },
+    "/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close": {
+      "post": {
+        "operationId": "closeEdgeValidationRun",
+        "tags": ["Edge credential administration"],
+        "summary": "Close a validation grant with audit history",
+        "description": "Idempotently closes the exact active validation grant under an idempotency key and writes VALIDATION_RUN_CLOSED provisioning audit. Resolve the SYSTEM_TEST Alert first; closed grants admit no new event.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EdgeInstallationId"
+          },
+          {
+            "name": "validationRunId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UuidV7"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseValidationRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Validation grant closed and audited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseValidationRunResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact idempotent close replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseValidationRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "operationId": "listAlerts",
+        "tags": ["Dashboard alerts"],
+        "summary": "List facility alerts for reconciliation",
+        "description": "Returns the effective facility alert list. Resolved SYSTEM_TEST rows are excluded from ordinary history.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-cors": {
+          "credentials": true,
+          "origin": "Validated FRONT_ORIGINS allowlist; wildcard origins are forbidden."
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["NEW", "ACKED", "RESOLVED"]
+            }
+          },
+          {
+            "name": "afterSeq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "beforeSeq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Facility-scoped alert list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilitySessionRequired"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}": {
+      "get": {
+        "operationId": "getAlert",
+        "tags": ["Dashboard alerts"],
+        "summary": "Read one facility alert",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-cors": {
+          "credentials": true,
+          "origin": "Validated FRONT_ORIGINS allowlist; wildcard origins are forbidden."
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert with action-note history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilitySessionRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/FacilityScopedNotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}/resolve": {
+      "patch": {
+        "operationId": "resolveAlert",
+        "tags": ["Dashboard alerts"],
+        "summary": "Resolve one facility alert",
+        "description": "Atomically stamps the session actor, returns the full presenter shape, and emits alert-updated after commit.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-cors": {
+          "credentials": true,
+          "origin": "Validated FRONT_ORIGINS allowlist; wildcard origins are forbidden."
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved alert.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilitySessionRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/FacilityScopedNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/stream": {
+      "get": {
+        "operationId": "streamDashboardAlerts",
+        "tags": ["Dashboard alerts"],
+        "summary": "Stream facility dashboard alerts",
+        "description": "Credentialed cross-origin SSE. Sends named alert and alert-updated events; alert creation uses alertSeq as Last-Event-ID and lifecycle updates are reconciled through REST.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-cors": {
+          "credentials": true,
+          "origin": "Validated FRONT_ORIGINS allowlist; wildcard origins are forbidden."
+        },
+        "x-sse-event-schemas": {
+          "alert": "#/components/schemas/DashboardAlertSseData",
+          "alert-updated": "#/components/schemas/AlertUpdatedSseData"
+        },
+        "responses": {
+          "200": {
+            "description": "Long-lived facility-scoped event stream.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Connection": {
+                "schema": {
+                  "type": "string",
+                  "const": "keep-alive"
+                }
+              },
+              "X-Accel-Buffering": {
+                "schema": {
+                  "type": "string",
+                  "const": "no"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/FacilitySessionRequired"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/system-test-retention/purge": {
+      "post": {
+        "operationId": "purgeSystemTestRetention",
+        "tags": ["Edge credential administration"],
+        "summary": "Purge eligible retained SYSTEM_TEST records",
+        "description": "SUPER_ADMIN operator/cron hook. The application invokes a facility-locked least-privilege database operation; zero-work runs create no audit receipt. No scheduler is enabled by default.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-required-role": "SUPER_ADMIN",
+        "x-cors": {
+          "credentials": true,
+          "origin": "Validated FRONT_ORIGINS allowlist; wildcard origins are forbidden."
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "UUIDv7 purge job key. A nonzero purge stores one durable receipt and replays that receipt for the same facility; a zero-work invocation stores no audit row.",
+            "schema": {
+              "$ref": "#/components/schemas/UuidV7"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeSystemTestRetentionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purge result or exact job replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeSystemTestRetentionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidSchema"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminSessionRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/SuperAdminRequired"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1976,6 +2348,26 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/MachineErrorEnvelope"
+            }
+          }
+        }
+      },
+      "FacilitySessionRequired": {
+        "description": "Authenticated session with an effective facility context required. Foreign facility records are not disclosed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionErrorEnvelope"
+            }
+          }
+        }
+      },
+      "FacilityScopedNotFound": {
+        "description": "The facility-scoped resource is absent or outside the effective facility.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionErrorEnvelope"
             }
           }
         }
@@ -3255,6 +3647,18 @@
             "type": "integer",
             "minimum": 60,
             "maximum": 3600
+          },
+          "capability": {
+            "oneOf": [
+              {
+                "type": "string",
+                "const": "SYSTEM_TEST"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         }
       },
@@ -3297,77 +3701,29 @@
           },
           "expiresAt": {
             "$ref": "#/components/schemas/Rfc3339MillisUtc"
-          }
-        }
-      },
-      "RecordEventRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["camera_id", "type", "detected_at"],
-        "properties": {
-          "camera_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
           },
-          "type": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "detected_at": {
-            "$ref": "#/components/schemas/Rfc3339MillisUtc"
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "config_version": {
-            "type": "number",
-            "minimum": 0
-          },
-          "model_version": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "detector_version": {
-            "type": "string",
-            "maxLength": 128
-          },
-          "operating_threshold": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "snapshot_key": {
+          "capability": {
             "oneOf": [
               {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 512
+                "const": "SYSTEM_TEST"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "clip_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "clock_source": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "edge_event_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
           }
-        },
-        "description": "No facility identifier, connection URL, camera authentication material, or secret-shaped field is accepted."
+        }
+      },
+      "RecordEventRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NormalRecordEventRequest"
+          },
+          {
+            "$ref": "#/components/schemas/SystemTestRecordEventRequest"
+          }
+        ]
       },
       "RecordEventResponse": {
         "oneOf": [
@@ -3802,7 +4158,1269 @@
             "maxLength": 128
           }
         }
+      },
+      "NormalRecordEventRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["camera_id", "type", "detected_at"],
+        "properties": {
+          "camera_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "config_version": {
+            "type": "number",
+            "minimum": 0
+          },
+          "model_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "detector_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "operating_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "snapshot_key": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "clock_source": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "edge_event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "description": "No facility identifier, connection URL, camera authentication material, or secret-shaped field is accepted."
+      },
+      "SystemTestRecordEventRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "test_mode",
+          "validation_run_id",
+          "edge_event_id",
+          "detected_at"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "test_mode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "validation_run_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edge_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        },
+        "description": "Exact no-camera, no-room, no-person, no-resident, no-media SYSTEM_TEST wire payload."
+      },
+      "CloseValidationRunRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "expectedStatus"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "expectedStatus": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "CloseValidationRunResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operation",
+          "validationRunId",
+          "edgeInstallationId",
+          "enrollmentGeneration",
+          "status",
+          "closedAt"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "validationRunId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "edgeInstallationId": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "enrollmentGeneration": {
+            "$ref": "#/components/schemas/PositiveRevision"
+          },
+          "status": {
+            "type": "string",
+            "const": "CLOSED"
+          },
+          "closedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "SystemTestAlert": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "createdAt",
+          "residentId",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "source",
+          "probability",
+          "snapshotKey",
+          "space",
+          "testMode",
+          "label",
+          "ttsText"
+        ],
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "residentId": {
+            "type": "null"
+          },
+          "cameraId": {
+            "type": "null"
+          },
+          "spaceId": {
+            "type": "null"
+          },
+          "room": {
+            "type": "null"
+          },
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "source": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "probability": {
+            "type": "null"
+          },
+          "snapshotKey": {
+            "type": "null"
+          },
+          "space": {
+            "type": "null"
+          },
+          "testMode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "label": {
+            "type": "string",
+            "const": "SYSTEM TEST - NOT A RESIDENT ALERT"
+          },
+          "ttsText": {
+            "type": "string",
+            "const": "System test emergency notification"
+          }
+        }
+      },
+      "AlertActor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nickname"],
+        "properties": {
+          "nickname": {
+            "type": "string"
+          }
+        }
+      },
+      "AlertSpace": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "NormalAlert": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "createdAt",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "probability",
+          "snapshotKey",
+          "space"
+        ],
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "room": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "not": {
+              "const": "SYSTEM_TEST"
+            }
+          },
+          "probability": {
+            "type": "number"
+          },
+          "snapshotKey": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "space": {
+            "$ref": "#/components/schemas/AlertSpace"
+          }
+        }
+      },
+      "Alert": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NormalAlert"
+          },
+          {
+            "$ref": "#/components/schemas/SystemTestAlert"
+          }
+        ]
+      },
+      "AlertList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Alert"
+        }
+      },
+      "AlertNote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "note", "createdBy", "authorRole", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdBy": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorRole": {
+            "type": "string",
+            "enum": ["ADMIN", "STAFF"]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "NormalAlertDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "createdAt",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "probability",
+          "snapshotKey",
+          "space",
+          "notes"
+        ],
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "room": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "not": {
+              "const": "SYSTEM_TEST"
+            }
+          },
+          "probability": {
+            "type": "number"
+          },
+          "snapshotKey": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "space": {
+            "$ref": "#/components/schemas/AlertSpace"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertNote"
+            }
+          }
+        }
+      },
+      "SystemTestAlertDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "createdAt",
+          "residentId",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "source",
+          "probability",
+          "snapshotKey",
+          "space",
+          "testMode",
+          "label",
+          "ttsText",
+          "notes"
+        ],
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nickname"],
+                "properties": {
+                  "nickname": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "residentId": {
+            "type": "null"
+          },
+          "cameraId": {
+            "type": "null"
+          },
+          "spaceId": {
+            "type": "null"
+          },
+          "room": {
+            "type": "null"
+          },
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "source": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "probability": {
+            "type": "null"
+          },
+          "snapshotKey": {
+            "type": "null"
+          },
+          "space": {
+            "type": "null"
+          },
+          "testMode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "label": {
+            "type": "string",
+            "const": "SYSTEM TEST - NOT A RESIDENT ALERT"
+          },
+          "ttsText": {
+            "type": "string",
+            "const": "System test emergency notification"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertNote"
+            }
+          }
+        }
+      },
+      "AlertDetail": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NormalAlertDetail"
+          },
+          {
+            "$ref": "#/components/schemas/SystemTestAlertDetail"
+          }
+        ]
+      },
+      "NormalAlertSseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "backendEventId",
+          "alertSeq",
+          "facilityId",
+          "spaceId",
+          "cameraId",
+          "type",
+          "status",
+          "probability",
+          "detectedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "spaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "not": {
+              "const": "SYSTEM_TEST"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "probability": {
+            "type": "number"
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          }
+        }
+      },
+      "SystemTestAlertSseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "backendEventId",
+          "alertSeq",
+          "facilityId",
+          "spaceId",
+          "cameraId",
+          "type",
+          "status",
+          "probability",
+          "detectedAt",
+          "source",
+          "testMode",
+          "label",
+          "ttsText",
+          "snapshotKey",
+          "residentId",
+          "room"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "spaceId": {
+            "type": "null"
+          },
+          "cameraId": {
+            "type": "null"
+          },
+          "type": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NEW", "ACKED", "RESOLVED"]
+          },
+          "probability": {
+            "type": "null"
+          },
+          "detectedAt": {
+            "$ref": "#/components/schemas/Rfc3339MillisUtc"
+          },
+          "source": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "testMode": {
+            "type": "string",
+            "const": "SYSTEM_TEST"
+          },
+          "label": {
+            "type": "string",
+            "const": "SYSTEM TEST - NOT A RESIDENT ALERT"
+          },
+          "ttsText": {
+            "type": "string",
+            "const": "System test emergency notification"
+          },
+          "snapshotKey": {
+            "type": "null"
+          },
+          "residentId": {
+            "type": "null"
+          },
+          "room": {
+            "type": "null"
+          }
+        }
+      },
+      "DashboardAlertSseData": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NormalAlertSseData"
+          },
+          {
+            "$ref": "#/components/schemas/SystemTestAlertSseData"
+          }
+        ]
+      },
+      "AlertUpdatedSseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "alertSeq",
+          "spaceId",
+          "status",
+          "resolvedById",
+          "resolvedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "spaceId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ACKED", "RESOLVED"]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PurgeSystemTestRetentionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "facilityId"],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "PurgeSystemTestRetentionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "receiptId",
+          "jobId",
+          "facilityId",
+          "purgedEvents",
+          "purgedAlerts",
+          "purgedDashboardReceipts",
+          "purgedAlertNotes",
+          "purgedAt",
+          "replayed"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "receiptId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobId": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "facilityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purgedEvents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "purgedAlerts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "purgedDashboardReceipts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "purgedAlertNotes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "purgedAt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339MillisUtc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
       }
     }
+  },
+  "x-system-test-dashboard-contract": {
+    "sentinel": "SYSTEM_TEST",
+    "label": "SYSTEM TEST - NOT A RESIDENT ALERT",
+    "ttsText": "System test emergency notification",
+    "restPath": "/api/v1/alerts?status=NEW",
+    "ssePath": "/api/v1/dashboard/stream",
+    "resolvePath": "/api/v1/alerts/{alertId}/resolve",
+    "retentionDays": 30,
+    "schema": {
+      "$ref": "#/components/schemas/SystemTestAlert"
+    },
+    "externalChannels": false,
+    "purgePath": "/api/v1/admin/system-test-retention/purge",
+    "purgeInvocation": "Disabled by default; invoke through the authenticated SUPER_ADMIN operation with a unique UUIDv7 Idempotency-Key."
   }
 }

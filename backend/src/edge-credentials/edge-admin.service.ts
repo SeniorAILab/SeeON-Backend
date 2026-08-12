@@ -25,6 +25,7 @@ export class EdgeAdminService {
       readonly schemaVersion: 1;
       readonly expectedEnrollmentGeneration: number;
       readonly durationSeconds: number;
+      readonly capability?: 'SYSTEM_TEST';
     },
     context: MutationContext,
   ) {
@@ -41,11 +42,39 @@ export class EdgeAdminService {
       expectedGeneration: body.expectedEnrollmentGeneration,
       validationRunId: uuidV7(now.getTime()),
       expiresAt: new Date(now.getTime() + body.durationSeconds * 1000),
+      capability: body.capability,
       now,
       identity: identity(context, hash, now),
     });
     if (result === null) {
       throw edgeHttpError(409, EDGE_ERROR_CODES.STALE_GENERATION);
+    }
+    return result;
+  }
+
+  async closeValidationRun(
+    edgeInstallationId: string,
+    validationRunId: string,
+    body: { readonly schemaVersion: 1; readonly expectedStatus: 'ACTIVE' },
+    context: MutationContext,
+  ) {
+    const hash = bodyHash({ edgeInstallationId, validationRunId, ...body });
+    const replay = await this.replay(
+      context.idempotencyKey,
+      'VALIDATION_RUN_CLOSE',
+      hash,
+    );
+    if (replay !== null) return replay;
+    const now = this.clock.now();
+    const result = await this.repository.closeValidationGrant({
+      edgeInstallationId,
+      validationRunId,
+      expectedStatus: body.expectedStatus,
+      now,
+      identity: identity(context, hash, now),
+    });
+    if (result === null) {
+      throw edgeHttpError(409, EDGE_ERROR_CODES.MISMATCH);
     }
     return result;
   }

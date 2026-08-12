@@ -10,6 +10,7 @@ export type EdgePrincipal = {
   readonly edgeInstallationId: string;
   readonly enrollmentGeneration: number;
   readonly validationRunId?: string;
+  readonly validationCapability?: 'SYSTEM_TEST';
 };
 
 export interface EdgeAuthenticatedRequest {

@@ -125,7 +125,7 @@ describe('room-centric cross-slice regression invariants', () => {
       .expect(404);
   });
 
-  it('keeps Camera.spaceId and Alert.spaceId as NOT NULL room anchors', async () => {
+  it('keeps camera rooms required and delegates alert nullability to the SYSTEM_TEST shape constraint', async () => {
     const columns = await direct.$queryRaw<NullableColumnRow[]>`
       SELECT table_name || '.' || column_name AS column_name, is_nullable
       FROM information_schema.columns
@@ -138,7 +138,7 @@ describe('room-centric cross-slice regression invariants', () => {
     `;
 
     expect(columns).toEqual([
-      { column_name: 'alerts.space_id', is_nullable: 'NO' },
+      { column_name: 'alerts.space_id', is_nullable: 'YES' },
       { column_name: 'cameras.space_id', is_nullable: 'NO' },
     ]);
   });
@@ -188,6 +188,16 @@ describe('room-centric cross-slice regression invariants', () => {
         await tx.$executeRaw`
           INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
           VALUES ('regression-alert-cross-camera', 'regression-a', 'regression-camera-b', 'regression-space-a', 'fall', 0.9, now(), 'regression-alert-cross-camera-key', 'regression-event-a2')
+        `;
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      app.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.facility_id', 'regression-a', true)`;
+        await tx.$executeRaw`
+          INSERT INTO alerts (id, facility_id, camera_id, space_id, type, probability, detected_at, idempotency_key, origin_event_id)
+          VALUES ('regression-alert-roomless-fall', 'regression-a', NULL, NULL, 'fall', 0.9, now(), 'regression-alert-roomless-fall-key', 'regression-event-a2')
         `;
       }),
     ).rejects.toThrow();

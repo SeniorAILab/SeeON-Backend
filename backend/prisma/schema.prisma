@@ -198,6 +198,7 @@ model Facility {
   edgeOwnershipTransfers  EdgeOwnershipTransfer[]
   edgeValidationGrants    EdgeValidationGrant[]
   edgeProvisioningAudits  EdgeProvisioningAudit[]
+  systemTestPurgeAudits   SystemTestPurgeAudit[]
   mediaDownloadAudits     MediaDownloadAudit[]
   mediaDownloadOutboxJobs MediaDownloadOutboxJob[]
 
@@ -296,9 +297,10 @@ model Alert {
 
   /// Nullable: alert may originate from an unconfigured camera path.
   cameraId       String?     @map("camera_id")
-  spaceId        String      @map("space_id")
+  /// Null only for a facility-level SYSTEM_TEST alert with no room semantics.
+  spaceId        String?     @map("space_id")
   type           String
-  probability    Float
+  probability    Float?
   /// Internal facility-scoped storage key for the snapshot image (never a raw URL).
   snapshotKey    String?     @map("snapshot_key")
   detectedAt     DateTime    @map("detected_at")
@@ -320,7 +322,7 @@ model Alert {
   /// Composite FK (facilityId, cameraId) → Camera(facilityId, id) prevents
   /// an alert from referencing a camera in a different facility (F9).
   camera            Camera?            @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  space             Space?             @relation(fields: [facilityId, spaceId], references: [facilityId, id])
   originEvent       Event              @relation("AlertOriginEvent", fields: [facilityId, originEventId], references: [facilityId, id])
   /// Lifecycle audit actors. Simple nullable FK → users(id); same-facility is an
   /// app-layer guarantee (session actor + RequireFacilityGuard + facility-scoped write).
@@ -361,34 +363,38 @@ model AlertNote {
 
 /// Immutable ML event SSOT. RLS-protected and append-only for the app role.
 model Event {
-  id                 String   @id @default(cuid())
-  facilityId         String   @map("facility_id")
-  cameraId           String   @map("camera_id")
-  spaceId            String   @map("space_id")
+  id                 String    @id @default(cuid())
+  facilityId         String    @map("facility_id")
+  /// Null only for a facility-level SYSTEM_TEST event with no camera semantics.
+  cameraId           String?   @map("camera_id")
+  /// Null only for a facility-level SYSTEM_TEST event with no room semantics.
+  spaceId            String?   @map("space_id")
   type               String
   confidence         Float?
-  detectedAt         DateTime @map("detected_at")
-  createdAt          DateTime @default(now()) @map("created_at")
-  modifiedAt         DateTime @updatedAt @map("modified_at")
-  dedupKey           String   @map("dedup_key")
-  configVersion      Int?     @map("config_version")
-  modelVersion       String?  @map("model_version")
-  detectorVersion    String?  @map("detector_version")
-  operatingThreshold Float?   @map("operating_threshold")
-  snapshotKey        String?  @map("snapshot_key")
-  clockSource        String?  @map("clock_source")
+  detectedAt         DateTime  @map("detected_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  modifiedAt         DateTime  @updatedAt @map("modified_at")
+  dedupKey           String    @map("dedup_key")
+  configVersion      Int?      @map("config_version")
+  modelVersion       String?   @map("model_version")
+  detectorVersion    String?   @map("detector_version")
+  operatingThreshold Float?    @map("operating_threshold")
+  snapshotKey        String?   @map("snapshot_key")
+  clockSource        String?   @map("clock_source")
   /// Edge-reported clip reference (not an FK); the authoritative binding is EventMediaBinding.
-  clipId             String?  @map("clip_id")
+  clipId             String?   @map("clip_id")
   /// Edge-generated event UUID for ingest dedup; null when the edge did not supply one.
-  edgeEventId        String?  @map("edge_event_id") @db.Uuid
+  edgeEventId        String?   @map("edge_event_id") @db.Uuid
   /// Null for ordinary events; set only for accepted validation-run events.
-  validationRunId    String?  @map("validation_run_id") @db.Uuid
+  validationRunId    String?   @map("validation_run_id") @db.Uuid
+  /// Set only for SYSTEM_TEST; retained for bounded validation audit review.
+  retentionExpiresAt DateTime? @map("retention_expires_at")
 
-  facility          Facility              @relation(fields: [facilityId], references: [id])
-  camera            Camera                @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space             Space                 @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  validationGrant   EdgeValidationGrant?  @relation(fields: [facilityId, validationRunId], references: [facilityId, id], onDelete: Restrict, onUpdate: Cascade)
-  originAlerts      Alert[]               @relation("AlertOriginEvent")
+  facility          Facility             @relation(fields: [facilityId], references: [id])
+  camera            Camera?              @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space             Space?               @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  validationGrant   EdgeValidationGrant? @relation(fields: [facilityId, validationRunId], references: [facilityId, id], onDelete: Restrict, onUpdate: Cascade)
+  originAlerts      Alert[]              @relation("AlertOriginEvent")
   dashboardReceipts DashboardReceipt[]
 
   mediaBinding EventMediaBinding?
@@ -399,6 +405,7 @@ model Event {
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
   @@index([facilityId, validationRunId])
+  @@index([facilityId, type, retentionExpiresAt], map: "events_system_test_retention_idx")
   @@map("events")
 }
 
@@ -783,6 +790,8 @@ model EdgeValidationGrant {
   edgeInstallationId   String                    @map("edge_installation_id") @db.Uuid
   enrollmentGeneration Int                       @map("enrollment_generation")
   status               EdgeValidationGrantStatus @default(ACTIVE)
+  /// Null by default; SYSTEM_TEST must be explicitly granted by a super admin.
+  capability           String?                   @db.VarChar(32)
   createdAt            DateTime                  @default(now()) @map("created_at")
   expiresAt            DateTime                  @map("expires_at")
   closedAt             DateTime?                 @map("closed_at")
@@ -818,6 +827,23 @@ model EdgeProvisioningAudit {
   @@index([facilityId, occurredAt])
   @@index([operationId])
   @@map("edge_provisioning_audit_history")
+}
+
+/// Durable non-private receipt for an atomic SYSTEM_TEST retention purge.
+model SystemTestPurgeAudit {
+  receiptId               String   @id @map("receipt_id") @db.Uuid
+  jobId                   String   @unique @map("job_id") @db.Uuid
+  facilityId              String   @map("facility_id")
+  purgedEvents            Int      @map("purged_events")
+  purgedAlerts            Int      @map("purged_alerts")
+  purgedDashboardReceipts Int      @map("purged_dashboard_receipts")
+  purgedAlertNotes        Int      @map("purged_alert_notes")
+  purgedAt                DateTime @default(now()) @map("purged_at")
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([facilityId, purgedAt], map: "system_test_purge_audit_facility_purged_idx")
+  @@map("system_test_purge_audit_history")
 }
 
 model MediaDownloadProcessHeartbeat {

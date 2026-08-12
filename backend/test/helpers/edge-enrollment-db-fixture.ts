@@ -28,6 +28,12 @@ export async function cleanupEdgeEnrollmentFixtures(
     EDGE_ENROLLMENT_FACILITY_ID,
     EDGE_ENROLLMENT_OTHER_FACILITY_ID,
   ];
+  await admin.dashboardReceipt.deleteMany({
+    where: { facilityId: { in: facilityIds } },
+  });
+  await admin.alert.deleteMany({
+    where: { facilityId: { in: facilityIds } },
+  });
   await admin.event.deleteMany({
     where: { facilityId: { in: facilityIds } },
   });

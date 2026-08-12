@@ -46,6 +46,20 @@ function input(probability: number) {
   };
 }
 
+async function withDeadline<T>(signal: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      signal,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timeout`)), 1_000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 describe('AlertWriterService', () => {
   it('persists, returns the mapped event, and notifies alert subscribers', async () => {
     const { service } = setup();
@@ -60,6 +74,37 @@ describe('AlertWriterService', () => {
     expect(received).toHaveLength(1);
     expect(received[0].id).toBe('a1');
   });
+  it('accepts SYSTEM_TEST only as a facility-level in-app alert and emits after persistence', async () => {
+    const { service, tx } = setup();
+    const received = new Promise<AlertEvent>((resolve) => {
+      service.subscribe('facility-1', resolve);
+    });
+
+    const written = await service.writeAlert({
+      ...input(0.9),
+      cameraId: null,
+      spaceId: null,
+      type: 'SYSTEM_TEST',
+      probability: null,
+      testMode: 'SYSTEM_TEST',
+      snapshotKey: null,
+    } as never);
+    const emitted = await withDeadline(received, 'SYSTEM_TEST emit');
+
+    const createArgs = tx.alert.create.mock.calls.at(0);
+    if (createArgs === undefined)
+      throw new Error('alert create was not called');
+    expect(createArgs[0].data).toMatchObject({
+      cameraId: null,
+      spaceId: null,
+      type: 'SYSTEM_TEST',
+      probability: null,
+    });
+    expect(written.created).toBe(true);
+    expect(emitted.id).toBe(written.id);
+    expect(emitted.spaceId).toBeNull();
+  });
+
   it('logs a room-centric write without leaking resident-keyed data', async () => {
     const logSpy = jest
       .spyOn(Logger.prototype, 'log')
@@ -85,7 +130,7 @@ describe('AlertWriterService', () => {
     const { service, tx } = setup();
 
     await expect(
-      service.writeAlert({ ...input(0.9), spaceId: null } as never),
+      service.writeAlert({ ...input(0.9), spaceId: null }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.writeAlert({ ...input(0.9), spaceId: '  ' }),
