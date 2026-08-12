@@ -7,6 +7,8 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient, Role } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { AlertWriterService } from '../src/alerts/alert-writer.service.js';
+import { AlertsService } from '../src/alerts/alerts.service.js';
 import { AppModule } from '../src/app.module.js';
 import {
   JwtAuthGuard,
@@ -109,7 +111,7 @@ describe('SYSTEM_TEST audited retention purge', () => {
       retentionExpiresAt: new Date('2026-01-01T00:00:00.000Z'),
       status: 'RESOLVED',
     });
-    const normal = await seedNormalEvent();
+    const normal = await seedNormalEvent({ alert: true });
     const otherFacility = await seedSystemTest({
       facilityId: FACILITY_B,
       grantId: GRANT_B,
@@ -138,9 +140,7 @@ describe('SYSTEM_TEST audited retention purge', () => {
     await expectRows(beforeBoundary, true);
     await expectRows(openValidationRun, true);
     await expectRows(otherFacility, true);
-    await expect(
-      admin.event.count({ where: { id: normal.eventId } }),
-    ).resolves.toBe(1);
+    await expectRows(normal, true);
 
     const audits = await purgeAudits(FACILITY_A);
     expect(audits).toHaveLength(1);
@@ -172,6 +172,283 @@ describe('SYSTEM_TEST audited retention purge', () => {
     await expect(
       runtime.$queryRawUnsafe('SELECT * FROM system_test_purge_audit_history'),
     ).rejects.toThrow();
+  });
+
+  it('denies direct Alert and dependent-table retention bypasses as fall_app', async () => {
+    const normal = await seedNormalEvent({ alert: true });
+    const systemTest = await seedSystemTest({
+      facilityId: FACILITY_A,
+      grantId: GRANT_A,
+      retentionExpiresAt: new Date('2026-01-01T00:00:00.000Z'),
+      status: 'RESOLVED',
+      dependencies: true,
+    });
+
+    await expectRoleStatementDenied(
+      'DELETE FROM public.alerts WHERE id = $1',
+      normal.alertId,
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.alerts WHERE id = $1',
+      systemTest.alertId,
+    );
+    await expectRoleStatementDenied(
+      "UPDATE public.alerts SET type = 'fall' WHERE id = $1",
+      systemTest.alertId,
+    );
+    await expectRoleStatementDenied(
+      "UPDATE public.alert_notes SET note = 'bypassed' WHERE id = $1",
+      systemTest.noteId,
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.alert_notes WHERE id = $1',
+      systemTest.noteId,
+    );
+    await expectRoleStatementDenied(
+      "UPDATE public.dashboard_receipt_history SET surface = 'bypassed' WHERE id = $1",
+      systemTest.receiptId,
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.dashboard_receipt_history WHERE id = $1',
+      systemTest.receiptId,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.event_media_bindings SET ordinal = ordinal WHERE false',
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.event_media_bindings WHERE false',
+    );
+
+    await expectRows(normal, true);
+    await expectRows(systemTest, true);
+    await expect(
+      admin.alertNote.findUniqueOrThrow({ where: { id: systemTest.noteId } }),
+    ).resolves.toMatchObject({ note: 'purge dependency only' });
+    await expect(
+      admin.dashboardReceipt.findUniqueOrThrow({
+        where: { id: systemTest.receiptId },
+      }),
+    ).resolves.toMatchObject({ surface: 'normalized-feed' });
+  });
+
+  it('preserves normal runtime Alert insert, ack, resolve, snapshot update, and read', async () => {
+    const normal = await seedNormalEvent();
+    const writer = app.get(AlertWriterService);
+    const alerts = app.get(AlertsService);
+
+    const created = await writer.writeAlert({
+      facilityId: FACILITY_A,
+      cameraId: normal.cameraId,
+      spaceId: normal.spaceId,
+      type: 'fall',
+      probability: 0.91,
+      snapshotKey: null,
+      detectedAt: new Date('2026-01-01T00:00:00.000Z'),
+      idempotencyKey: normal.alertId,
+      originEventId: normal.eventId,
+    });
+    expect(created.created).toBe(true);
+
+    const acked = await writer.ackAlert({
+      facilityId: FACILITY_A,
+      alertId: created.id,
+      actorUserId: USER_ID,
+    });
+    expect(acked).toMatchObject({ status: 'ACKED', ackedById: USER_ID });
+
+    await alerts.setSnapshotKey(
+      FACILITY_A,
+      created.id,
+      'normal-runtime-snapshot.jpg',
+    );
+    const resolved = await writer.resolveAlert({
+      facilityId: FACILITY_A,
+      alertId: created.id,
+      actorUserId: USER_ID,
+    });
+    expect(resolved).toMatchObject({
+      status: 'RESOLVED',
+      resolvedById: USER_ID,
+    });
+    await expect(alerts.getOne(FACILITY_A, created.id)).resolves.toMatchObject({
+      id: created.id,
+      status: 'RESOLVED',
+      snapshotKey: 'normal-runtime-snapshot.jpg',
+    });
+  });
+
+  it('pins the runtime table, column, function-owner, and execute privilege matrix', async () => {
+    const tablePrivileges = await admin.$queryRawUnsafe<TablePrivilegeRow[]>(`
+      SELECT table_name, privilege_type
+      FROM information_schema.table_privileges
+      WHERE grantee = 'fall_app'
+        AND table_schema = 'public'
+        AND table_name IN (
+          'alerts',
+          'alert_notes',
+          'dashboard_receipt_history',
+          'events',
+          'event_media_bindings',
+          'system_test_purge_audit_history'
+        )
+      ORDER BY table_name, privilege_type
+    `);
+    expect(tablePrivileges).toEqual([
+      { table_name: 'alert_notes', privilege_type: 'INSERT' },
+      { table_name: 'alert_notes', privilege_type: 'SELECT' },
+      { table_name: 'alerts', privilege_type: 'INSERT' },
+      { table_name: 'alerts', privilege_type: 'SELECT' },
+      { table_name: 'dashboard_receipt_history', privilege_type: 'INSERT' },
+      { table_name: 'dashboard_receipt_history', privilege_type: 'SELECT' },
+      { table_name: 'event_media_bindings', privilege_type: 'INSERT' },
+      { table_name: 'event_media_bindings', privilege_type: 'SELECT' },
+      { table_name: 'events', privilege_type: 'INSERT' },
+      { table_name: 'events', privilege_type: 'SELECT' },
+    ]);
+
+    const ownerPrivileges = await admin.$queryRawUnsafe<TablePrivilegeRow[]>(`
+      SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE grantee = 'system_test_purge_owner'
+        AND table_schema = 'public'
+      ORDER BY table_name, privilege_type
+    `);
+    expect(ownerPrivileges).toEqual([
+      { table_name: 'alert_notes', privilege_type: 'DELETE' },
+      { table_name: 'alert_notes', privilege_type: 'SELECT' },
+      { table_name: 'alerts', privilege_type: 'DELETE' },
+      { table_name: 'alerts', privilege_type: 'SELECT' },
+      { table_name: 'alerts', privilege_type: 'UPDATE' },
+      {
+        table_name: 'dashboard_receipt_history',
+        privilege_type: 'DELETE',
+      },
+      {
+        table_name: 'dashboard_receipt_history',
+        privilege_type: 'SELECT',
+      },
+      { table_name: 'edge_validation_grants', privilege_type: 'SELECT' },
+      { table_name: 'edge_validation_grants', privilege_type: 'UPDATE' },
+      { table_name: 'events', privilege_type: 'DELETE' },
+      { table_name: 'events', privilege_type: 'SELECT' },
+      { table_name: 'events', privilege_type: 'UPDATE' },
+      {
+        table_name: 'system_test_purge_audit_history',
+        privilege_type: 'INSERT',
+      },
+      {
+        table_name: 'system_test_purge_audit_history',
+        privilege_type: 'SELECT',
+      },
+    ]);
+
+    const updateColumns = await admin.$queryRawUnsafe<ColumnPrivilegeRow[]>(`
+      SELECT table_name, column_name
+      FROM information_schema.column_privileges
+      WHERE grantee = 'fall_app'
+        AND table_schema = 'public'
+        AND privilege_type = 'UPDATE'
+        AND table_name IN (
+          'alerts',
+          'alert_notes',
+          'dashboard_receipt_history',
+          'events',
+          'event_media_bindings',
+          'system_test_purge_audit_history'
+        )
+      ORDER BY table_name, column_name
+    `);
+    expect(updateColumns).toEqual([
+      { table_name: 'alerts', column_name: 'acked_at' },
+      { table_name: 'alerts', column_name: 'acked_by_id' },
+      { table_name: 'alerts', column_name: 'resolved_at' },
+      { table_name: 'alerts', column_name: 'resolved_by_id' },
+      { table_name: 'alerts', column_name: 'snapshot_key' },
+      { table_name: 'alerts', column_name: 'status' },
+    ]);
+
+    const functionContract = await admin.$queryRawUnsafe<
+      FunctionContractRow[]
+    >(`
+      SELECT
+        owner_role.rolname AS owner_name,
+        owner_role.rolcanlogin AS owner_can_login,
+        owner_role.rolsuper AS owner_is_superuser,
+        owner_role.rolbypassrls AS owner_bypasses_rls,
+        owner_role.rolinherit AS owner_inherits,
+        has_schema_privilege(
+          'system_test_purge_owner',
+          'public',
+          'CREATE'
+        ) AS owner_can_create_in_schema,
+        function_row.prosecdef AS security_definer,
+        function_row.proconfig AS function_config,
+        has_function_privilege(
+          'fall_app',
+          'public.purge_expired_system_tests(text, uuid)',
+          'EXECUTE'
+        ) AS app_can_execute,
+        EXISTS (
+          SELECT 1
+          FROM aclexplode(
+            coalesce(
+              function_row.proacl,
+              acldefault('f', function_row.proowner)
+            )
+          ) AS function_acl
+          WHERE function_acl.grantee = 0
+            AND function_acl.privilege_type = 'EXECUTE'
+        ) AS public_can_execute,
+        pg_has_role(
+          'fall_app',
+          'system_test_purge_owner',
+          'MEMBER'
+        ) AS app_is_owner_member
+      FROM pg_proc AS function_row
+      JOIN pg_namespace AS function_schema
+        ON function_schema.oid = function_row.pronamespace
+      JOIN pg_roles AS owner_role
+        ON owner_role.oid = function_row.proowner
+      WHERE function_schema.nspname = 'public'
+        AND function_row.proname = 'purge_expired_system_tests'
+    `);
+    const executePrivileges = await admin.$queryRawUnsafe<
+      ExecutePrivilegeRow[]
+    >(`
+        SELECT grantor, grantee, privilege_type
+        FROM information_schema.routine_privileges
+        WHERE specific_schema = 'public'
+          AND routine_name = 'purge_expired_system_tests'
+        ORDER BY grantee, privilege_type
+      `);
+    expect(executePrivileges).toEqual([
+      {
+        grantor: 'system_test_purge_owner',
+        grantee: 'fall_app',
+        privilege_type: 'EXECUTE',
+      },
+      {
+        grantor: 'system_test_purge_owner',
+        grantee: 'system_test_purge_owner',
+        privilege_type: 'EXECUTE',
+      },
+    ]);
+
+    expect(functionContract).toEqual([
+      {
+        owner_name: 'system_test_purge_owner',
+        owner_can_login: false,
+        owner_is_superuser: false,
+        owner_bypasses_rls: false,
+        owner_inherits: false,
+        owner_can_create_in_schema: false,
+        security_definer: true,
+        function_config: ['search_path=pg_catalog'],
+        app_can_execute: true,
+        public_can_execute: false,
+        app_is_owner_member: false,
+      },
+    ]);
   });
 
   it('rejects malformed facility scope before invoking the purge', async () => {
@@ -474,7 +751,9 @@ describe('SYSTEM_TEST audited retention purge', () => {
     return ids;
   }
 
-  async function seedNormalEvent(): Promise<FixtureIds> {
+  async function seedNormalEvent(
+    input: { alert?: boolean } = {},
+  ): Promise<NormalFixtureIds> {
     const ids = nextIds(FACILITY_A);
     const floorId = `${ids.eventId}-floor`;
     const spaceId = `${ids.eventId}-space`;
@@ -512,7 +791,23 @@ describe('SYSTEM_TEST audited retention purge', () => {
         edgeEventId: ids.edgeEventId,
       },
     });
-    return ids;
+    if (input.alert === true) {
+      await admin.alert.create({
+        data: {
+          id: ids.alertId,
+          facilityId: FACILITY_A,
+          cameraId,
+          spaceId,
+          type: 'fall',
+          probability: 0.91,
+          detectedAt: new Date('2026-01-01T00:00:00.000Z'),
+          status: 'NEW',
+          idempotencyKey: ids.alertId,
+          originEventId: ids.eventId,
+        },
+      });
+    }
+    return { ...ids, cameraId, spaceId };
   }
 
   async function expectRows(ids: FixtureIds, present: boolean): Promise<void> {
@@ -525,12 +820,26 @@ describe('SYSTEM_TEST audited retention purge', () => {
   }
 
   async function expectArbitraryDeleteDenied(eventId: string): Promise<void> {
+    await expectRoleStatementDenied(
+      'DELETE FROM public.events WHERE id = $1',
+      eventId,
+    );
+  }
+
+  async function expectRoleStatementDenied(
+    statement: string,
+    parameter?: string,
+  ): Promise<void> {
     await expect(
-      runtime.$transaction(async (tx) => {
+      admin.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe('SET LOCAL ROLE fall_app');
         await tx.$executeRaw`SELECT set_config('app.facility_id', ${FACILITY_A}, true)`;
-        await tx.$executeRawUnsafe('DELETE FROM events WHERE id = $1', eventId);
+        await tx.$executeRawUnsafe(
+          statement,
+          ...(parameter ? [parameter] : []),
+        );
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/permission denied|privilege/i);
   }
 
   async function purgeAudits(facilityId: string): Promise<PurgeAudit[]> {
@@ -611,6 +920,11 @@ type FixtureIds = {
   edgeEventId: string;
 };
 
+type NormalFixtureIds = FixtureIds & {
+  cameraId: string;
+  spaceId: string;
+};
+
 type PurgeResult = {
   purged_events: bigint;
 };
@@ -640,4 +954,34 @@ type PrivilegeRow = {
   can_execute: boolean;
   can_delete_events: boolean;
   can_access_audit: boolean;
+};
+
+type TablePrivilegeRow = {
+  table_name: string;
+  privilege_type: string;
+};
+
+type ColumnPrivilegeRow = {
+  table_name: string;
+  column_name: string;
+};
+
+type ExecutePrivilegeRow = {
+  grantor: string;
+  grantee: string;
+  privilege_type: string;
+};
+
+type FunctionContractRow = {
+  owner_name: string;
+  owner_can_login: boolean;
+  owner_is_superuser: boolean;
+  owner_bypasses_rls: boolean;
+  owner_inherits: boolean;
+  owner_can_create_in_schema: boolean;
+  security_definer: boolean;
+  function_config: string[];
+  app_can_execute: boolean;
+  public_can_execute: boolean;
+  app_is_owner_member: boolean;
 };

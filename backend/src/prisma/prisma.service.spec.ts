@@ -294,7 +294,7 @@ describe('Prisma tenant boundary (RLS + facility GUC)', () => {
         SELECT id FROM alert_notes WHERE facility_id = 'prisma-rls-facility-b'
       `;
         const rawCrossFacilityUpdate = await tx.$executeRaw`
-        UPDATE alerts SET type = type WHERE facility_id = 'prisma-rls-facility-b'
+        UPDATE alerts SET status = status WHERE facility_id = 'prisma-rls-facility-b'
       `;
         return {
           alertIds: alerts.map((alert) => alert.id),
