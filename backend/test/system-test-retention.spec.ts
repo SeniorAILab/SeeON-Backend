@@ -23,6 +23,8 @@ const INSTALLATION_A = 'a1100000-0000-4000-8000-000000000001';
 const INSTALLATION_B = 'b1100000-0000-4000-8000-000000000001';
 const GRANT_A = 'a2200000-0000-7000-8000-000000000001';
 const ACTIVE_GRANT_A = 'a2200000-0000-7000-8000-000000000002';
+const RUNTIME_GRANT_A = 'a2200000-0000-7000-8000-000000000003';
+const UNREFERENCED_GRANT_A = 'a2200000-0000-7000-8000-000000000004';
 const GRANT_B = 'b2200000-0000-7000-8000-000000000001';
 const PURGE_PATH = '/api/v1/admin/system-test-retention/purge';
 let sequence = 0;
@@ -277,6 +279,131 @@ describe('SYSTEM_TEST audited retention purge', () => {
     });
   });
 
+  it('preserves runtime grant create, read, and lifecycle-only close', async () => {
+    const closedAt = new Date('2026-01-01T00:05:00.000Z');
+    const result = await runtime.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.facility_id', ${FACILITY_A}, true)`;
+      await tx.edgeValidationGrant.create({
+        data: {
+          id: RUNTIME_GRANT_A,
+          facilityId: FACILITY_A,
+          edgeInstallationId: INSTALLATION_A,
+          enrollmentGeneration: 1,
+          capability: 'SYSTEM_TEST',
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        },
+      });
+      const created = await tx.edgeValidationGrant.findUniqueOrThrow({
+        where: { id: RUNTIME_GRANT_A },
+      });
+      const closed = await tx.edgeValidationGrant.update({
+        where: { id: RUNTIME_GRANT_A },
+        data: { status: 'CLOSED', closedAt },
+      });
+      return { created, closed };
+    });
+
+    expect(result.created).toMatchObject({
+      id: RUNTIME_GRANT_A,
+      facilityId: FACILITY_A,
+      status: 'ACTIVE',
+      closedAt: null,
+    });
+    expect(result.closed).toMatchObject({
+      id: RUNTIME_GRANT_A,
+      facilityId: FACILITY_A,
+      status: 'CLOSED',
+      closedAt,
+    });
+  });
+
+  it('denies immutable grant updates and referenced or unreferenced grant deletes as fall_app', async () => {
+    const referenced = await seedSystemTest({
+      facilityId: FACILITY_A,
+      grantId: GRANT_A,
+      retentionExpiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      status: 'NEW',
+    });
+    await admin.edgeValidationGrant.create({
+      data: {
+        id: UNREFERENCED_GRANT_A,
+        facilityId: FACILITY_A,
+        edgeInstallationId: INSTALLATION_A,
+        enrollmentGeneration: 1,
+        status: 'ACTIVE',
+        capability: 'SYSTEM_TEST',
+        expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      },
+    });
+    const before = await admin.edgeValidationGrant.findUniqueOrThrow({
+      where: { id: UNREFERENCED_GRANT_A },
+    });
+
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET capability = NULL WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      "UPDATE public.edge_validation_grants SET expires_at = TIMESTAMP '2100-01-01 00:00:00' WHERE id = $1::uuid",
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET facility_id = facility_id WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET edge_installation_id = edge_installation_id WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET enrollment_generation = enrollment_generation WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET created_at = created_at WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'UPDATE public.edge_validation_grants SET id = id WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.edge_validation_grants WHERE id = $1::uuid',
+      GRANT_A,
+    );
+    await expectRoleStatementDenied(
+      'DELETE FROM public.edge_validation_grants WHERE id = $1::uuid',
+      UNREFERENCED_GRANT_A,
+    );
+
+    await expectRows(referenced, true);
+    await expect(
+      admin.edgeValidationGrant.findUniqueOrThrow({
+        where: { id: UNREFERENCED_GRANT_A },
+      }),
+    ).resolves.toEqual(before);
+    const grantColumns = await admin.$queryRawUnsafe<
+      { column_name: string }[]
+    >(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'edge_validation_grants'
+      ORDER BY ordinal_position
+    `);
+    expect(grantColumns.map((row) => row.column_name)).toEqual([
+      'id',
+      'facility_id',
+      'edge_installation_id',
+      'enrollment_generation',
+      'status',
+      'created_at',
+      'expires_at',
+      'closed_at',
+      'capability',
+    ]);
+  });
+
   it('pins the runtime table, column, function-owner, and execute privilege matrix', async () => {
     const tablePrivileges = await admin.$queryRawUnsafe<TablePrivilegeRow[]>(`
       SELECT table_name, privilege_type
@@ -289,6 +416,7 @@ describe('SYSTEM_TEST audited retention purge', () => {
           'dashboard_receipt_history',
           'events',
           'event_media_bindings',
+          'edge_validation_grants',
           'system_test_purge_audit_history'
         )
       ORDER BY table_name, privilege_type
@@ -300,6 +428,8 @@ describe('SYSTEM_TEST audited retention purge', () => {
       { table_name: 'alerts', privilege_type: 'SELECT' },
       { table_name: 'dashboard_receipt_history', privilege_type: 'INSERT' },
       { table_name: 'dashboard_receipt_history', privilege_type: 'SELECT' },
+      { table_name: 'edge_validation_grants', privilege_type: 'INSERT' },
+      { table_name: 'edge_validation_grants', privilege_type: 'SELECT' },
       { table_name: 'event_media_bindings', privilege_type: 'INSERT' },
       { table_name: 'event_media_bindings', privilege_type: 'SELECT' },
       { table_name: 'events', privilege_type: 'INSERT' },
@@ -354,6 +484,7 @@ describe('SYSTEM_TEST audited retention purge', () => {
           'dashboard_receipt_history',
           'events',
           'event_media_bindings',
+          'edge_validation_grants',
           'system_test_purge_audit_history'
         )
       ORDER BY table_name, column_name
@@ -365,6 +496,8 @@ describe('SYSTEM_TEST audited retention purge', () => {
       { table_name: 'alerts', column_name: 'resolved_by_id' },
       { table_name: 'alerts', column_name: 'snapshot_key' },
       { table_name: 'alerts', column_name: 'status' },
+      { table_name: 'edge_validation_grants', column_name: 'closed_at' },
+      { table_name: 'edge_validation_grants', column_name: 'status' },
     ]);
 
     const functionContract = await admin.$queryRawUnsafe<
@@ -449,6 +582,55 @@ describe('SYSTEM_TEST audited retention purge', () => {
         app_is_owner_member: false,
       },
     ]);
+  });
+
+  it('stores only qualified built-in calls and static public relations in the purge function', async () => {
+    const [stored] = await admin.$queryRawUnsafe<FunctionDefinitionRow[]>(`
+      SELECT pg_get_functiondef(function_row.oid) AS definition
+      FROM pg_proc AS function_row
+      JOIN pg_namespace AS function_schema
+        ON function_schema.oid = function_row.pronamespace
+      WHERE function_schema.nspname = 'public'
+        AND function_row.proname = 'purge_expired_system_tests'
+    `);
+    expect(stored).toBeDefined();
+    const definition = stored.definition;
+    const builtIns = [
+      'transaction_timestamp',
+      'btrim',
+      'current_setting',
+      'pg_advisory_xact_lock',
+      'hashtextextended',
+      'coalesce',
+      'array_agg',
+      'cardinality',
+    ];
+    for (const builtIn of builtIns) {
+      expect(definition).not.toMatch(
+        new RegExp(`(?<![\\w.])${builtIn}\\s*\\(`, 'i'),
+      );
+    }
+    for (const qualified of builtIns.filter(
+      (builtIn) => builtIn !== 'coalesce',
+    )) {
+      expect(definition).toMatch(
+        new RegExp(`pg_catalog\\.${qualified}\\s*\\(`, 'i'),
+      );
+    }
+    expect(definition).not.toMatch(/\bEXECUTE\b/i);
+    for (const relation of [
+      'system_test_purge_audit_history',
+      'events',
+      'alerts',
+      'edge_validation_grants',
+      'dashboard_receipt_history',
+      'alert_notes',
+    ]) {
+      expect(definition).not.toMatch(
+        new RegExp(`(?<![\\w.])${relation}\\b`, 'i'),
+      );
+      expect(definition).toMatch(new RegExp(`public\\.${relation}\\b`, 'i'));
+    }
   });
 
   it('rejects malformed facility scope before invoking the purge', async () => {
@@ -828,16 +1010,13 @@ describe('SYSTEM_TEST audited retention purge', () => {
 
   async function expectRoleStatementDenied(
     statement: string,
-    parameter?: string,
+    ...parameters: unknown[]
   ): Promise<void> {
     await expect(
       admin.$transaction(async (tx) => {
         await tx.$executeRawUnsafe('SET LOCAL ROLE fall_app');
         await tx.$executeRaw`SELECT set_config('app.facility_id', ${FACILITY_A}, true)`;
-        await tx.$executeRawUnsafe(
-          statement,
-          ...(parameter ? [parameter] : []),
-        );
+        await tx.$executeRawUnsafe(statement, ...parameters);
       }),
     ).rejects.toThrow(/permission denied|privilege/i);
   }
@@ -970,6 +1149,10 @@ type ExecutePrivilegeRow = {
   grantor: string;
   grantee: string;
   privilege_type: string;
+};
+
+type FunctionDefinitionRow = {
+  definition: string;
 };
 
 type FunctionContractRow = {
