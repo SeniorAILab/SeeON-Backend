@@ -12,7 +12,7 @@ const workflow = await readFile(workflowUrl, 'utf8');
 
 const requiredTriggerPredicates = [
   "needs.classify.outputs.is_production == 'true'",
-  "github.repository == 'SeniorAILab/eldercare-fall-ai'",
+  "github.repository == 'SeniorAILab/SeeON'",
 ];
 
 const requiredDeliveryFragments = [
@@ -88,18 +88,19 @@ function assertWorkflowContract(source) {
   requireFragment(
     source,
     'cancel-in-progress: false',
-    'queued deployment concurrency',
+    'non-cancelling deployment concurrency',
   );
   requireFragment(
     source,
-    'queue: max',
-    'multi-entry pending queue so a newer signal cannot replace a pending one',
+    'group: deploy-iwinv-production-${{ github.event.release.tag_name }}',
+    'tag-specific group so GitHub cannot replace another pending release signal',
   );
   requireFragment(
     source,
-    '# Queue signals so a rejected publication cannot cancel a valid signal.',
-    'deployment queue rationale',
+    '# A tag-specific group prevents GitHub\'s single pending-slot replacement from',
+    'deployment concurrency rationale',
   );
+  assert.doesNotMatch(source, /^\s*queue:/m, 'unsupported concurrency queue syntax must not be used');
 
   const triggerJob = extractJob(source, 'trigger');
   const gate = triggerJob.match(/if: >-\n([\s\S]*?)\n    runs-on:/)?.[1];

@@ -10,13 +10,18 @@ RELEASE_DIR=${RELEASE_DIR:-$APP_ROOT/releases}
 LOCK_DIR=$APP_ROOT/shared/deploy.lock
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
+RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
+MEDIA_RECEIPT=${MEDIA_RECEIPT:-$RECEIPT_DIR/media-backup.receipt}
+EDGE_RECEIPT=${EDGE_RECEIPT:-$RECEIPT_DIR/edge-continuity.receipt}
+EDGE_AFTER_RECEIPT=${EDGE_AFTER_RECEIPT:-$RECEIPT_DIR/edge-continuity-after.receipt}
+RECEIPT_MAX_AGE_SECONDS=${RECEIPT_MAX_AGE_SECONDS:-3600}
 COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
 MEMORY_MIN_MB=${MEMORY_MIN_MB:-1024}
 DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 PENDING_SHA='' PENDING_DUMP=''
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0
 
 usage() {
   printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
@@ -136,6 +141,50 @@ acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null || fail "Another deployment is already running: $LOCK_DIR"
   LOCK_HELD=1
   trap cleanup 0 HUP INT TERM
+}
+owner_only_receipt() {
+  receipt=$1
+  label=$2
+  [ ! -L "$receipt" ] && [ -f "$receipt" ] || fail "$label is required: $receipt"
+  mode=$(stat -c '%a' "$receipt" 2>/dev/null || stat -f '%Lp' "$receipt") || fail "Unable to inspect $label permissions."
+  case "$mode" in 400|600) ;; *) fail "$label permissions must be 400 or 600." ;; esac
+}
+receipt_value() {
+  key=$1
+  receipt=$2
+  value=$(awk -F= -v key="$key" '$1 == key { count += 1; value = substr($0, length(key) + 2) } END { if (count != 1) exit 2; print value }' "$receipt") || fail "Receipt field is missing or duplicated: $key"
+  printf '%s\n' "$value"
+}
+assert_fresh_receipt_epoch() {
+  epoch=$1
+  label=$2
+  case "$epoch" in ''|*[!0-9]*) fail "$label timestamp is invalid." ;; esac
+  now=$(date -u +%s)
+  age=$((now - epoch))
+  [ "$age" -ge 0 ] && [ "$age" -le "$RECEIPT_MAX_AGE_SECONDS" ] || fail "$label is stale."
+}
+verify_overlap_receipts() {
+  [ "$MANIFEST_SCHEMA" = 2 ] && [ "$HAS_FRONT" -eq 1 ] || fail 'A normal overlap deploy must use the transitional schema-2 service set.'
+
+  owner_only_receipt "$MEDIA_RECEIPT" 'Media backup receipt'
+  [ "$(wc -l < "$MEDIA_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Media backup receipt is malformed.'
+  [ "$(receipt_value FORMAT "$MEDIA_RECEIPT")" = seeon-event-media-backup-receipt-v1 ] || fail 'Media backup receipt format is invalid.'
+  media_bundle=$(receipt_value BUNDLE "$MEDIA_RECEIPT")
+  case "$media_bundle" in /*) ;; *) fail 'Media backup receipt bundle path is invalid.' ;; esac
+  [ -d "$media_bundle" ] && [ ! -L "$media_bundle" ] && [ -f "$media_bundle/MANIFEST" ] || fail 'Media backup receipt bundle is unavailable.'
+  media_manifest_sha=$(receipt_value MANIFEST_SHA256 "$MEDIA_RECEIPT")
+  printf '%s\n' "$media_manifest_sha" | grep -Eq '^[0-9a-f]{64}$' || fail 'Media backup receipt checksum is invalid.'
+  [ "$(sha256sum "$media_bundle/MANIFEST" | awk '{print $1}')" = "$media_manifest_sha" ] || fail 'Media backup receipt checksum does not match its bundle.'
+  assert_fresh_receipt_epoch "$(receipt_value COMPLETED_EPOCH "$MEDIA_RECEIPT")" 'Media backup receipt'
+
+  owner_only_receipt "$EDGE_RECEIPT" 'Edge continuity receipt'
+  [ "$(wc -l < "$EDGE_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Edge continuity receipt is malformed.'
+  [ "$(receipt_value FORMAT "$EDGE_RECEIPT")" = seeon-edge-continuity-seed-v1 ] || fail 'Edge continuity receipt format is invalid.'
+  [ "$(receipt_value RELEASE_SHA "$EDGE_RECEIPT")" = "$SHA" ] || fail 'Edge continuity receipt SHA does not match the release.'
+  EDGE_BEFORE_EPOCH=$(receipt_value LAST_HEARTBEAT_EPOCH "$EDGE_RECEIPT")
+  case "$EDGE_BEFORE_EPOCH" in ''|*[!0-9]*) fail 'Edge continuity receipt heartbeat is invalid.' ;; esac
+  [ "$EDGE_BEFORE_EPOCH" -gt 0 ] || fail 'Edge continuity receipt heartbeat is invalid.'
+  assert_fresh_receipt_epoch "$(receipt_value CAPTURED_EPOCH "$EDGE_RECEIPT")" 'Edge continuity receipt'
 }
 
 json_value() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
@@ -262,6 +311,20 @@ prisma_migration_rows() {
 }
 domain_table_rows() { compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_type = '\''BASE TABLE'\'' AND table_name <> '\''_prisma_migrations'\'';"'; }
 assert_prisma_managed() { rows=$(prisma_migration_rows); tables=$(domain_table_rows); [ "$rows" -gt 0 ] || [ "$tables" -eq 0 ] || fail 'Refusing migration: existing domain tables lack Prisma migration tracking.'; }
+audit_prisma_migrations() {
+  log 'audit Prisma migration history before migrate deploy'
+  tracked_rows=$(prisma_migration_rows)
+  [ "$tracked_rows" -ge 0 ] || { log 'Prisma migration history is absent on an empty bootstrap database'; return; }
+  failed=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL;"')
+  case "$failed" in ''|*[!0-9]*) fail 'Prisma migration audit returned an invalid failed-migration count.' ;; esac
+  [ "$failed" -eq 0 ] || fail "Prisma migration audit found $failed failed migration(s)."
+  applied=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT migration_name FROM public._prisma_migrations WHERE rolled_back_at IS NULL ORDER BY migration_name;"')
+  while IFS= read -r migration; do
+    [ -z "$migration" ] || [ -f "backend/prisma/migrations/$migration/migration.sql" ] || fail "Database migration is absent from the release image: $migration"
+  done <<EOF
+$applied
+EOF
+}
 run_migrations() { log 'docker compose run backend pnpm exec prisma migrate deploy'; compose run --rm --no-deps backend pnpm exec prisma migrate deploy --schema prisma/schema.prisma; }
 bootstrap_super_admin() { compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js; }
 
@@ -417,6 +480,25 @@ verify_image_ids() {
     [ -z "$FRONT_ID" ] || [ "$actual_front_id" = "$FRONT_ID" ] || fail 'Frontend image ID differs from manifest.'
     FRONT_ID=$actual_front_id
   fi
+  IMAGE_IDS_VERIFIED=1
+}
+verify_overlap_surfaces() {
+  smoke_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'const base="http://api-ingress:3000";const origin="https://seeon.seniorsailab.com";const forwarded={Origin:origin,"X-Forwarded-Proto":"https"};const check=(value,message)=>{if(!value)throw new Error(message)};(async()=>{const preflight=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{...forwarded,"Access-Control-Request-Method":"GET","Access-Control-Request-Headers":"content-type,x-facility-id"}});check(preflight.ok,"cors-preflight");check(preflight.headers.get("access-control-allow-origin")===origin,"cors-origin");check(preflight.headers.get("access-control-allow-credentials")==="true","cors-credentials");check((preflight.headers.get("vary")??"").toLowerCase().includes("origin"),"cors-vary");const evil=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{Origin:"https://evil.example","X-Forwarded-Proto":"https","Access-Control-Request-Method":"GET"}});check(!evil.headers.has("access-control-allow-origin"),"evil-cors");check(process.env.SUPER_ADMIN_EMAIL&&process.env.SUPER_ADMIN_PASSWORD,"smoke-credentials");const login=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{...forwarded,"Content-Type":"application/json"},body:JSON.stringify({email:process.env.SUPER_ADMIN_EMAIL,password:process.env.SUPER_ADMIN_PASSWORD})});check(login.ok,"auth-login");const cookie=(login.headers.get("set-cookie")??"").split(";")[0];const setCookie=login.headers.get("set-cookie")??"";check(cookie.startsWith("app_session="),"auth-cookie");for(const literal of ["HttpOnly","Secure","SameSite=Strict","Path=/"])check(setCookie.includes(literal),"cookie-"+literal);const loginBody=await login.json();const me=await fetch(base+"/api/v1/auth/me",{headers:{...forwarded,Cookie:cookie}});check(me.ok,"auth-me");let facilityId=loginBody.user?.facilityId??null;if(!facilityId){const facilities=await fetch(base+"/api/v1/facilities",{headers:{...forwarded,Cookie:cookie}});check(facilities.ok,"facilities");const rows=await facilities.json();facilityId=Array.isArray(rows)?rows[0]?.id:null}check(typeof facilityId==="string"&&facilityId.length>0,"facility-scope");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),10000);try{const stream=await fetch(base+"/api/v1/dashboard/stream?facilityId="+encodeURIComponent(facilityId),{headers:{...forwarded,Cookie:cookie},signal:controller.signal});check(stream.ok,"sse-status");check((stream.headers.get("content-type")??"").includes("text/event-stream"),"sse-content-type");check(stream.headers.get("access-control-allow-origin")===origin,"sse-cors");const first=await stream.body.getReader().read();check(!first.done&&new TextDecoder().decode(first.value).includes(": connected"),"sse-open")}finally{clearTimeout(timer);controller.abort()}console.log("OVERLAP_SMOKE_OK")})().catch(error=>{console.error("OVERLAP_SMOKE_FAILED "+error.message);process.exit(1)})' 2>&1) || { printf 'Overlap CORS/SSE/auth smoke failed:\n%s\n' "$smoke_output" >&2; return 1; }
+  printf '%s\n' "$smoke_output" | grep -Fx 'OVERLAP_SMOKE_OK' >/dev/null || { printf 'Overlap CORS/SSE/auth smoke returned an invalid receipt:\n%s\n' "$smoke_output" >&2; return 1; }
+}
+edge_heartbeat_epoch() {
+  compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT COALESCE(FLOOR(EXTRACT(EPOCH FROM MAX(observed_at)))::bigint, 0) FROM (SELECT last_heartbeat_at AS observed_at FROM edge_installations UNION ALL SELECT last_seen_at FROM cameras) edge_observations;"'
+}
+verify_edge_continuity() {
+  edge_after=$(edge_heartbeat_epoch) || fail 'Unable to read post-deploy Edge continuity state.'
+  case "$edge_after" in ''|*[!0-9]*) fail 'Post-deploy Edge continuity state is invalid.' ;; esac
+  [ "$edge_after" -gt "$EDGE_BEFORE_EPOCH" ] || fail "Edge continuity did not advance after deploy (before=$EDGE_BEFORE_EPOCH after=$edge_after)."
+  TEMP_FILE=$EDGE_AFTER_RECEIPT.$$.tmp
+  umask 077
+  printf 'FORMAT=seeon-edge-continuity-after-v1\nRELEASE_SHA=%s\nBEFORE_HEARTBEAT_EPOCH=%s\nAFTER_HEARTBEAT_EPOCH=%s\nCAPTURED_EPOCH=%s\n' "$SHA" "$EDGE_BEFORE_EPOCH" "$edge_after" "$(date -u +%s)" > "$TEMP_FILE"
+  chmod 600 "$TEMP_FILE"
+  mv "$TEMP_FILE" "$EDGE_AFTER_RECEIPT"
+  TEMP_FILE=
 }
 verify_services() {
   backend_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const body=await r.text(); console.log("status="+r.status+"\\nbody="+body); let value; try { value=JSON.parse(body); } catch (_) { process.exit(1); } process.exit(r.ok && value.sha===process.env.EXPECTED_SHA && value.database==="ok" ? 0 : 1);}).catch(error=>{console.log("request_error="+error.message);process.exit(1);})' 2>&1) || { printf 'Backend exact-SHA health verification failed:\n%s\n' "$backend_output" >&2; return 1; }
@@ -451,6 +533,10 @@ verify_services() {
     fi
     rm -f "$body" || fail 'Failed to remove frontend health diagnostics.'
     TEMP_FILE=
+  fi
+  if [ "$MANIFEST_SCHEMA" = 2 ] && [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ]; then
+    verify_overlap_surfaces
+    verify_edge_continuity
   fi
 }
 
@@ -591,8 +677,16 @@ elif [ "$RESTORE_COUNT" -eq 0 ]; then
   APP_SERVICES='backend api-ingress front'
 fi
 
-acquire_lock
+# Fail every overlap prerequisite before taking the deploy lock or touching
+# Compose, the database, release env, manifests, or pointers.
+if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  verify_overlap_receipts
+fi
 preflight
+if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  verify_image_ids
+fi
+acquire_lock
 if [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 0 ]; then
   run compose config >/dev/null
   run compose pull db
@@ -608,7 +702,7 @@ write_release_env
 run compose config >/dev/null
 if [ "$DRY_RUN" -eq 1 ]; then
   log "would verify exact local images $BACKEND_IMAGE, $API_INGRESS_IMAGE, and $FRONT_IMAGE"
-else
+elif [ "$IMAGE_IDS_VERIFIED" -eq 0 ]; then
   verify_image_ids
 fi
 
@@ -669,10 +763,11 @@ elif [ "$HAS_CURRENT" -eq 0 ]; then
   backup_and_validate
 fi
 if [ "$DRY_RUN" -eq 1 ]; then
-  log 'would sync app role, assert Prisma tracking, run migrate deploy, and bootstrap super-admin'
+  log 'would sync app role, audit Prisma migration history, run migrate deploy, and bootstrap super-admin'
 else
   sync_app_role
   assert_prisma_managed
+  audit_prisma_migrations
   run_migrations
   bootstrap_super_admin
 fi

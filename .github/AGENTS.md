@@ -22,8 +22,9 @@ iwinv Jenkins CD. Jenkins, not GitHub Actions, builds and deploys backend/fronte
   secret `WEBHOOK_TOKEN`. Jenkins stores the matching server credential as
   `eldercare-webhook-token`; never expose either value.
 - GitHub Actions does not build, tag, push, SSH-deploy, retry, or roll back
-  production images. Jenkins alone builds exact
-  `eldercare-backend:<sha>`/`eldercare-front:<sha>` images and deploys them.
+  production images. Jenkins alone builds exact `eldercare-backend:<sha>`,
+  `eldercare-api-ingress:<sha>`, and transitional `eldercare-front:<sha>`
+  images and deploys them after verifying that SHA's `CI gate=success`.
 - Keep permissions minimal and fail before an external trigger when required
   release classification input is absent.
 - The trigger gate is classification plus canonical repository identity; no

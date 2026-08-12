@@ -156,6 +156,13 @@ bundle=$(find "$OFF_HOST_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'event-medi
   exit 1
 }
 sh "$VALIDATE_SCRIPT" "$bundle"
+receipt=$TMP/shared/release-receipts/media-backup.receipt
+[ -f "$receipt" ] && [ ! -L "$receipt" ] || { printf '%s\n' 'backup safety receipt was not published' >&2; exit 1; }
+[ "$(stat -c '%a' "$receipt" 2>/dev/null || stat -f '%Lp' "$receipt")" = 600 ] || { printf '%s\n' 'backup safety receipt permissions are not 600' >&2; exit 1; }
+grep -Fx 'FORMAT=seeon-event-media-backup-receipt-v1' "$receipt" >/dev/null
+[ "$(sed -n 's/^BUNDLE=//p' "$receipt")" = "$bundle" ] || { printf '%s\n' 'backup safety receipt points at the wrong bundle' >&2; exit 1; }
+receipt_manifest_sha=$(sed -n 's/^MANIFEST_SHA256=//p' "$receipt")
+[ "$receipt_manifest_sha" = "$(sha256sum "$bundle/MANIFEST" | awk '{print $1}')" ] || { printf '%s\n' 'backup safety receipt checksum is invalid' >&2; exit 1; }
 [ "$(stat -c '%a' "$bundle" 2>/dev/null || stat -f '%Lp' "$bundle")" = 700 ] || { printf '%s\n' 'backup bundle permissions are not 700' >&2; exit 1; }
 for file in MANIFEST database.dump clips.tar; do
   [ "$(stat -c '%a' "$bundle/$file" 2>/dev/null || stat -f '%Lp' "$bundle/$file")" = 600 ] || {

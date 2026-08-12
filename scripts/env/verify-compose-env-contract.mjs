@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const completeHostEnv = `NODE_ENV=production
-FRONT_ORIGINS=https://seeon.senai.example.com,http://198.51.100.1
-ALERT_DASHBOARD_URL=https://senai.example.com
+FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
+AUTH_COOKIE_SECURE=auto
+ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 POSTGRES_USER=fall_prod_admin
 POSTGRES_PASSWORD=prod-admin-password-32chars
 POSTGRES_DB=fall_prod
@@ -176,6 +177,15 @@ function assertHostComposeContract(config) {
       'host prod backend must keep EDGE_LEGACY_COMPAT_ENABLED true',
     );
   }
+  if (
+    backendEnvironment.FRONT_ORIGINS !==
+      'https://seeon.seniorsailab.com,http://49.247.204.81' ||
+    backendEnvironment.AUTH_COOKIE_SECURE !== 'auto'
+  ) {
+    throw new VerificationError(
+      'host prod backend must receive the exact overlap origins and auto cookie policy',
+    );
+  }
   const backendImage = backend.image;
   const apiIngressImage = apiIngress.image;
   const frontImage = front.image;
@@ -216,6 +226,17 @@ function assertHostComposeContract(config) {
     Array.isArray(service.ports) && service.ports.length > 0;
   if (hasPublishedPorts(db) || hasPublishedPorts(backend)) {
     throw new VerificationError('host prod db and backend must not publish ports');
+  }
+  const backendNetworks = Object.keys(backend.networks ?? {});
+  const apiIngressNetworks = Object.keys(apiIngress.networks ?? {});
+  if (
+    backendNetworks.length !== 1 ||
+    apiIngressNetworks.length !== 1 ||
+    backendNetworks[0] !== apiIngressNetworks[0]
+  ) {
+    throw new VerificationError(
+      'host prod backend and API ingress must share only the fixed private ingress network',
+    );
   }
   const apiIngressPorts = apiIngress.ports;
   if (
@@ -393,7 +414,8 @@ function verify() {
         'fall_prod',
         'fall_app',
         'postgresql://fall_app:prod-app-password-32chars@db:5432/fall_prod?schema=public',
-        'https://senai.example.com',
+        'https://seeon.seniorsailab.com,http://49.247.204.81',
+        'AUTH_COOKIE_SECURE: auto',
         'smtp.gmail.com',
         'prod-alerts@example.com',
         'prod-smtp-app-password-32chars',

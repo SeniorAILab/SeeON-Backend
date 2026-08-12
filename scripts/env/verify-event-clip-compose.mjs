@@ -4,8 +4,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const validHostEnv = `FRONT_ORIGINS=https://example.test,http://198.51.100.1
-ALERT_DASHBOARD_URL=https://example.test
+const validHostEnv = `FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
+AUTH_COOKIE_SECURE=auto
+ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 POSTGRES_USER=prod_admin
 POSTGRES_PASSWORD=prod-admin-password
 POSTGRES_DB=prod_db

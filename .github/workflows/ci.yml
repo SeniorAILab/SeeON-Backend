@@ -29,6 +29,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       env_contract: ${{ steps.filter.outputs.env_contract }}
+      deploy_contract: ${{ steps.filter.outputs.deploy_contract }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,8 +52,22 @@ jobs:
             env_contract:
               - 'compose*.yaml'
               - '.env*.example'
+              - 'infra/api-ingress/**'
               - 'scripts/env/**'
+              - 'scripts/deploy/**'
+              - 'scripts/release/**'
+              - 'Jenkinsfile'
               - 'package.json'
+              - '.github/workflows/ci.yml'
+            deploy_contract:
+              - 'compose*.yaml'
+              - '.env.host.prod.example'
+              - 'infra/api-ingress/**'
+              - 'scripts/deploy/**'
+              - 'scripts/release/**'
+              - 'Jenkinsfile'
+              - 'package.json'
+              - '.github/workflows/deploy-iwinv.yml'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -160,6 +175,23 @@ jobs:
       - name: Verify env & deploy contracts
         run: pnpm env:verify
 
+  deploy-contract:
+    name: Deploy contract
+    needs: changes
+    if: needs.changes.outputs.deploy_contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Verify overlap release and rollback contracts
+        run: pnpm deploy:verify
+
   repo-residue:
     name: Host repository residue
     runs-on: ubuntu-latest
@@ -170,7 +202,7 @@ jobs:
 
   ci-gate:
     name: CI gate
-    needs: [backend, frontend, env-contract, repo-residue]
+    needs: [backend, frontend, env-contract, deploy-contract, repo-residue]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -179,9 +211,10 @@ jobs:
           be='${{ needs.backend.result }}'
           fe='${{ needs.frontend.result }}'
           env_contract="${{ needs['env-contract'].result }}"
+          deploy_contract="${{ needs['deploy-contract'].result }}"
           residue='${{ needs['repo-residue'].result }}'
-          echo "backend=$be frontend=$fe env_contract=$env_contract residue=$residue"
-          for r in "$be" "$fe" "$env_contract" "$residue"; do
+          echo "backend=$be frontend=$fe env_contract=$env_contract deploy_contract=$deploy_contract residue=$residue"
+          for r in "$be" "$fe" "$env_contract" "$deploy_contract" "$residue"; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "::error::a required package job did not pass"
               exit 1

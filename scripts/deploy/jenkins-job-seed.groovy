@@ -1,5 +1,5 @@
 pipelineJob('eldercare-fall-ai-cd') {
-  description('Deploy front and backend to iwinv when a production GitHub release is published. The empty webhook signal wakes Jenkins; the pipeline resolves the highest stable vX.Y.Z tag itself.')
+  description('Deploy backend, API ingress, and transitional front to iwinv when a production GitHub release is published. The empty webhook signal wakes Jenkins; the pipeline resolves the highest stable vX.Y.Z tag itself.')
   triggers {
     genericTrigger {
       causeString('Production release published on GitHub')
@@ -18,7 +18,7 @@ pipelineJob('eldercare-fall-ai-cd') {
       scm {
         git {
           remote {
-            url('git@github.com:SeniorAILab/eldercare-fall-ai.git')
+            url('git@github.com:SeniorAILab/SeeON.git')
             credentials('eldercare-github-deploy-key')
           }
           branch('*/main')

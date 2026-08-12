@@ -40,8 +40,9 @@ const CGNAT_IPV4 = /^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
 const IPV4 = /(?<![\w.-])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.-])/g;
 
 // The legacy product origin is an intentionally public browser contract during
-// cutover. Keep its exception exact and limited to the configuration and tests
-// that enforce that contract; all other routable addresses remain forbidden.
+// cutover. Keep its exception exact and limited to the configuration, tests,
+// and deploy tooling that enforce that contract; all other routable addresses
+// remain forbidden.
 const LEGACY_PRODUCT_IPV4 = '49.247.204.81';
 const LEGACY_PRODUCT_IPV4_FILES = new Set([
   '.env.host.prod.example',
@@ -49,7 +50,13 @@ const LEGACY_PRODUCT_IPV4_FILES = new Set([
   'backend/src/config/frontend-origins.spec.ts',
   'backend/test/cors.spec.ts',
   'docs/runbooks/product-ready-cutover.md',
+  'scripts/deploy/iwinv-deploy.test.sh',
+  'scripts/deploy/iwinv-overlap-readiness.sh',
+  'scripts/deploy/iwinv-overlap-readiness.test.sh',
+  'scripts/env/verify-compose-env-contract.mjs',
+  'scripts/env/verify-event-clip-compose.mjs',
 ]);
+
 
 /**
  * `ssh -i <키>` / `IdentityFile <키>` — 어느 키 파일을 쓰는지도 정찰 정보다.
@@ -190,6 +197,24 @@ describe('공개 저장소 프라이버시 가드', () => {
 describe('프라이버시 가드 판정 로직', () => {
   // 가드가 무엇을 잡고 무엇을 놓아주는지 고정한다. 이게 없으면 나중에
   // 패턴을 느슨하게 바꿔도 위의 스캔이 여전히 통과해 버린다.
+
+  it('limits the legacy public origin exception to deployment contract files', () => {
+    expect(
+      isApprovedLegacyOrigin(
+        'scripts/deploy/iwinv-overlap-readiness.sh',
+        LEGACY_PUBLIC_ORIGIN_IPV4,
+      ),
+    ).toBe(true);
+    expect(isApprovedLegacyOrigin('README.md', LEGACY_PUBLIC_ORIGIN_IPV4)).toBe(
+      false,
+    );
+    expect(
+      isApprovedLegacyOrigin(
+        'scripts/deploy/iwinv-overlap-readiness.sh',
+        '8.8.8.8',
+      ),
+    ).toBe(false);
+  });
 
   it.each([
     ['공인 주소', '49.247.204.81'],

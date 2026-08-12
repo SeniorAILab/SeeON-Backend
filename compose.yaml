@@ -47,7 +47,10 @@ services:
       DATABASE_URL: postgresql://${APP_DB_USER:-fall_app}:${APP_DB_PASSWORD:-fall_app}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
       # DIRECT_URL keeps the privileged fall superuser for migrations / seed only.
       DIRECT_URL: postgresql://${POSTGRES_USER:-fall}:${POSTGRES_PASSWORD:-fall}@db:5432/${POSTGRES_DB:-fall_dev}?schema=public
-      FRONT_ORIGIN: http://localhost:3000
+      FRONT_ORIGINS: ${FRONT_ORIGINS:-http://localhost:3000}
+      # Singular compatibility fallback only when FRONT_ORIGINS is absent.
+      FRONT_ORIGIN: ${FRONT_ORIGIN:-}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-dev-only-session-secret-change-me-32chars-min}
       EDGE_TOKEN_PEPPER: ${EDGE_TOKEN_PEPPER:-}
       # Fail-closed by default: only the literal string 'true' activates the
@@ -84,6 +87,8 @@ services:
       - "127.0.0.1:${API_INGRESS_PORT:-3001}:3000"
     depends_on:
       - backend
+    networks:
+      - private_ingress
 
   front:
     profiles: [full]

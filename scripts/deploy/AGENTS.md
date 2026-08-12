@@ -6,8 +6,9 @@ and deploys server-side application images; direct host use is limited to an
 explicit rollback or database restore.
 
 ## Where to look
-- `Jenkinsfile` — resolves a published production release, builds
-  `eldercare-backend:<sha>` and `eldercare-front:<sha>`, then invokes deploy.
+- `Jenkinsfile` — resolves a published production release, requires its GitHub
+  `CI gate=success`, builds exact-SHA backend/API-ingress/transitional-front
+  images, takes safety receipts, then invokes deploy.
 - `iwinv-deploy.sh` — deploys exact local SHA-tagged images, backs up PostgreSQL,
   migrates, starts Compose, and verifies health/version.
 - `iwinv-deploy.test.sh` — mocked dry-run and production-path contracts for
@@ -46,15 +47,20 @@ explicit rollback or database restore.
 - Jenkins resolves the release tag once through the deploy-key authenticated
   remote lookup, then deploys only the resulting 40-character lowercase SHA.
   Never infer a branch, SHA, image, env file, or Compose profile.
-- Server-side backend/front builds are allowed only inside Jenkins and only as
-  `eldercare-backend:<sha>` and `eldercare-front:<sha>`.
+- Server-side application builds are allowed only inside Jenkins and only as
+  `eldercare-backend:<sha>`, `eldercare-api-ingress:<sha>`, and during overlap
+  `eldercare-front:<sha>`. The host must provision jq for GitHub API JSON plus
+  every POSIX command listed in the release-manifest validator contract; none is
+  optional.
 - Repository checkout is `/opt/eldercare-fall-ai/repo`; backups are under
   `/opt/eldercare-fall-ai/backups/db/`, releases under
-  `/opt/eldercare-fall-ai/releases/`. Frontend binds only host loopback
-  `127.0.0.1:3000`, while backend and database remain internal. Caddy owns public
-  exposure.
-- Before migration, create a `pg_dump -Fc` backup and validate it with
-  `pg_restore --list`. Migrations run once from deploy tooling, never on app start.
+  `/opt/eldercare-fall-ai/releases/`. Frontend and API ingress bind only host
+  loopback (`127.0.0.1:3000` and `127.0.0.1:3001`); backend and database remain
+  internal. Caddy owns public exposure.
+- Before migration, require a fresh content-addressed off-host media backup
+  receipt, capture an Edge heartbeat seed, create a `pg_dump -Fc` backup, and
+  validate it with `pg_restore --list`. Audit Prisma history before `migrate
+  deploy`; migrations run once from deploy tooling, never on app start.
 - Fail on the first resolution, checkout, build, preflight, backup, migration,
   Compose, or health error. No hidden retry, automatic rollback, alternate path,
   or secret output.
