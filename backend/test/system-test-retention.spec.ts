@@ -459,6 +459,8 @@ describe('SYSTEM_TEST audited retention purge', () => {
       },
       { table_name: 'edge_validation_grants', privilege_type: 'SELECT' },
       { table_name: 'edge_validation_grants', privilege_type: 'UPDATE' },
+      { table_name: 'event_media_bindings', privilege_type: 'DELETE' },
+      { table_name: 'event_media_bindings', privilege_type: 'SELECT' },
       { table_name: 'events', privilege_type: 'DELETE' },
       { table_name: 'events', privilege_type: 'SELECT' },
       { table_name: 'events', privilege_type: 'UPDATE' },
@@ -620,6 +622,7 @@ describe('SYSTEM_TEST audited retention purge', () => {
     expect(definition).not.toMatch(/\bEXECUTE\b/i);
     for (const relation of [
       'system_test_purge_audit_history',
+      'event_media_bindings',
       'events',
       'alerts',
       'edge_validation_grants',
