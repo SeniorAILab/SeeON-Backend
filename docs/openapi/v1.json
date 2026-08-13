@@ -41,9 +41,18 @@
     "omissionConfirmationTtlSeconds": 900
   },
   "x-error-status-map": {
-    "400": ["INVALID_SCHEMA", "INVALID_TOPOLOGY"],
-    "401": ["EDGE_CREDENTIAL_REQUIRED", "EDGE_CREDENTIAL_INVALID"],
-    "403": ["EDGE_CREDENTIAL_INACTIVE", "FACILITY_BINDING_MISMATCH"],
+    "400": [
+      "INVALID_SCHEMA",
+      "INVALID_TOPOLOGY"
+    ],
+    "401": [
+      "EDGE_CREDENTIAL_REQUIRED",
+      "EDGE_CREDENTIAL_INVALID"
+    ],
+    "403": [
+      "EDGE_CREDENTIAL_INACTIVE",
+      "FACILITY_BINDING_MISMATCH"
+    ],
     "409": [
       "INSTALLATION_CONFLICT",
       "IDEMPOTENCY_CONFLICT",
@@ -55,9 +64,15 @@
       "LEGACY_MAPPING_REQUIRED",
       "CONFIRMATION_STALE"
     ],
-    "410": ["CONFIRMATION_EXPIRED"],
-    "429": ["ENROLLMENT_RATE_LIMITED"],
-    "503": ["EDGE_AUTH_NOT_CONFIGURED"]
+    "410": [
+      "CONFIRMATION_EXPIRED"
+    ],
+    "429": [
+      "ENROLLMENT_RATE_LIMITED"
+    ],
+    "503": [
+      "EDGE_AUTH_NOT_CONFIGURED"
+    ]
   },
   "x-legacy-compatibility": {
     "authorizationBoundary": "Legacy acceptance exists only for previously deployed shared edge credentials during the rollback window. It does not authorize a shared credential as an eft_v1 principal, does not apply to enrollment or topology routes, and is not an alternative in any v1 security requirement below.",
@@ -116,7 +131,9 @@
     "/api/v1/admin/edge-credentials": {
       "post": {
         "operationId": "issueEdgeCredential",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Issue an installation-bound edge credential",
         "description": "Precreates a PENDING_CLAIM installation at enrollment generation 1, binds the new credential to that installation and generation with clientInstallationRef null, and displays the raw bearer exactly once. The facility code is a selector, not an authenticator. A replay after the initial secret-bearing response returns only the persisted redacted result.",
         "security": [
@@ -141,22 +158,22 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Credential issued; the bearer is present only in this initial response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssueCredentialResponse"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Exact idempotent replay; redacted terminal result only.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Credential issued; the bearer is present only in this initial response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueCredentialResponse"
                 }
               }
             }
@@ -180,7 +197,9 @@
       },
       "get": {
         "operationId": "listEdgeCredentials",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "List redacted edge credentials and installation bindings",
         "description": "Returns metadata only. Raw bearer values and recoverable secret material are never returned.",
         "security": [
@@ -231,7 +250,9 @@
     "/api/v1/admin/edge-credentials/{tokenId}/rotate": {
       "post": {
         "operationId": "rotateEdgeCredential",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Rotate an active edge credential",
         "description": "Issues a one-time replacement for the same installation and enrollment generation. The prior ACTIVE credential enters GRACE for exactly 24 hours, then becomes EXPIRED. Rotation never changes installation identity or generation.",
         "security": [
@@ -260,8 +281,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Replacement issued and displayed once.",
+          "200": {
+            "description": "Exact replay with a redacted terminal result.",
             "content": {
               "application/json": {
                 "schema": {
@@ -270,8 +291,8 @@
               }
             }
           },
-          "200": {
-            "description": "Exact replay with a redacted terminal result.",
+          "201": {
+            "description": "Replacement issued and displayed once.",
             "content": {
               "application/json": {
                 "schema": {
@@ -301,7 +322,9 @@
     "/api/v1/admin/edge-credentials/{tokenId}/revoke": {
       "post": {
         "operationId": "revokeEdgeCredential",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Revoke an edge credential immediately",
         "description": "Transitions the selected credential to REVOKED at request start. Revocation has no grace period and is enforced on every v1 route.",
         "security": [
@@ -357,7 +380,9 @@
     "/api/v1/admin/edge-installations/{edgeInstallationId}/replace": {
       "post": {
         "operationId": "replaceEdgeInstallation",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Replace an edge installation generation",
         "description": "CASes the expected generation, increments generation once, resets acceptedClientRevision to 0, preserves the facility server revision, invalidates pending omission previews, revokes all old-generation credentials, and returns a one-time pending replacement credential. The new client installation reference remains claimable only by that credential.",
         "security": [
@@ -385,22 +410,22 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Replacement generation and one-time credential created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReplaceInstallationResponse"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Exact replay with a redacted terminal result.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Replacement generation and one-time credential created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplaceInstallationResponse"
                 }
               }
             }
@@ -426,7 +451,9 @@
     "/api/v1/admin/edge-operations/{operationId}/recover-secret": {
       "post": {
         "operationId": "recoverLostEdgeCredentialDisplay",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Replace a credential whose one-time display outcome was lost",
         "description": "Uses a new idempotency key and expected tokenId. A successful CAS immediately revokes the lost token without grace and displays a one-time replacement bound to the same installation and generation. It never recovers stored plaintext. A replay of the recovery operation is redacted; another replacement requires another explicit operation.",
         "security": [
@@ -454,22 +481,22 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Lost credential revoked and replacement displayed once.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoverCredentialResponse"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Exact recovery replay; redacted terminal result only.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CredentialOperationResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Lost credential revoked and replacement displayed once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverCredentialResponse"
                 }
               }
             }
@@ -495,7 +522,9 @@
     "/api/v1/admin/edge-installations/{edgeInstallationId}/transfers": {
       "post": {
         "operationId": "approveTopologyOwnershipTransfer",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Approve a persisted alias ownership-transfer manifest",
         "description": "CASes installation generation and facility server revision against a complete immutable parent-child manifest generated from persisted aliases. A transfer changes only provisioning ownership and stable edge references; it never changes names, placement, activity, history, or append-only records. A nonempty transfer increments serverRevision exactly once. Mismatch is a zero-write conflict.",
         "security": [
@@ -551,7 +580,9 @@
     "/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs": {
       "post": {
         "operationId": "createEdgeValidationRun",
-        "tags": ["Edge credential administration"],
+        "tags": [
+          "Edge credential administration"
+        ],
         "summary": "Create an isolated live-validation grant",
         "description": "Creates a bounded validation-only grant for the expected installation generation. Validation events remain excluded from ordinary event, alert, dashboard, SSE, email, outbox, and search surfaces; only validation endpoints may read them.",
         "security": [
@@ -579,8 +610,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Validation grant created.",
+          "200": {
+            "description": "Exact terminal operation replay.",
             "content": {
               "application/json": {
                 "schema": {
@@ -589,8 +620,8 @@
               }
             }
           },
-          "200": {
-            "description": "Exact terminal operation replay.",
+          "201": {
+            "description": "Validation grant created.",
             "content": {
               "application/json": {
                 "schema": {
@@ -617,7 +648,9 @@
     "/api/v1/edge/enrollments/verify": {
       "post": {
         "operationId": "verifyEdgeEnrollment",
-        "tags": ["Edge enrollment"],
+        "tags": [
+          "Edge enrollment"
+        ],
         "summary": "Verify and claim an edge installation",
         "description": "Authenticates the bearer, selects its bound facility with the non-authenticating facility code, and CAS-claims a null clientInstallationRef. Exact replay returns the binding; another reference returns INSTALLATION_CONFLICT. All credential, facility-code, and binding failures use a generic response and equivalent timing class.",
         "security": [
@@ -675,7 +708,9 @@
     "/api/v1/edge/topology-snapshots/{snapshotId}": {
       "put": {
         "operationId": "putEdgeTopologySnapshot",
-        "tags": ["Edge topology"],
+        "tags": [
+          "Edge topology"
+        ],
         "summary": "Reconcile an edge-authored topology snapshot",
         "description": "Uses snapshotId as a UUIDv7 idempotency key. Changed snapshots must advance clientRevision by exactly one and CAS expectedServerRevision. Exact snapshotId plus semantic JCS hash replays the stored response; the same ID with another hash conflicts. Semantically identical next revisions advance acceptedClientRevision without changing serverRevision. Reappearing EDGE identities reactivate existing rows; omissions are previewed and never hard-deleted.",
         "security": [
@@ -688,7 +723,10 @@
             "$ref": "#/components/parameters/SnapshotId"
           }
         ],
-        "x-forbidden-request-headers": ["x-facility-id", "facility-id"],
+        "x-forbidden-request-headers": [
+          "x-facility-id",
+          "facility-id"
+        ],
         "x-idempotency": {
           "key": "snapshotId",
           "hash": "SHA-256(RFC8785(validated semantic body with arrays sorted by edgeRef))",
@@ -737,7 +775,9 @@
     "/api/v1/edge/topology-snapshots/{snapshotId}/confirm": {
       "post": {
         "operationId": "confirmEdgeTopologyOmissions",
-        "tags": ["Edge topology"],
+        "tags": [
+          "Edge topology"
+        ],
         "summary": "Confirm a stored topology omission preview",
         "description": "Compares confirmationId, digest, expectedServerRevision, generation, expiry, and the stored omission set before any write. A successful nonempty confirmation soft-deactivates only provisioningSource EDGE rows owned by this installation and increments serverRevision once. Product-owned rows and historical append-only records are never candidates. Exact replay returns the stored result without another increment.",
         "security": [
@@ -750,7 +790,10 @@
             "$ref": "#/components/parameters/SnapshotId"
           }
         ],
-        "x-forbidden-request-headers": ["x-facility-id", "facility-id"],
+        "x-forbidden-request-headers": [
+          "x-facility-id",
+          "facility-id"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -796,7 +839,9 @@
     "/api/v1/events": {
       "post": {
         "operationId": "createMachineEvent",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Record an ML event",
         "description": "The eft_v1 principal supplies facility, installation, and generation. Camera ownership is resolved server-side. Facility identity fields are not part of the v1 body. Previously deployed shared-token clients remain a separately metered compatibility path and do not gain eft_v1 authority.",
         "security": [
@@ -846,7 +891,9 @@
     "/api/v1/events/heartbeat": {
       "post": {
         "operationId": "recordMachineHeartbeat",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Record a camera heartbeat",
         "description": "Marks the server-resolved camera online under the authenticated edge principal. No facility header or body field is accepted for eft_v1.",
         "security": [
@@ -896,7 +943,9 @@
     "/api/v1/events/{eventId}/snapshot": {
       "put": {
         "operationId": "uploadMachineEventSnapshot",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Upload immutable event snapshot bytes",
         "description": "Resolves event ownership under the authenticated edge principal and stores bytes under a server-derived key. Client-supplied snapshot keys and facility identity headers are rejected.",
         "security": [
@@ -938,8 +987,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Immutable snapshot created.",
+          "200": {
+            "description": "Exact bytes already stored.",
             "content": {
               "application/json": {
                 "schema": {
@@ -948,8 +997,8 @@
               }
             }
           },
-          "200": {
-            "description": "Exact bytes already stored.",
+          "201": {
+            "description": "Immutable snapshot created.",
             "content": {
               "application/json": {
                 "schema": {
@@ -979,7 +1028,9 @@
     "/api/v1/ml-config/{facilityId}": {
       "get": {
         "operationId": "getMachineMlConfig",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Read facility ML runtime configuration",
         "description": "For eft_v1, facilityId must exactly match the authenticated principal. A mismatch is rejected without disclosing either facility. The path identity remains only for old-client compatibility; it never overrides the v1 principal.",
         "security": [
@@ -1026,7 +1077,9 @@
     "/api/v1/edge/cameras": {
       "put": {
         "operationId": "upsertEdgeCameraMapping",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Upsert a legacy-overlap edge camera mapping",
         "description": "Maps an edge-local camera reference to one canonical room and camera. For eft_v1, facility, installation, and generation come only from the authenticated principal; facility identity in a header or body is rejected. The separately metered legacy overlap may continue to use x-facility-id during the rollback window.",
         "security": [
@@ -1081,7 +1134,9 @@
     "/api/v1/events/capabilities": {
       "get": {
         "operationId": "getMachineEventCapabilities",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Read event and clip-export capabilities for a camera",
         "description": "Resolves camera ownership server-side. For eft_v1, the camera must belong to the authenticated facility and installation scope; no facility identity parameter is accepted.",
         "security": [
@@ -1133,7 +1188,9 @@
     "/api/v1/events/clips/{clipId}": {
       "put": {
         "operationId": "uploadMachineEventClip",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Upload immutable MP4 clip bytes and metadata",
         "description": "Uploads a READY clip using the executable legacy-overlap header contract. Camera and event ownership are resolved server-side and must match the eft_v1 principal. The request never accepts facility identity, a connection URL, or camera authentication material.",
         "security": [
@@ -1284,7 +1341,9 @@
     "/api/v1/events/clips/{clipId}/state": {
       "put": {
         "operationId": "reportMachineEventClipUnavailable",
-        "tags": ["Machine API"],
+        "tags": [
+          "Machine API"
+        ],
         "summary": "Report a terminal unavailable clip state",
         "description": "Reports that clip export could not produce usable bytes. Camera and event ownership are resolved server-side and must match the eft_v1 principal. Facility identity is not accepted in the path, headers, or body.",
         "security": [
@@ -1342,7 +1401,9 @@
     "/api/v1/alerts/{alertId}/media/download": {
       "get": {
         "operationId": "downloadAlertMediaAttachment",
-        "tags": ["Media download"],
+        "tags": [
+          "Media download"
+        ],
         "summary": "Download authorized alert media as an attachment",
         "description": "Separate facility-admin attachment route with tenant isolation, descriptor-contained access, Range and ETag behavior, private no-store caching, retention and hold enforcement, and a sanitized filename. The existing inline playback route remains unchanged.",
         "security": [
@@ -1399,7 +1460,9 @@
       },
       "head": {
         "operationId": "headAlertMediaAttachment",
-        "tags": ["Media download"],
+        "tags": [
+          "Media download"
+        ],
         "summary": "Read authorized attachment headers without a body",
         "description": "Returns the same attachment, Range, ETag, cache, and containment metadata as GET without opening a download audit lifecycle or returning media bytes.",
         "security": [
@@ -1448,6 +1511,183 @@
           "416": {
             "$ref": "#/components/responses/ClipRangeNotSatisfiable"
           }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "description": "Returns facility-scoped alerts with optional status, sequence, and limit filters for dashboard history and reconciliation.",
+        "operationId": "listAlerts",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "NEW",
+                "ACKED",
+                "RESOLVED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterSeq",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "beforeSeq",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "app_session": []
+          }
+        ],
+        "summary": "List alerts",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{id}": {
+      "get": {
+        "description": "Returns a single facility-scoped alert by id or 404 when it is outside the caller's facility.",
+        "operationId": "getAlert",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "app_session": []
+          }
+        ],
+        "summary": "Get one alert",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{id}/resolve": {
+      "patch": {
+        "description": "Marks an alert resolved by the current user and emits the live alert-updated dashboard frame.",
+        "operationId": "resolveAlert",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "app_session": []
+          }
+        ],
+        "summary": "Resolve an alert",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v1/dashboard/stream": {
+      "get": {
+        "description": "Opens the facility-scoped SSE stream that emits only room-centric alert and alert-updated frames plus session-invalid control frames.",
+        "operationId": "streamDashboardAlerts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "app_session": []
+          }
+        ],
+        "summary": "Stream live dashboard alerts",
+        "tags": [
+          "DashboardStream"
+        ],
+        "x-sse-event-schemas": {
+          "alert": "#/components/schemas/AlertSseData",
+          "alert-updated": "#/components/schemas/AlertUpdatedSseData"
         }
       }
     }
@@ -2009,7 +2249,12 @@
       },
       "CredentialLifecycle": {
         "type": "string",
-        "enum": ["ACTIVE", "GRACE", "REVOKED", "EXPIRED"],
+        "enum": [
+          "ACTIVE",
+          "GRACE",
+          "REVOKED",
+          "EXPIRED"
+        ],
         "description": "ACTIVE is usable; GRACE is usable only until its exact 24-hour grace expiry; REVOKED is immediately unusable; EXPIRED is unusable at request start."
       },
       "EdgeErrorCode": {
@@ -2091,7 +2336,10 @@
       "ErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "error"],
+        "required": [
+          "schemaVersion",
+          "error"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2105,7 +2353,12 @@
       "EdgeError": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["code", "message", "retryable", "requestId"],
+        "required": [
+          "code",
+          "message",
+          "retryable",
+          "requestId"
+        ],
         "properties": {
           "code": {
             "$ref": "#/components/schemas/EdgeErrorCode"
@@ -2129,7 +2382,9 @@
         "allOf": [
           {
             "if": {
-              "required": ["code"],
+              "required": [
+                "code"
+              ],
               "properties": {
                 "code": {
                   "enum": [
@@ -2183,13 +2438,23 @@
       },
       "OperationStatus": {
         "type": "string",
-        "enum": ["PENDING", "SUCCEEDED", "FAILED", "UNKNOWN"],
+        "enum": [
+          "PENDING",
+          "SUCCEEDED",
+          "FAILED",
+          "UNKNOWN"
+        ],
         "description": "Clients resolve uncertain mutation outcomes from this durable status. UNKNOWN never authorizes guessed compensation."
       },
       "OperationSummary": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["operationId", "status", "createdAt", "updatedAt"],
+        "required": [
+          "operationId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
         "properties": {
           "operationId": {
             "$ref": "#/components/schemas/UuidV7"
@@ -2208,7 +2473,10 @@
       "IssueCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "facilityId"],
+        "required": [
+          "schemaVersion",
+          "facilityId"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2222,7 +2490,10 @@
       "RotateCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "expectedLifecycle"],
+        "required": [
+          "schemaVersion",
+          "expectedLifecycle"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2237,7 +2508,10 @@
       "RevokeCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "expectedLifecycle"],
+        "required": [
+          "schemaVersion",
+          "expectedLifecycle"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2245,7 +2519,10 @@
           },
           "expectedLifecycle": {
             "type": "string",
-            "enum": ["ACTIVE", "GRACE"]
+            "enum": [
+              "ACTIVE",
+              "GRACE"
+            ]
           },
           "reason": {
             "type": "string",
@@ -2282,7 +2559,10 @@
       "RecoverCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "expectedTokenId"],
+        "required": [
+          "schemaVersion",
+          "expectedTokenId"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2391,7 +2671,12 @@
           },
           "state": {
             "type": "string",
-            "enum": ["PENDING_CLAIM", "CLAIMED", "REPLACED", "DEACTIVATED"]
+            "enum": [
+              "PENDING_CLAIM",
+              "CLAIMED",
+              "REPLACED",
+              "DEACTIVATED"
+            ]
           },
           "clientInstallationRef": {
             "oneOf": [
@@ -2414,7 +2699,11 @@
       "OneTimeCredentialDisplay": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["redacted", "tokenId", "prefix"],
+        "required": [
+          "redacted",
+          "tokenId",
+          "prefix"
+        ],
         "properties": {
           "redacted": {
             "type": "boolean",
@@ -2437,7 +2726,9 @@
         "allOf": [
           {
             "if": {
-              "required": ["redacted"],
+              "required": [
+                "redacted"
+              ],
               "properties": {
                 "redacted": {
                   "const": true
@@ -2446,11 +2737,15 @@
             },
             "then": {
               "not": {
-                "required": ["value"]
+                "required": [
+                  "value"
+                ]
               }
             },
             "else": {
-              "required": ["value"]
+              "required": [
+                "value"
+              ]
             }
           }
         ]
@@ -2541,7 +2836,10 @@
       "ListCredentialsResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "items"],
+        "required": [
+          "schemaVersion",
+          "items"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2584,7 +2882,11 @@
           "prior": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["tokenId", "lifecycle", "graceEndsAt"],
+            "required": [
+              "tokenId",
+              "lifecycle",
+              "graceEndsAt"
+            ],
             "properties": {
               "tokenId": {
                 "type": "string",
@@ -2602,7 +2904,9 @@
           "replacement": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["lifecycle"],
+            "required": [
+              "lifecycle"
+            ],
             "properties": {
               "lifecycle": {
                 "type": "string",
@@ -2687,7 +2991,11 @@
       "RecoveredCredentialSummary": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["tokenId", "prefix", "lifecycle"],
+        "required": [
+          "tokenId",
+          "prefix",
+          "lifecycle"
+        ],
         "properties": {
           "tokenId": {
             "type": "string",
@@ -2781,7 +3089,10 @@
       "CredentialListResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "items"],
+        "required": [
+          "schemaVersion",
+          "items"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2792,7 +3103,10 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["credential", "installation"],
+              "required": [
+                "credential",
+                "installation"
+              ],
               "properties": {
                 "credential": {
                   "$ref": "#/components/schemas/CredentialSummary"
@@ -2808,7 +3122,11 @@
       "EnrollmentVerificationRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["schemaVersion", "facilityCode", "clientInstallationRef"],
+        "required": [
+          "schemaVersion",
+          "facilityCode",
+          "clientInstallationRef"
+        ],
         "properties": {
           "schemaVersion": {
             "type": "integer",
@@ -2846,7 +3164,10 @@
           "facility": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "displayName"],
+            "required": [
+              "id",
+              "displayName"
+            ],
             "properties": {
               "id": {
                 "$ref": "#/components/schemas/Uuid"
@@ -2867,7 +3188,10 @@
       "TopologyCamera": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edgeRef", "label"],
+        "required": [
+          "edgeRef",
+          "label"
+        ],
         "properties": {
           "edgeRef": {
             "$ref": "#/components/schemas/EdgeRef"
@@ -2883,7 +3207,11 @@
       "TopologyRoom": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edgeRef", "name", "cameras"],
+        "required": [
+          "edgeRef",
+          "name",
+          "cameras"
+        ],
         "properties": {
           "edgeRef": {
             "$ref": "#/components/schemas/EdgeRef"
@@ -2922,7 +3250,12 @@
       "TopologyFloor": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edgeRef", "name", "orderIndex", "rooms"],
+        "required": [
+          "edgeRef",
+          "name",
+          "orderIndex",
+          "rooms"
+        ],
         "properties": {
           "edgeRef": {
             "$ref": "#/components/schemas/EdgeRef"
@@ -2992,7 +3325,11 @@
       "EntityMutationCounts": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["created", "updated", "unchanged"],
+        "required": [
+          "created",
+          "updated",
+          "unchanged"
+        ],
         "properties": {
           "created": {
             "type": "integer",
@@ -3023,7 +3360,11 @@
       "TopologyMutationResult": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["floors", "rooms", "cameras"],
+        "required": [
+          "floors",
+          "rooms",
+          "cameras"
+        ],
         "properties": {
           "floors": {
             "$ref": "#/components/schemas/EntityMutationCounts"
@@ -3108,11 +3449,20 @@
       "OwnershipTransferManifestItem": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["kind", "edgeRef", "canonicalId", "parentCanonicalId"],
+        "required": [
+          "kind",
+          "edgeRef",
+          "canonicalId",
+          "parentCanonicalId"
+        ],
         "properties": {
           "kind": {
             "type": "string",
-            "enum": ["FLOOR", "ROOM", "CAMERA"]
+            "enum": [
+              "FLOOR",
+              "ROOM",
+              "CAMERA"
+            ]
           },
           "edgeRef": {
             "$ref": "#/components/schemas/EdgeRef"
@@ -3169,7 +3519,10 @@
       "OwnershipTransferPreview": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["manifestDigest", "items"],
+        "required": [
+          "manifestDigest",
+          "items"
+        ],
         "properties": {
           "manifestDigest": {
             "$ref": "#/components/schemas/Sha256Hex"
@@ -3214,7 +3567,11 @@
           "transferred": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["floors", "rooms", "cameras"],
+            "required": [
+              "floors",
+              "rooms",
+              "cameras"
+            ],
             "properties": {
               "floors": {
                 "type": "integer",
@@ -3290,7 +3647,11 @@
           },
           "status": {
             "type": "string",
-            "enum": ["ACTIVE", "CLOSED", "EXPIRED"]
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              "EXPIRED"
+            ]
           },
           "createdAt": {
             "$ref": "#/components/schemas/Rfc3339MillisUtc"
@@ -3303,7 +3664,11 @@
       "RecordEventRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["camera_id", "type", "detected_at"],
+        "required": [
+          "camera_id",
+          "type",
+          "detected_at"
+        ],
         "properties": {
           "camera_id": {
             "type": "string",
@@ -3374,21 +3739,32 @@
           {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "status"],
+            "required": [
+              "id",
+              "status"
+            ],
             "properties": {
               "id": {
                 "$ref": "#/components/schemas/Uuid"
               },
               "status": {
                 "type": "string",
-                "enum": ["created", "duplicate"]
+                "enum": [
+                  "created",
+                  "duplicate"
+                ]
               }
             }
           },
           {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "event_id", "edge_event_id", "status"],
+            "required": [
+              "id",
+              "event_id",
+              "edge_event_id",
+              "status"
+            ],
             "properties": {
               "id": {
                 "$ref": "#/components/schemas/Uuid"
@@ -3410,7 +3786,9 @@
       "HeartbeatRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["camera_id"],
+        "required": [
+          "camera_id"
+        ],
         "properties": {
           "camera_id": {
             "type": "string",
@@ -3422,7 +3800,9 @@
       "HeartbeatResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["ok"],
+        "required": [
+          "ok"
+        ],
         "properties": {
           "ok": {
             "type": "boolean",
@@ -3433,7 +3813,9 @@
       "SnapshotUploadResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["snapshotKey"],
+        "required": [
+          "snapshotKey"
+        ],
         "properties": {
           "snapshotKey": {
             "type": "string",
@@ -3447,7 +3829,11 @@
       "MlConfigResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["configVersion", "nightWindow", "cameras"],
+        "required": [
+          "configVersion",
+          "nightWindow",
+          "cameras"
+        ],
         "properties": {
           "configVersion": {
             "type": "integer",
@@ -3456,7 +3842,11 @@
           "nightWindow": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["start", "end", "tz"],
+            "required": [
+              "start",
+              "end",
+              "tz"
+            ],
             "properties": {
               "start": {
                 "type": "string",
@@ -3554,7 +3944,10 @@
         "maxLength": 200,
         "pattern": "^[A-Za-z0-9._-]{1,200}$",
         "not": {
-          "enum": [".", ".."]
+          "enum": [
+            ".",
+            ".."
+          ]
         }
       },
       "UuidV4": {
@@ -3564,7 +3957,11 @@
       "EdgeCameraMappingRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edge_camera_ref", "label", "spaceId"],
+        "required": [
+          "edge_camera_ref",
+          "label",
+          "spaceId"
+        ],
         "properties": {
           "edge_camera_ref": {
             "type": "string",
@@ -3585,7 +3982,11 @@
       "EdgeCameraMappingResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["cameraId", "spaceId", "facilityId"],
+        "required": [
+          "cameraId",
+          "spaceId",
+          "facilityId"
+        ],
         "properties": {
           "cameraId": {
             "$ref": "#/components/schemas/Uuid"
@@ -3603,7 +4004,10 @@
       "EdgeMediaCapabilities": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["event_idempotency", "clip_export"],
+        "required": [
+          "event_idempotency",
+          "clip_export"
+        ],
         "properties": {
           "event_idempotency": {
             "type": "integer",
@@ -3611,14 +4015,22 @@
           },
           "clip_export": {
             "type": "integer",
-            "enum": [0, 1]
+            "enum": [
+              0,
+              1
+            ]
           }
         }
       },
       "UnavailableClipRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["camera_id", "event_refs", "state_version", "reason"],
+        "required": [
+          "camera_id",
+          "event_refs",
+          "state_version",
+          "reason"
+        ],
         "properties": {
           "camera_id": {
             "type": "string",
@@ -3685,7 +4097,11 @@
       "UnavailableClipReceipt": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["clip_id", "state", "state_version"],
+        "required": [
+          "clip_id",
+          "state",
+          "state_version"
+        ],
         "properties": {
           "clip_id": {
             "$ref": "#/components/schemas/ClipId"
@@ -3704,7 +4120,11 @@
       "ExpiredClipReceipt": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["clip_id", "state", "state_version"],
+        "required": [
+          "clip_id",
+          "state",
+          "state_version"
+        ],
         "properties": {
           "clip_id": {
             "$ref": "#/components/schemas/ClipId"
@@ -3736,11 +4156,22 @@
       "MachineErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["statusCode", "message"],
+        "required": [
+          "statusCode",
+          "message"
+        ],
         "properties": {
           "statusCode": {
             "type": "integer",
-            "enum": [400, 404, 409, 413, 422, 503, 507]
+            "enum": [
+              400,
+              404,
+              409,
+              413,
+              422,
+              503,
+              507
+            ]
           },
           "message": {
             "type": "string",
@@ -3762,11 +4193,18 @@
       "SessionErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["statusCode", "message", "requestId"],
+        "required": [
+          "statusCode",
+          "message",
+          "requestId"
+        ],
         "properties": {
           "statusCode": {
             "type": "integer",
-            "enum": [401, 403]
+            "enum": [
+              401,
+              403
+            ]
           },
           "message": {
             "type": "string",
@@ -3782,11 +4220,19 @@
       "MediaErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["statusCode", "code", "message", "requestId"],
+        "required": [
+          "statusCode",
+          "code",
+          "message",
+          "requestId"
+        ],
         "properties": {
           "statusCode": {
             "type": "integer",
-            "enum": [404, 410]
+            "enum": [
+              404,
+              410
+            ]
           },
           "code": {
             "type": "string",
@@ -3802,6 +4248,498 @@
             "maxLength": 128
           }
         }
+      },
+      "AlertActor": {
+        "type": "object",
+        "properties": {
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nickname"
+        ]
+      },
+      "AlertSpace": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string"
+          },
+          "backendEventId": {
+            "type": "string"
+          },
+          "facilityId": {
+            "type": "string"
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "probability": {
+            "type": "number"
+          },
+          "snapshotKey": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "ACKED",
+              "RESOLVED"
+            ]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "space": {
+            "$ref": "#/components/schemas/AlertSpace"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "probability",
+          "snapshotKey",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "space",
+          "createdAt"
+        ]
+      },
+      "AlertList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Alert"
+        }
+      },
+      "AlertNote": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdBy": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorRole": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "STAFF"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "note",
+          "createdBy",
+          "authorRole",
+          "createdAt"
+        ]
+      },
+      "AlertDetail": {
+        "type": "object",
+        "properties": {
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "id": {
+            "type": "string"
+          },
+          "backendEventId": {
+            "type": "string"
+          },
+          "facilityId": {
+            "type": "string"
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "probability": {
+            "type": "number"
+          },
+          "snapshotKey": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "ACKED",
+              "RESOLVED"
+            ]
+          },
+          "ackedById": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ackedBy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "space": {
+            "$ref": "#/components/schemas/AlertSpace"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertNote"
+            }
+          }
+        },
+        "required": [
+          "alertSeq",
+          "id",
+          "backendEventId",
+          "facilityId",
+          "cameraId",
+          "spaceId",
+          "room",
+          "type",
+          "probability",
+          "snapshotKey",
+          "detectedAt",
+          "status",
+          "ackedById",
+          "ackedAt",
+          "ackedBy",
+          "resolvedById",
+          "resolvedAt",
+          "resolvedBy",
+          "space",
+          "createdAt",
+          "notes"
+        ]
+      },
+      "AlertSseData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "backendEventId": {
+            "type": "string"
+          },
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "facilityId": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "cameraId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "ACKED",
+              "RESOLVED"
+            ]
+          },
+          "probability": {
+            "type": "number"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "backendEventId",
+          "alertSeq",
+          "facilityId",
+          "spaceId",
+          "cameraId",
+          "type",
+          "status",
+          "probability",
+          "detectedAt"
+        ]
+      },
+      "AlertUpdatedSseData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "alertSeq": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACKED",
+              "RESOLVED"
+            ]
+          },
+          "resolvedById": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "alertSeq",
+          "spaceId",
+          "status",
+          "resolvedById",
+          "resolvedAt"
+        ]
       }
     }
   }

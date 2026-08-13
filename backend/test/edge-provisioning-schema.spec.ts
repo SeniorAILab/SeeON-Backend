@@ -116,12 +116,48 @@ describe('edge provisioning v1 schema artifacts', () => {
     );
     for (const check of checks) expectSchemaCheck(schemas, check);
   });
-  it('omits the retired SYSTEM_TEST API and schema contract', () => {
+  it('preserves ordinary Alert REST/SSE contracts while omitting SYSTEM_TEST', () => {
     const paths = record(artifacts.openApi.paths, 'OpenAPI paths');
     const schemas = record(
       record(artifacts.openApi.components, 'OpenAPI components').schemas,
       'OpenAPI schemas',
     );
+    const requiredOperations = [
+      ['get', '/api/v1/alerts'],
+      ['get', '/api/v1/alerts/{id}'],
+      ['patch', '/api/v1/alerts/{id}/resolve'],
+      ['get', '/api/v1/dashboard/stream'],
+    ] as const;
+    for (const [method, path] of requiredOperations) {
+      expect(record(paths[path], path)[method]).toBeDefined();
+    }
+    for (const schema of [
+      'Alert',
+      'AlertDetail',
+      'AlertList',
+      'AlertSseData',
+      'AlertUpdatedSseData',
+    ]) {
+      expect(schemas[schema]).toBeDefined();
+    }
+    expect(responseSchemaRef(paths, '/api/v1/alerts', 'get')).toBe(
+      '#/components/schemas/AlertList',
+    );
+    expect(responseSchemaRef(paths, '/api/v1/alerts/{id}', 'get')).toBe(
+      '#/components/schemas/AlertDetail',
+    );
+    expect(
+      responseSchemaRef(paths, '/api/v1/alerts/{id}/resolve', 'patch'),
+    ).toBe('#/components/schemas/Alert');
+    expect(
+      record(
+        record(paths['/api/v1/dashboard/stream'], 'dashboard stream path').get,
+        'dashboard stream operation',
+      )['x-sse-event-schemas'],
+    ).toEqual({
+      alert: '#/components/schemas/AlertSseData',
+      'alert-updated': '#/components/schemas/AlertUpdatedSseData',
+    });
     const validationProperties = record(
       record(schemas.CreateValidationRunRequest, 'validation request')
         .properties,
@@ -209,3 +245,21 @@ describe('edge provisioning v1 schema artifacts', () => {
     expect(metadata.rawCredential).toBeUndefined();
   });
 });
+
+function responseSchemaRef(
+  paths: Record<string, unknown>,
+  path: string,
+  method: string,
+): unknown {
+  const operation = record(
+    record(paths[path], path)[method],
+    `${method} ${path}`,
+  );
+  const response = record(
+    record(operation.responses, 'responses')['200'],
+    '200',
+  );
+  const content = record(response.content, 'response content');
+  const media = record(content['application/json'], 'application/json');
+  return record(media.schema, 'response schema').$ref;
+}

@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import { createOpenApiDocument } from '../../src/openapi/openapi-document';
 
 export function configureVersionedTestApp(app: INestApplication): void {
   app.setGlobalPrefix('api', {
@@ -14,12 +15,5 @@ export function configureVersionedTestApp(app: INestApplication): void {
     defaultVersion: '1',
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Eldercare backend API')
-    .build();
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
+  SwaggerModule.setup('api/docs', app, createOpenApiDocument(app));
 }

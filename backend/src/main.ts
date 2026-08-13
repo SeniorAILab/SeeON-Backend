@@ -1,10 +1,11 @@
 import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { configureHttpBodyParsing } from './common/json/strict-json-parser.js';
 import { configureFrontendCors } from './config/frontend-cors.js';
 import { configureTrustedIngressProxy } from './config/trusted-ingress-proxy.js';
+import { createOpenApiDocument } from './openapi/openapi-document.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -26,15 +27,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
   // ponytail: routes/methods auto-discovered from controllers; no per-route decorators.
   // Add @ApiProperty on a DTO only when its request/response shape needs to show in the schema.
-  const config = new DocumentBuilder()
-    .setTitle('Eldercare backend API')
-    .addCookieAuth('app_session')
-    .build();
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    SwaggerModule.createDocument(app, config),
-  );
+  SwaggerModule.setup('api/docs', app, createOpenApiDocument(app));
   await app.listen(process.env.PORT ?? 8080);
 }
 bootstrap().catch((error: unknown) => {
