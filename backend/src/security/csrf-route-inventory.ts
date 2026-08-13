@@ -30,7 +30,6 @@ export const CSRF_ROUTE_INVENTORY: readonly CsrfRoute[] = [
   ['GET', '/api/v1/dashboard/stream', 'SAFE'],
   ['POST', '/api/v1/dashboard/receipts/delivery', 'BROWSER'],
   ['POST', '/api/v1/dashboard/receipts/presentation', 'BROWSER'],
-  ['POST', '/api/v1/admin/system-test-retention/purge', 'BROWSER'],
   ['GET', '/api/v1/admin/edge-credentials', 'SAFE'],
   ['POST', '/api/v1/admin/edge-credentials', 'BROWSER'],
   ['POST', '/api/v1/admin/edge-credentials/:tokenId/rotate', 'BROWSER'],
@@ -48,11 +47,6 @@ export const CSRF_ROUTE_INVENTORY: readonly CsrfRoute[] = [
   [
     'POST',
     '/api/v1/admin/edge-installations/:edgeInstallationId/validation-runs',
-    'BROWSER',
-  ],
-  [
-    'POST',
-    '/api/v1/admin/edge-installations/:edgeInstallationId/validation-runs/:validationRunId/close',
     'BROWSER',
   ],
   [

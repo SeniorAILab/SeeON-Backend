@@ -85,6 +85,17 @@ describe('global api/v1 route matrix (e2e)', () => {
       .expect(404);
   });
 
+  it('removes temporary SYSTEM_TEST administration routes', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/admin/system-test-retention/purge')
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(
+        '/api/v1/admin/edge-installations/installation-id/validation-runs/run-id/close',
+      )
+      .expect(404);
+  });
+
   it('keeps swagger docs at /api/docs', async () => {
     await request(app.getHttpServer()).get('/api/docs').expect(200);
     await request(app.getHttpServer()).get('/api/v1/docs').expect(404);

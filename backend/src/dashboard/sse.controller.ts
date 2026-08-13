@@ -40,11 +40,6 @@ import type {
 } from '../alerts/alert-writer.service.js';
 import { AlertsService } from '../alerts/alerts.service.js';
 import { AuthService } from '../auth/auth.service.js';
-import {
-  SYSTEM_TEST_LABEL,
-  SYSTEM_TEST_MODE,
-  SYSTEM_TEST_TTS_TEXT,
-} from '../events/system-test.constants.js';
 
 /** Injection token for the SSE re-auth tick interval (ms). Override in tests. */
 export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
@@ -234,11 +229,9 @@ type SseAlertLike = Pick<
   | 'probability'
   | 'detectedAt'
   | 'status'
-  | 'snapshotKey'
 >;
 
 export function formatAlertEvent(event: SseAlertLike): string {
-  const systemTest = event.type === SYSTEM_TEST_MODE;
   return formatSseEvent(event.alertSeq, {
     id: event.id,
     backendEventId: event.originEventId,
@@ -250,17 +243,6 @@ export function formatAlertEvent(event: SseAlertLike): string {
     status: event.status,
     probability: event.probability,
     detectedAt: event.detectedAt,
-    ...(systemTest
-      ? {
-          source: SYSTEM_TEST_MODE,
-          testMode: SYSTEM_TEST_MODE,
-          label: SYSTEM_TEST_LABEL,
-          ttsText: SYSTEM_TEST_TTS_TEXT,
-          snapshotKey: null,
-          residentId: null,
-          room: null,
-        }
-      : {}),
   });
 }
 

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import {
   EdgeOperationStatus,
   EdgeTopologyEntityKind,
-  EdgeValidationGrantStatus,
   Prisma,
   ProvisioningSource,
 } from '@prisma/client';
@@ -36,7 +35,6 @@ export class EdgeAdminRepository {
     readonly expectedGeneration: number;
     readonly validationRunId: string;
     readonly expiresAt: Date;
-    readonly capability?: 'SYSTEM_TEST';
     readonly now: Date;
     readonly identity: MutationIdentity;
   }) {
@@ -53,7 +51,6 @@ export class EdgeAdminRepository {
       edgeInstallationId: installation.id,
       enrollmentGeneration: input.expectedGeneration,
       status: 'ACTIVE',
-      capability: input.capability ?? null,
       createdAt: input.now.toISOString(),
       expiresAt: input.expiresAt.toISOString(),
     };
@@ -66,7 +63,6 @@ export class EdgeAdminRepository {
             facilityId: installation.facilityId,
             edgeInstallationId: installation.id,
             enrollmentGeneration: input.expectedGeneration,
-            capability: input.capability ?? null,
             createdAt: input.now,
             expiresAt: input.expiresAt,
           },
@@ -91,62 +87,6 @@ export class EdgeAdminRepository {
       },
     );
     return result;
-  }
-
-  async closeValidationGrant(input: {
-    readonly edgeInstallationId: string;
-    readonly validationRunId: string;
-    readonly expectedStatus: 'ACTIVE';
-    readonly now: Date;
-    readonly identity: MutationIdentity;
-  }) {
-    const installation = await this.findInstallation(input.edgeInstallationId);
-    if (installation === null) return null;
-    const result: StoredOperationResult = {
-      schemaVersion: 1,
-      operation: operationSummary(input.identity.operationId, input.now),
-      validationRunId: input.validationRunId,
-      edgeInstallationId: installation.id,
-      enrollmentGeneration: installation.currentGeneration,
-      status: 'CLOSED',
-      closedAt: input.now.toISOString(),
-    };
-    return this.prisma.withFacilityContext(
-      installation.facilityId,
-      async (tx) => {
-        const updated = await tx.edgeValidationGrant.updateMany({
-          where: {
-            id: input.validationRunId,
-            edgeInstallationId: installation.id,
-            enrollmentGeneration: installation.currentGeneration,
-            status: EdgeValidationGrantStatus.ACTIVE,
-          },
-          data: {
-            status: EdgeValidationGrantStatus.CLOSED,
-            closedAt: input.now,
-          },
-        });
-        if (updated.count !== 1) return null;
-        await persistOperation({
-          tx,
-          facilityId: installation.facilityId,
-          operationType: 'VALIDATION_RUN_CLOSE',
-          identity: input.identity,
-          result,
-          completedAt: input.now,
-        });
-        await persistAudit({
-          tx,
-          facilityId: installation.facilityId,
-          edgeInstallationId: installation.id,
-          enrollmentGeneration: installation.currentGeneration,
-          identity: input.identity,
-          action: 'VALIDATION_RUN_CLOSED',
-          occurredAt: input.now,
-        });
-        return result;
-      },
-    );
   }
 
   async validationEvents(edgeInstallationId: string, validationRunId: string) {

@@ -21,9 +21,6 @@ import { EdgeReplacementRepository } from './edge-replacement.repository.js';
 import { EnrollmentRateLimiter } from './enrollment-rate-limiter.js';
 import { LegacyEdgeMetrics } from './legacy-edge-metrics.js';
 import { SuperAdminEdgeGuard } from './super-admin-edge.guard.js';
-import { SystemTestRetentionController } from './system-test-retention.controller.js';
-import { SystemTestRetentionRepository } from './system-test-retention.repository.js';
-import { SystemTestRetentionService } from './system-test-retention.service.js';
 
 @Global()
 @Module({
@@ -33,7 +30,6 @@ import { SystemTestRetentionService } from './system-test-retention.service.js';
     EdgeOperationAdminController,
     EdgeEnrollmentController,
     EdgeInstallationAdminController,
-    SystemTestRetentionController,
   ],
   providers: [
     { provide: EDGE_CLOCK, useClass: SystemEdgeClock },
@@ -50,14 +46,7 @@ import { SystemTestRetentionService } from './system-test-retention.service.js';
     EdgeEnrollmentGuard,
     LegacyEdgeMetrics,
     SuperAdminEdgeGuard,
-    SystemTestRetentionRepository,
-    SystemTestRetentionService,
   ],
-  exports: [
-    EDGE_CLOCK,
-    EdgeCredentialAuthenticator,
-    LegacyEdgeMetrics,
-    EdgeAdminService,
-  ],
+  exports: [EdgeCredentialAuthenticator, LegacyEdgeMetrics, EdgeAdminService],
 })
 export class EdgeCredentialsModule {}

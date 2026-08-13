@@ -29,7 +29,7 @@ describe('event clip media expand migration', () => {
       /edgeEventId\s+String\?[^\n]*@map\("edge_event_id"\)[^\n]*@db\.Uuid/,
     );
     expect(schema).toContain('@@unique([facilityId, edgeEventId])');
-    expect(schema).toMatch(/clipId\s+String\?\s+@map\("clip_id"\)/);
+    expect(schema).toContain('clipId             String?  @map("clip_id")');
     expect(migration).toContain(
       'ALTER TABLE events ADD COLUMN edge_event_id UUID;',
     );

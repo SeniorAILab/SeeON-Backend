@@ -40,9 +40,7 @@ describe('EventRecorderService', () => {
       resolveForEventIngest: jest.fn().mockResolvedValue(camera),
     };
     return {
-      subject: new EventRecorderService(prisma as never, cameras as never, {
-        now: () => new Date('2026-08-12T12:00:00.000Z'),
-      }),
+      subject: new EventRecorderService(prisma as never, cameras as never),
       prisma,
       cameras,
       tx,
@@ -121,42 +119,6 @@ describe('EventRecorderService', () => {
       operatingThreshold: 0.42,
       snapshotKey: null,
       clockSource: 'edge_wall_clock',
-    });
-  });
-
-  it('persists a facility-level SYSTEM_TEST without camera, room, or media semantics', async () => {
-    const { subject, cameras, tx } = makeSubject();
-    const validationRunId = '0197f671-3a31-7a6c-a6e4-83ed412de80f';
-    const created = { id: 'evt-system-test', edgeEventId };
-    tx.event.create.mockResolvedValue(created);
-
-    await expect(
-      subject.record({
-        cameraId: null,
-        facilityId: camera.facilityId,
-        type: 'SYSTEM_TEST',
-        testMode: 'SYSTEM_TEST',
-        validationRunId,
-        validationCapability: 'SYSTEM_TEST',
-        detectedAt,
-        edgeEventId,
-      }),
-    ).resolves.toEqual({ event: created, duplicate: false });
-
-    expect(cameras.resolveForEventIngest).not.toHaveBeenCalled();
-    const createArgs = tx.event.create.mock.calls.at(0);
-    if (createArgs === undefined)
-      throw new Error('event create was not called');
-    expect(createArgs[0].data).toMatchObject({
-      facilityId: camera.facilityId,
-      cameraId: null,
-      spaceId: null,
-      type: 'SYSTEM_TEST',
-      confidence: null,
-      clipId: null,
-      snapshotKey: null,
-      validationRunId,
-      retentionExpiresAt: new Date('2026-09-11T12:00:00.000Z'),
     });
   });
 
@@ -249,14 +211,17 @@ describe('EventRecorderService', () => {
     ).rejects.toThrow('edge_event_id payload conflict');
   });
 
-  it('rejects unknown event types before writing', async () => {
-    const { subject, tx } = makeSubject();
+  it.each(['wandering', 'SYSTEM_TEST'])(
+    'rejects unsupported event type %s before writing',
+    async (type) => {
+      const { subject, tx } = makeSubject();
 
-    await expect(
-      subject.record({ cameraId: 'cam_sp_202', type: 'wandering', detectedAt }),
-    ).rejects.toThrow('type must be one of: detection-lost, bed-exit, fall');
-    expect(tx.event.create).not.toHaveBeenCalled();
-  });
+      await expect(
+        subject.record({ cameraId: 'cam_sp_202', type, detectedAt }),
+      ).rejects.toThrow('type must be one of: detection-lost, bed-exit, fall');
+      expect(tx.event.create).not.toHaveBeenCalled();
+    },
+  );
 
   it('returns the existing event as duplicate on facility/dedup unique conflict', async () => {
     const { subject, tx } = makeSubject();
@@ -431,12 +396,12 @@ describe('EventRecorderService', () => {
       });
     },
   );
-  it('depends only on persistence, camera resolution, and the server clock', async () => {
+  it('does not invoke side-effect dependencies', async () => {
     const { subject, tx } = makeSubject();
     tx.event.create.mockResolvedValue({ id: 'evt_1' });
 
     await subject.record({ cameraId: 'cam_sp_202', type: 'fall', detectedAt });
 
-    expect(Object.keys(subject)).toEqual(['prisma', 'cameras', 'clock']);
+    expect(Object.keys(subject)).toEqual(['prisma', 'cameras']);
   });
 });

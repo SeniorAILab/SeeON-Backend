@@ -116,54 +116,36 @@ describe('edge provisioning v1 schema artifacts', () => {
     );
     for (const check of checks) expectSchemaCheck(schemas, check);
   });
-  it('pins the SYSTEM_TEST capability, close route, and exact dashboard sentinel', () => {
+  it('omits the retired SYSTEM_TEST API and schema contract', () => {
     const paths = record(artifacts.openApi.paths, 'OpenAPI paths');
-    expect(
-      record(
-        paths[
-          '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close'
-        ],
-        'validation close path',
-      ).post,
-    ).toBeDefined();
     const schemas = record(
       record(artifacts.openApi.components, 'OpenAPI components').schemas,
       'OpenAPI schemas',
     );
-    const request = record(
-      schemas.SystemTestRecordEventRequest,
-      'SYSTEM_TEST request',
+    const validationProperties = record(
+      record(schemas.CreateValidationRunRequest, 'validation request')
+        .properties,
+      'validation request properties',
     );
-    expect(request.required).toEqual([
-      'type',
-      'test_mode',
-      'validation_run_id',
-      'edge_event_id',
-      'detected_at',
-    ]);
-    expect(request.additionalProperties).toBe(false);
-    const alert = record(schemas.SystemTestAlert, 'SYSTEM_TEST alert');
-    const properties = record(alert.properties, 'SYSTEM_TEST alert properties');
-    expect(record(properties.type, 'type').const).toBe('SYSTEM_TEST');
-    expect(record(properties.testMode, 'testMode').const).toBe('SYSTEM_TEST');
-    expect(record(properties.label, 'label').const).toBe(
-      'SYSTEM TEST - NOT A RESIDENT ALERT',
+    const eventProperties = record(
+      record(schemas.RecordEventRequest, 'event request').properties,
+      'event request properties',
     );
-    expect(record(properties.ttsText, 'ttsText').const).toBe(
-      'System test emergency notification',
-    );
-    for (const field of [
-      'residentId',
-      'cameraId',
-      'spaceId',
-      'room',
-      'probability',
-      'snapshotKey',
-    ]) {
-      expect(record(properties[field], field).type).toBe('null');
-    }
-  });
 
+    expect(paths['/api/v1/admin/system-test-retention/purge']).toBeUndefined();
+    expect(
+      paths[
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close'
+      ],
+    ).toBeUndefined();
+    expect(validationProperties.capability).toBeUndefined();
+    expect(eventProperties.test_mode).toBeUndefined();
+    expect(eventProperties.camera_id).toBeDefined();
+    expect(
+      Object.keys(schemas).some((name) => name.includes('SystemTest')),
+    ).toBe(false);
+    expect(JSON.stringify(artifacts.openApi)).not.toContain('SYSTEM_TEST');
+  });
   it('contains complete redacted happy fixtures for every frozen v1 operation', () => {
     const happy = record(artifacts.fixtures.happy, 'happy fixtures');
     expect(Object.keys(happy).sort()).toEqual(

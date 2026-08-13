@@ -11,7 +11,6 @@ import {
 import { JwtAuthGuard, type RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { EdgeAdminService } from './edge-admin.service.js';
 import {
-  CloseValidationRunRequestDto,
   CreateValidationRunRequestDto,
   OwnershipTransferRequestDto,
   ReplaceEdgeInstallationRequestDto,
@@ -47,22 +46,6 @@ export class EdgeInstallationAdminController {
   ) {
     return this.admin.createValidationRun(
       id,
-      body,
-      mutationContext(request, key),
-    );
-  }
-
-  @Post(':edgeInstallationId/validation-runs/:validationRunId/close')
-  closeValidationRun(
-    @Param('edgeInstallationId') installationId: string,
-    @Param('validationRunId') runId: string,
-    @Body() body: CloseValidationRunRequestDto,
-    @Headers('idempotency-key') key: string | undefined,
-    @Req() request: RequestWithAuth,
-  ) {
-    return this.admin.closeValidationRun(
-      installationId,
-      runId,
       body,
       mutationContext(request, key),
     );

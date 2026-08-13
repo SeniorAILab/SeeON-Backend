@@ -7,7 +7,6 @@ import type {
   RecordedEventResult,
 } from './event-recorder.service.js';
 import { EventRecorderService } from './event-recorder.service.js';
-import { SYSTEM_TEST_MODE } from './system-test.constants.js';
 
 export type RecordEventWithAlarmResult = RecordedEventResult;
 
@@ -22,17 +21,12 @@ export class EventAlarmService {
   async record(input: RecordEventInput): Promise<RecordEventWithAlarmResult> {
     const result = await this.recorder.record(input);
 
-    if (
-      result.event.validationRunId !== null &&
-      result.event.type !== SYSTEM_TEST_MODE
-    ) {
-      return result;
-    }
+    if (result.event.validationRunId !== null) return result;
 
     if (result.event.type === AlertEventTypes.detectionLost) {
       await this.cameras.recordOffline(
         result.event.facilityId,
-        result.event.cameraId as string,
+        result.event.cameraId,
       );
       return result;
     }
@@ -42,17 +36,11 @@ export class EventAlarmService {
       cameraId: result.event.cameraId,
       spaceId: result.event.spaceId,
       type: result.event.type,
-      probability:
-        result.event.type === SYSTEM_TEST_MODE
-          ? null
-          : (result.event.confidence ?? 0),
+      probability: result.event.confidence ?? 0,
       snapshotKey: result.event.snapshotKey,
       detectedAt: result.event.detectedAt,
       idempotencyKey: result.event.dedupKey,
       originEventId: result.event.id,
-      ...(result.event.type === SYSTEM_TEST_MODE
-        ? { testMode: SYSTEM_TEST_MODE }
-        : {}),
     });
 
     return result;

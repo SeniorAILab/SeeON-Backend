@@ -26,10 +26,6 @@ import {
   presentAlert,
   type AlertWithContext,
 } from './alerts.presenter.js';
-import {
-  SYSTEM_TEST_MODE,
-  type SystemTestMode,
-} from '../events/system-test.constants.js';
 
 export interface AlertEvent {
   alertSeq: bigint;
@@ -39,13 +35,12 @@ export interface AlertEvent {
   cameraId: string | null;
   spaceId: string | null;
   type: string;
-  probability: number | null;
+  probability: number;
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
   space?: { name: string } | null;
   room: string | null;
-  testMode?: SystemTestMode;
 }
 export interface WriteAlertResult extends AlertEvent {
   created: boolean;
@@ -57,7 +52,7 @@ export interface AlertUpdateEvent {
   id: string;
   facilityId: string;
   status: string;
-  spaceId: string | null;
+  spaceId: string;
   ackedById: string | null;
   ackedAt: Date | null;
   resolvedById: string | null;
@@ -67,14 +62,13 @@ export interface AlertUpdateEvent {
 export interface WriteAlertInput {
   facilityId: string;
   cameraId: string | null;
-  spaceId: string | null;
+  spaceId: string;
   type: string;
-  probability: number | null;
+  probability: number;
   snapshotKey: string | null;
   detectedAt: Date;
   idempotencyKey: string;
   originEventId: string;
-  testMode?: SystemTestMode;
 }
 
 type Listener = (event: AlertEvent) => void;
@@ -109,24 +103,7 @@ export class AlertWriterService {
    * F3: assign alertSeq + commit + emit happen in causal order.
    */
   writeAlert(input: WriteAlertInput): Promise<WriteAlertResult> {
-    if (input.type === SYSTEM_TEST_MODE) {
-      if (
-        input.testMode !== SYSTEM_TEST_MODE ||
-        input.cameraId !== null ||
-        input.spaceId !== null ||
-        input.probability !== null ||
-        input.snapshotKey !== null
-      ) {
-        return Promise.reject(
-          new BadRequestException('invalid SYSTEM_TEST alert shape'),
-        );
-      }
-    } else if (
-      typeof input.spaceId !== 'string' ||
-      !input.spaceId.trim() ||
-      input.probability === null ||
-      input.testMode !== undefined
-    ) {
+    if (typeof input.spaceId !== 'string' || !input.spaceId.trim()) {
       return Promise.reject(new BadRequestException('spaceId is required'));
     }
     const next = this._queue.then(() => this._doWrite(input));
@@ -153,8 +130,8 @@ export class AlertWriterService {
         const created = await tx.alert.create({
           data: {
             facilityId,
-            cameraId,
-            spaceId: spaceId?.trim() ?? null,
+            cameraId: cameraId ?? undefined,
+            spaceId: spaceId.trim(),
             type,
             probability,
             snapshotKey,
@@ -185,24 +162,14 @@ export class AlertWriterService {
       return { ...toAlertEvent(alert), created: false };
     }
 
-    this.logger.log(
-      alert.type === SYSTEM_TEST_MODE
-        ? {
-            event: 'alert.system_test_written',
-            facilityId,
-            alertId: alert.id,
-            alertSeq: alert.alertSeq.toString(),
-            originEventId: alert.originEventId,
-          }
-        : {
-            event: 'alert.room_written',
-            facilityId,
-            spaceId: alert.spaceId,
-            cameraId: alert.cameraId,
-            alertId: alert.id,
-            alertSeq: alert.alertSeq.toString(),
-          },
-    );
+    this.logger.log({
+      event: 'alert.room_written',
+      facilityId,
+      spaceId: alert.spaceId,
+      cameraId: alert.cameraId,
+      alertId: alert.id,
+      alertSeq: alert.alertSeq.toString(),
+    });
 
     const event: AlertEvent = toAlertEvent(alert);
 
@@ -389,13 +356,13 @@ function toAlertEvent(alert: {
   originEventId: string;
   facilityId: string;
   cameraId: string | null;
-  spaceId: string | null;
+  spaceId: string;
   type: string;
-  probability: number | null;
+  probability: number;
   snapshotKey: string | null;
   detectedAt: Date;
   status: string;
-  space: { name: string } | null;
+  space: { name: string };
 }): AlertEvent {
   return {
     alertSeq: alert.alertSeq,
@@ -410,8 +377,7 @@ function toAlertEvent(alert: {
     detectedAt: alert.detectedAt,
     status: alert.status,
     space: alert.space,
-    room: alert.type === SYSTEM_TEST_MODE ? null : (alert.space?.name ?? null),
-    ...(alert.type === SYSTEM_TEST_MODE ? { testMode: SYSTEM_TEST_MODE } : {}),
+    room: alert.space.name,
   };
 }
 
