@@ -15,15 +15,12 @@ import {
   JwtAuthGuard,
   type RequestWithAuth,
 } from '../src/auth/jwt-auth.guard.js';
-import type { CamerasService } from '../src/cameras/cameras.service.js';
 import {
   EDGE_CLOCK,
   type EdgeClock,
 } from '../src/edge-credentials/edge-clock.js';
 import { EdgeCredentialsModule } from '../src/edge-credentials/edge-credentials.module.js';
-import { EventRecorderService } from '../src/events/event-recorder.service.js';
 import { PrismaModule } from '../src/prisma/prisma.module.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
 import { sha256CanonicalJson } from './helpers/edge-contract-fixtures.js';
 import {
   cleanupEdgeEnrollmentFixtures,
@@ -67,7 +64,6 @@ class SuperAdminSessionGuard implements CanActivate {
 
 describe('edge enrollment v1 contract', () => {
   let app: INestApplication<App>;
-  let prisma: PrismaService;
   let admin: PrismaClient;
   let clock: FakeClock;
   let sequence = 0;
@@ -98,7 +94,6 @@ describe('edge enrollment v1 contract', () => {
       }),
     );
     await app.init();
-    prisma = moduleRef.get(PrismaService);
     admin = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL });
     await admin.$connect();
     await cleanup();
@@ -307,44 +302,6 @@ describe('edge enrollment v1 contract', () => {
       (await admin.camera.findUniqueOrThrow({ where: { id: CAMERA_ID } }))
         .provisioningSource,
     ).toBe('EDGE');
-  });
-
-  it('creates an active validation grant and excludes its event from ordinary lists', async () => {
-    const issued = await issue();
-    await verify(issued, uuidV4()).expect(200);
-    const grant = await mutate(
-      `/api/v1/admin/edge-installations/${issued.edgeInstallationId}/validation-runs`,
-      {
-        schemaVersion: 1,
-        expectedEnrollmentGeneration: 1,
-        durationSeconds: 900,
-      },
-    ).expect(201);
-    const cameras = {
-      resolveForEventIngest: jest.fn().mockResolvedValue({
-        id: CAMERA_ID,
-        facilityId: FACILITY_ID,
-        spaceId: SPACE_ID,
-      }),
-    };
-    const recorder = new EventRecorderService(
-      prisma,
-      cameras as unknown as CamerasService,
-    );
-    const validationRunId = readStringField(
-      readObject(grant.body, 'validation grant'),
-      'validationRunId',
-    );
-    const recorded = await recorder.record({
-      cameraId: CAMERA_ID,
-      facilityId: FACILITY_ID,
-      validationRunId,
-      type: 'fall',
-      detectedAt: new Date('2026-01-01T00:01:00.000Z'),
-      edgeEventId: uuidV4(),
-    });
-    expect(recorded.event.validationRunId).toBe(validationRunId);
-    expect((await recorder.list(FACILITY_ID)).items).toHaveLength(0);
   });
 
   it('limits verify to five attempts per source IP and twenty per facility code', async () => {

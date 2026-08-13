@@ -7,7 +7,6 @@ import {
   IsString,
   IsUUID,
   Matches,
-  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -47,12 +46,6 @@ export class ReplaceEdgeInstallationRequestDto {
 export class RecoverEdgeSecretRequestDto {
   @IsIn([1]) schemaVersion!: 1;
   @Matches(TOKEN_ID_PATTERN) expectedTokenId!: string;
-}
-
-export class CreateValidationRunRequestDto {
-  @IsIn([1]) schemaVersion!: 1;
-  @IsInt() @Min(1) expectedEnrollmentGeneration!: number;
-  @IsInt() @Min(1) @Max(3600) durationSeconds!: number;
 }
 
 export class OwnershipTransferItemRequestDto {

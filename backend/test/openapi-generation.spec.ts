@@ -23,6 +23,14 @@ const OWNED_SCHEMAS = [
   'AlertSseData',
   'AlertUpdatedSseData',
 ] as const;
+const RETIRED_VALIDATION_PATHS = [
+  '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs',
+  '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/events',
+] as const;
+const RETIRED_VALIDATION_SCHEMAS = [
+  'CreateValidationRunRequest',
+  'ValidationRunResponse',
+] as const;
 const OPENAPI_PATH = join(__dirname, '..', '..', 'docs', 'openapi', 'v1.json');
 
 const prismaDouble = {
@@ -63,16 +71,23 @@ describe('generated ordinary Alert OpenAPI contract', () => {
       const generated = createOpenApiDocument(app);
       let published = readPublishedDocument();
       if (process.env.UPDATE_OPENAPI === '1') {
-        published = mergeOwnedContracts(published, generated);
-        writeFileSync(OPENAPI_PATH, `${JSON.stringify(published, null, 2)}\n`);
+        published = generated;
+        writeFileSync(OPENAPI_PATH, `${JSON.stringify(generated, null, 2)}\n`);
       }
+      expect(published).toEqual(generated);
       for (const path of OWNED_PATHS) {
-        expect(published.paths[path]).toEqual(generated.paths[path]);
+        expect(generated.paths[path]).toBeDefined();
       }
       for (const schema of OWNED_SCHEMAS) {
-        expect(published.components?.schemas?.[schema]).toEqual(
-          generated.components?.schemas?.[schema],
-        );
+        expect(generated.components?.schemas?.[schema]).toBeDefined();
+      }
+      for (const path of RETIRED_VALIDATION_PATHS) {
+        expect(generated.paths[path]).toBeUndefined();
+        expect(published.paths[path]).toBeUndefined();
+      }
+      for (const schema of RETIRED_VALIDATION_SCHEMAS) {
+        expect(generated.components?.schemas?.[schema]).toBeUndefined();
+        expect(published.components?.schemas?.[schema]).toBeUndefined();
       }
       expect(JSON.stringify(generated)).not.toContain('SYSTEM_TEST');
     } finally {
@@ -85,20 +100,4 @@ describe('generated ordinary Alert OpenAPI contract', () => {
 
 function readPublishedDocument(): OpenAPIObject {
   return JSON.parse(readFileSync(OPENAPI_PATH, 'utf8')) as OpenAPIObject;
-}
-
-function mergeOwnedContracts(
-  published: OpenAPIObject,
-  generated: OpenAPIObject,
-): OpenAPIObject {
-  for (const path of OWNED_PATHS) {
-    published.paths[path] = generated.paths[path];
-  }
-  const generatedSchemas = generated.components?.schemas ?? {};
-  const publishedSchemas = (published.components ??= {}).schemas ?? {};
-  published.components.schemas = publishedSchemas;
-  for (const schema of OWNED_SCHEMAS) {
-    publishedSchemas[schema] = generatedSchemas[schema];
-  }
-  return published;
 }

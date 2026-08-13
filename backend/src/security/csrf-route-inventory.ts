@@ -46,16 +46,6 @@ export const CSRF_ROUTE_INVENTORY: readonly CsrfRoute[] = [
   ],
   [
     'POST',
-    '/api/v1/admin/edge-installations/:edgeInstallationId/validation-runs',
-    'BROWSER',
-  ],
-  [
-    'GET',
-    '/api/v1/admin/edge-installations/:edgeInstallationId/validation-runs/:validationRunId/events',
-    'SAFE',
-  ],
-  [
-    'POST',
     '/api/v1/admin/edge-installations/:edgeInstallationId/transfers',
     'BROWSER',
   ],

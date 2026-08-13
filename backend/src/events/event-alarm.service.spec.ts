@@ -25,7 +25,6 @@ const event: RecordedEventResult['event'] = {
   clockSource: null,
   clipId: null,
   edgeEventId: null,
-  validationRunId: null,
 };
 
 function setup(recordedEvent = event) {
@@ -88,20 +87,20 @@ describe('EventAlarmService', () => {
     );
   });
 
-  it('does not write or emit an alert for a validation-linked event', async () => {
-    const validationEvent = {
+  it('does not let a retired persistence discriminator suppress an ordinary fall alarm', async () => {
+    const eventWithRetiredExtra = {
       ...event,
       validationRunId: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
     };
-    const { service, writeAlert } = setup(validationEvent);
+    const { service, writeAlert } = setup(eventWithRetiredExtra);
 
     await service.record({
       cameraId: 'camera-1',
       type: 'fall',
-      detectedAt: new Date(),
+      detectedAt: new Date('2026-06-26T00:00:00.000Z'),
     });
 
-    expect(writeAlert).not.toHaveBeenCalled();
+    expect(writeAlert).toHaveBeenCalledTimes(1);
   });
   it('propagates Event.snapshotKey to the derived Alert', async () => {
     const eventWithSnapshot = { ...event, snapshotKey: 'events/event-1.jpg' };

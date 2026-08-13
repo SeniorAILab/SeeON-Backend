@@ -125,24 +125,6 @@ export class EdgeCredentialQueryRepository {
     });
   }
 
-  async activeValidationGrant(
-    principal: EdgePrincipal,
-    validationRunId: string,
-    now: Date,
-  ) {
-    return this.prisma.withFacilityContext(principal.facilityId, (tx) =>
-      tx.edgeValidationGrant.findFirst({
-        where: {
-          id: validationRunId,
-          edgeInstallationId: principal.edgeInstallationId,
-          enrollmentGeneration: principal.enrollmentGeneration,
-          status: 'ACTIVE',
-          expiresAt: { gt: now },
-        },
-      }),
-    );
-  }
-
   async requestResourcesBelongTo(
     request: EdgeAuthenticatedRequest,
     principal: EdgePrincipal,

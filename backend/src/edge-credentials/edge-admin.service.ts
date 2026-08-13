@@ -19,46 +19,6 @@ export class EdgeAdminService {
     @Inject(EDGE_CLOCK) private readonly clock: EdgeClock,
   ) {}
 
-  async createValidationRun(
-    edgeInstallationId: string,
-    body: {
-      readonly schemaVersion: 1;
-      readonly expectedEnrollmentGeneration: number;
-      readonly durationSeconds: number;
-    },
-    context: MutationContext,
-  ) {
-    const hash = bodyHash({ edgeInstallationId, ...body });
-    const replay = await this.replay(
-      context.idempotencyKey,
-      'VALIDATION_RUN',
-      hash,
-    );
-    if (replay !== null) return replay;
-    const now = this.clock.now();
-    const result = await this.repository.createValidationGrant({
-      edgeInstallationId,
-      expectedGeneration: body.expectedEnrollmentGeneration,
-      validationRunId: uuidV7(now.getTime()),
-      expiresAt: new Date(now.getTime() + body.durationSeconds * 1000),
-      now,
-      identity: identity(context, hash, now),
-    });
-    if (result === null) {
-      throw edgeHttpError(409, EDGE_ERROR_CODES.STALE_GENERATION);
-    }
-    return result;
-  }
-
-  async validationEvents(edgeInstallationId: string, validationRunId: string) {
-    const events = await this.repository.validationEvents(
-      edgeInstallationId,
-      validationRunId,
-    );
-    if (events === null) throw edgeHttpError(403, EDGE_ERROR_CODES.MISMATCH);
-    return { schemaVersion: 1, items: events };
-  }
-
   async transfer(
     edgeInstallationId: string,
     body: {

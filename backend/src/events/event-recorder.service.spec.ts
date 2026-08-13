@@ -87,6 +87,7 @@ describe('EventRecorderService', () => {
       snapshotKey: null,
       clockSource: null,
     });
+    expect(createArgs[0].data).not.toHaveProperty('validationRunId');
   });
   it('persists optional audit envelope fields but ignores client-supplied snapshot_key (server-derived only)', async () => {
     const { subject, tx } = makeSubject();
@@ -223,6 +224,43 @@ describe('EventRecorderService', () => {
     },
   );
 
+  it('ignores a retired persistence discriminator when comparing an ordinary edge-event replay', async () => {
+    const { subject, tx } = makeSubject();
+    const duplicate = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['facility_id', 'edge_event_id'] },
+      },
+    );
+    const existing = {
+      id: 'evt_existing',
+      cameraId: camera.id,
+      type: 'fall',
+      detectedAt,
+      confidence: null,
+      configVersion: null,
+      modelVersion: null,
+      detectorVersion: null,
+      operatingThreshold: null,
+      clockSource: null,
+      clipId: null,
+      validationRunId: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
+    };
+    tx.event.create.mockRejectedValue(duplicate);
+    tx.event.findUniqueOrThrow.mockResolvedValue(existing);
+
+    await expect(
+      subject.record({
+        cameraId: camera.id,
+        type: 'fall',
+        detectedAt,
+        edgeEventId,
+      }),
+    ).resolves.toEqual({ event: existing, duplicate: true });
+  });
+
   it('returns the existing event as duplicate on facility/dedup unique conflict', async () => {
     const { subject, tx } = makeSubject();
     const duplicate = new Prisma.PrismaClientKnownRequestError(
@@ -282,7 +320,7 @@ describe('EventRecorderService', () => {
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(tx.event.findFirst).toHaveBeenCalledWith({
-      where: { id: 'evt_1', validationRunId: null },
+      where: { id: 'evt_1' },
       select: { id: true, facilityId: true },
     });
   });
@@ -332,7 +370,7 @@ describe('EventRecorderService', () => {
       ),
     });
     expect(tx.event.findMany).toHaveBeenCalledWith({
-      where: { validationRunId: null },
+      where: {},
       orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
       take: 3,
     });
@@ -351,7 +389,6 @@ describe('EventRecorderService', () => {
     });
     expect(tx.event.findMany).toHaveBeenCalledWith({
       where: {
-        validationRunId: null,
         OR: [
           { detectedAt: { lt: new Date('2026-06-26T02:00:00.000Z') } },
           {
@@ -390,7 +427,7 @@ describe('EventRecorderService', () => {
 
       await subject.list('fac_1', { cursor, limit });
       expect(tx.event.findMany).toHaveBeenLastCalledWith({
-        where: { validationRunId: null },
+        where: {},
         orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
         take,
       });

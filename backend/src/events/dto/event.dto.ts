@@ -5,7 +5,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Min,
   ValidateIf,
 } from 'class-validator';
@@ -69,10 +68,6 @@ export class RecordEventRequestDto {
   @ValidateIf((o: RecordEventRequestDto) => o.edge_event_id !== undefined)
   @IsString()
   edge_event_id?: string;
-
-  @ValidateIf((o: RecordEventRequestDto) => o.validation_run_id !== undefined)
-  @IsUUID()
-  validation_run_id?: string;
 
   // Never read by the controller or service today (dead field on the wire
   // contract) — stays fully permissive per the "no manual check today" rule.

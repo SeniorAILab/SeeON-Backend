@@ -23,7 +23,6 @@ admin.revoke post /api/v1/admin/edge-credentials/{tokenId}/revoke
 admin.replace post /api/v1/admin/edge-installations/{edgeInstallationId}/replace
 admin.recover-secret post /api/v1/admin/edge-operations/{operationId}/recover-secret
 admin.transfer post /api/v1/admin/edge-installations/{edgeInstallationId}/transfers
-admin.validation-run post /api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs
 edge.verify post /api/v1/edge/enrollments/verify
 topology.put put /api/v1/edge/topology-snapshots/{snapshotId}
 topology.confirm post /api/v1/edge/topology-snapshots/{snapshotId}/confirm
@@ -158,11 +157,6 @@ describe('edge provisioning v1 schema artifacts', () => {
       alert: '#/components/schemas/AlertSseData',
       'alert-updated': '#/components/schemas/AlertUpdatedSseData',
     });
-    const validationProperties = record(
-      record(schemas.CreateValidationRunRequest, 'validation request')
-        .properties,
-      'validation request properties',
-    );
     const eventProperties = record(
       record(schemas.RecordEventRequest, 'event request').properties,
       'event request properties',
@@ -171,10 +165,18 @@ describe('edge provisioning v1 schema artifacts', () => {
     expect(paths['/api/v1/admin/system-test-retention/purge']).toBeUndefined();
     expect(
       paths[
-        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close'
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs'
       ],
     ).toBeUndefined();
-    expect(validationProperties.capability).toBeUndefined();
+    expect(
+      paths[
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/events'
+      ],
+    ).toBeUndefined();
+    expect(schemas.CreateValidationRunRequest).toBeUndefined();
+    expect(schemas.ValidationRunResponse).toBeUndefined();
+    expect(eventProperties.validationRunId).toBeUndefined();
+    expect(eventProperties.validation_run_id).toBeUndefined();
     expect(eventProperties.test_mode).toBeUndefined();
     expect(eventProperties.camera_id).toBeDefined();
     expect(

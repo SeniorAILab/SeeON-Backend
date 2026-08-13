@@ -70,6 +70,7 @@ export class EventsController {
     @Req() request: EdgeIngestRequest,
     @Body() body: RecordEventRequestDto,
   ): Promise<RecordEventResponseDto> {
+    rejectRetiredValidationFields(body, request.query);
     // camera_id trim/blank checks, type canonicalization + enum membership,
     // and detected_at timestamp validity are all independently re-validated
     // by EventRecorderService.record(); the DTO's decorators only guarantee
@@ -88,7 +89,6 @@ export class EventsController {
       clipId: optionalTrimmedString(body.clip_id),
       edgeEventId: body.edge_event_id,
       facilityId: request.edgePrincipal?.facilityId,
-      validationRunId: request.edgePrincipal?.validationRunId,
     });
     if (result.event.edgeEventId) {
       return {
@@ -147,10 +147,7 @@ export class EventsController {
       throw new BadRequestException('Unsupported snapshot content type');
     }
 
-    const event = await this.recorder.resolveForSnapshot(
-      eventId,
-      req.edgePrincipal?.validationRunId ?? null,
-    );
+    const event = await this.recorder.resolveForSnapshot(eventId);
     const body = await readRequestBody(req, MAX_SNAPSHOT_BYTES);
     if (body.length === 0) throw new BadRequestException('Snapshot is empty');
 
@@ -207,6 +204,21 @@ function requireString(value: unknown, field: string): string {
     throw new BadRequestException(`${field} is required`);
   }
   return value;
+}
+
+function rejectRetiredValidationFields(
+  body: RecordEventRequestDto,
+  query: Record<string, unknown> | undefined,
+): void {
+  for (const field of ['validationRunId', 'validation_run_id']) {
+    if (
+      Object.prototype.hasOwnProperty.call(body, field) ||
+      (query !== undefined &&
+        Object.prototype.hasOwnProperty.call(query, field))
+    ) {
+      throw new BadRequestException(`${field} is not allowed`);
+    }
+  }
 }
 
 function optionalTrimmedString(value: string | undefined): string | undefined {

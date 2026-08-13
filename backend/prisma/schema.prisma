@@ -145,12 +145,6 @@ enum ProvisioningSource {
   EDGE
 }
 
-enum EdgeValidationGrantStatus {
-  ACTIVE
-  CLOSED
-  EXPIRED
-}
-
 enum MediaDownloadAuditState {
   STARTED
   COMPLETED
@@ -196,7 +190,6 @@ model Facility {
   edgeOmissionPreviews    EdgeOmissionPreview[]
   edgeTopologyAliases     EdgeTopologyAlias[]
   edgeOwnershipTransfers  EdgeOwnershipTransfer[]
-  edgeValidationGrants    EdgeValidationGrant[]
   edgeProvisioningAudits  EdgeProvisioningAudit[]
   mediaDownloadAudits     MediaDownloadAudit[]
   mediaDownloadOutboxJobs MediaDownloadOutboxJob[]
@@ -380,15 +373,12 @@ model Event {
   /// Edge-reported clip reference (not an FK); the authoritative binding is EventMediaBinding.
   clipId             String?  @map("clip_id")
   /// Edge-generated event UUID for ingest dedup; null when the edge did not supply one.
-  edgeEventId        String?  @map("edge_event_id") @db.Uuid
-  /// Null for ordinary events; set only for accepted validation-run events.
-  validationRunId    String?  @map("validation_run_id") @db.Uuid
+  edgeEventId String? @map("edge_event_id") @db.Uuid
 
-  facility          Facility              @relation(fields: [facilityId], references: [id])
-  camera            Camera                @relation(fields: [facilityId, cameraId], references: [facilityId, id])
-  space             Space                 @relation(fields: [facilityId, spaceId], references: [facilityId, id])
-  validationGrant   EdgeValidationGrant?  @relation(fields: [facilityId, validationRunId], references: [facilityId, id], onDelete: Restrict, onUpdate: Cascade)
-  originAlerts      Alert[]               @relation("AlertOriginEvent")
+  facility          Facility           @relation(fields: [facilityId], references: [id])
+  camera            Camera             @relation(fields: [facilityId, cameraId], references: [facilityId, id])
+  space             Space              @relation(fields: [facilityId, spaceId], references: [facilityId, id])
+  originAlerts      Alert[]            @relation("AlertOriginEvent")
   dashboardReceipts DashboardReceipt[]
 
   mediaBinding EventMediaBinding?
@@ -398,7 +388,6 @@ model Event {
   @@unique([facilityId, edgeEventId])
   @@index([facilityId, detectedAt, id])
   @@index([facilityId, cameraId, detectedAt])
-  @@index([facilityId, validationRunId])
   @@map("events")
 }
 
@@ -634,7 +623,6 @@ model EdgeInstallationGeneration {
   omissionPreviews   EdgeOmissionPreview[]
   aliases            EdgeTopologyAlias[]
   ownershipTransfers EdgeOwnershipTransfer[]
-  validationGrants   EdgeValidationGrant[]
 
   @@unique([facilityId, edgeInstallationId, generation])
   @@unique([facilityId, clientInstallationRef])
@@ -775,25 +763,6 @@ model EdgeOwnershipTransfer {
   @@unique([facilityId, edgeInstallationId, enrollmentGeneration, manifestDigest])
   @@index([facilityId, createdAt])
   @@map("edge_ownership_transfers")
-}
-
-model EdgeValidationGrant {
-  id                   String                    @id @db.Uuid
-  facilityId           String                    @map("facility_id")
-  edgeInstallationId   String                    @map("edge_installation_id") @db.Uuid
-  enrollmentGeneration Int                       @map("enrollment_generation")
-  status               EdgeValidationGrantStatus @default(ACTIVE)
-  createdAt            DateTime                  @default(now()) @map("created_at")
-  expiresAt            DateTime                  @map("expires_at")
-  closedAt             DateTime?                 @map("closed_at")
-
-  facility               Facility                   @relation(fields: [facilityId], references: [id])
-  installationGeneration EdgeInstallationGeneration @relation(fields: [facilityId, edgeInstallationId, enrollmentGeneration], references: [facilityId, edgeInstallationId, generation])
-  events                 Event[]
-
-  @@unique([facilityId, id])
-  @@index([facilityId, status, expiresAt])
-  @@map("edge_validation_grants")
 }
 
 model EdgeProvisioningAudit {

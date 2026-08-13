@@ -34,9 +34,6 @@ export async function cleanupEdgeEnrollmentFixtures(
   await admin.edgeProvisioningAudit.deleteMany({
     where: { facilityId: { in: facilityIds } },
   });
-  await admin.edgeValidationGrant.deleteMany({
-    where: { facilityId: { in: facilityIds } },
-  });
   await admin.edgeOwnershipTransfer.deleteMany({
     where: { facilityId: { in: facilityIds } },
   });

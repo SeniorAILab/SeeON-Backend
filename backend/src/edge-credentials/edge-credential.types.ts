@@ -9,7 +9,6 @@ export type EdgePrincipal = {
   readonly facilityId: string;
   readonly edgeInstallationId: string;
   readonly enrollmentGeneration: number;
-  readonly validationRunId?: string;
 };
 
 export interface EdgeAuthenticatedRequest {
