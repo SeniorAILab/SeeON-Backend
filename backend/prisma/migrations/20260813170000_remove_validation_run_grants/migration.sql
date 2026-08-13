@@ -21,6 +21,11 @@ DECLARE
   expected_operation_rows BIGINT;
   expected_audit_rows BIGINT;
 BEGIN
+  IF pg_catalog.to_regrole('system_test_purge_owner') IS NOT NULL THEN
+    RAISE EXCEPTION
+      'migration 50 role precondition failed: system_test_purge_owner unexpectedly exists';
+  END IF;
+
   SELECT pg_catalog.count(*) INTO grant_rows
   FROM public.edge_validation_grants;
   SELECT pg_catalog.count(*) INTO linked_event_rows
@@ -114,8 +119,7 @@ REVOKE ALL PRIVILEGES ON TABLE public.edge_validation_grants FROM PUBLIC;
 DROP TABLE public.edge_validation_grants;
 DROP TYPE public."EdgeValidationGrantStatus";
 
--- Migration 49 already removed this role. IF EXISTS makes full-chain replay
--- explicit while still removing an unexpectedly surviving dependency-free role.
-DROP ROLE IF EXISTS system_test_purge_owner;
+-- Migration 49 must already have removed system_test_purge_owner. The guarded
+-- precondition above rejects drift instead of mutating an unexpected role.
 
 COMMIT;
