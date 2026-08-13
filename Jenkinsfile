@@ -30,7 +30,7 @@ pipeline {
     stage('Resolve release') {
       steps {
         script {
-          def resolverOutput = sshagent(credentials: ['eldercare-github-deploy-key']) {
+          def resolverOutput = sshagent(credentials: ['seeon-backend-github-deploy-key']) {
             sh(
               script: '''#!/usr/bin/env sh
                 set -eu

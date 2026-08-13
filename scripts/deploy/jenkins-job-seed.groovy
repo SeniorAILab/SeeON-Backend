@@ -19,7 +19,7 @@ pipelineJob('eldercare-fall-ai-cd') {
         git {
           remote {
             url('git@github.com:SeniorAILab/SeeON-Backend.git')
-            credentials('eldercare-github-deploy-key')
+            credentials('seeon-backend-github-deploy-key')
           }
           branch('*/main')
           extensions {

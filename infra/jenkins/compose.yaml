@@ -1,0 +1,39 @@
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eldercare-jenkins:lts-jdk21-locked
+    container_name: eldercare-jenkins
+    restart: unless-stopped
+    user: "1001:1001"
+    group_add:
+      - "986"
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 1536m
+    environment:
+      TZ: Asia/Seoul
+      CASC_JENKINS_CONFIG: /var/jenkins_config/casc.yaml
+      CASC_STRICT_SECRET_RESOLUTION: "true"
+      JAVA_OPTS: >-
+        -Xms256m -Xmx1g
+        -Djenkins.install.runSetupWizard=false
+        -Djenkins.model.Jenkins.crumbIssuerProxyCompatibility=true
+        -Duser.timezone=Asia/Seoul
+      JENKINS_OPTS: --httpListenAddress=0.0.0.0 --httpPort=8080
+    volumes:
+      - /opt/jenkins/home:/var/jenkins_home
+      - /opt/jenkins/casc.yaml:/var/jenkins_config/casc.yaml:ro
+      - /opt/jenkins/jobs.groovy:/var/jenkins_config/jobs.groovy:ro
+      - /opt/jenkins/secrets/admin_password:/run/secrets/admin_password:ro
+      - /opt/jenkins/secrets/webhook_token:/run/secrets/webhook_token:ro
+      - /opt/jenkins/secrets/github_ci_token:/run/secrets/github_ci_token:ro
+      - /opt/jenkins/secrets/smtp_password:/run/secrets/smtp_password:ro
+      - /opt/jenkins/secrets/github_deploy_key:/run/secrets/github_deploy_key:ro
+      - /opt/jenkins/secrets/known_hosts:/etc/ssh/ssh_known_hosts:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/libexec/docker/cli-plugins/docker-compose:/usr/local/lib/docker/cli-plugins/docker-compose:ro
+      - /usr/libexec/docker/cli-plugins/docker-buildx:/usr/local/lib/docker/cli-plugins/docker-buildx:ro
+      - /opt/eldercare-fall-ai:/opt/eldercare-fall-ai
