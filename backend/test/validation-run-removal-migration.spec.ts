@@ -120,6 +120,31 @@ describe('validation-run/grant removal migration', () => {
               `DELETE FROM edge_validation_grants WHERE id = '${GRANT_ID}'`,
             );
 
+            await db.$executeRawUnsafe('CREATE ROLE system_test_purge_owner');
+            expect(
+              runPrismaExpectFailure(
+                [
+                  'db',
+                  'execute',
+                  '--file',
+                  migrationSqlPath(),
+                  '--url',
+                  databaseUrl,
+                ],
+                databaseUrl,
+              ),
+            ).toContain(
+              'migration 50 role precondition failed: system_test_purge_owner unexpectedly exists',
+            );
+            expect(await retiredHistoryCounts(db)).toEqual({
+              createOperations: 2n,
+              closeOperations: 2n,
+              createdAudits: 2n,
+              closedAudits: 2n,
+            });
+            await expectFinalObjectsPresent(db);
+            await db.$executeRawUnsafe('DROP ROLE system_test_purge_owner');
+
             runPrisma(
               [
                 'db',
@@ -327,14 +352,22 @@ async function preservedHistoryCounts(db: PrismaClient) {
   return row;
 }
 
+async function expectFinalObjectsPresent(db: PrismaClient): Promise<void> {
+  const rows = await db.$queryRawUnsafe<FinalContract[]>(finalContractSql());
+  expect(rows).toEqual([
+    {
+      grant_table_absent: false,
+      event_column_absent: false,
+      event_index_absent: false,
+      event_fk_absent: false,
+      grant_enum_absent: false,
+      purge_role_absent: false,
+    },
+  ]);
+}
+
 async function expectFinalObjectsAbsent(db: PrismaClient): Promise<void> {
-  const rows = await db.$queryRawUnsafe<FinalContract[]>(`SELECT
-    to_regclass('public.edge_validation_grants') IS NULL AS grant_table_absent,
-    NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'validation_run_id') AS event_column_absent,
-    to_regclass('public.events_facility_id_validation_run_id_idx') IS NULL AS event_index_absent,
-    NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'events_facility_id_validation_run_id_fkey') AS event_fk_absent,
-    NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EdgeValidationGrantStatus') AS grant_enum_absent,
-    NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'system_test_purge_owner') AS purge_role_absent`);
+  const rows = await db.$queryRawUnsafe<FinalContract[]>(finalContractSql());
   expect(rows).toEqual([
     {
       grant_table_absent: true,
@@ -345,6 +378,16 @@ async function expectFinalObjectsAbsent(db: PrismaClient): Promise<void> {
       purge_role_absent: true,
     },
   ]);
+}
+
+function finalContractSql(): string {
+  return `SELECT
+    to_regclass('public.edge_validation_grants') IS NULL AS grant_table_absent,
+    NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'validation_run_id') AS event_column_absent,
+    to_regclass('public.events_facility_id_validation_run_id_idx') IS NULL AS event_index_absent,
+    NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'events_facility_id_validation_run_id_fkey') AS event_fk_absent,
+    NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EdgeValidationGrantStatus') AS grant_enum_absent,
+    NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'system_test_purge_owner') AS purge_role_absent`;
 }
 
 type OrdinaryContract = {
