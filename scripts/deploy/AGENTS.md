@@ -91,9 +91,14 @@ imaged, or started here.
   mapped commit/tree, reviewed v0.1.1 anchor
   `4e23f9ef20b4899a17802905d729a2c12295f8d1` and migration tree
   `ba59e654fd9ddff7833eb079d79dda72ffec7335`, then runs the unchanged migration
-  classifier from that anchor to the exact manifest candidate. Activation alone
-  permits consumption; failed pre-activation deploys retain authorization, and
-  normal descendants never inspect it.
+  classifier from that anchor to the exact manifest candidate, which must be a
+  strict descendant and never the v0.1.1 anchor itself. Activation alone permits
+  consumption: before any pruning, publish an exact activation-manifest-bound
+  receipt with file and release-directory fsync. Interrupted post-activation
+  deploys must finalize that receipt idempotently before any other action;
+  rollback or restored authorization cannot replay a consumed transition. Failed
+  pre-activation deploys retain authorization, and normal descendants never
+  inspect it.
 - The final v0.1.2 candidate cannot be known before this PR is merged. After the
   exact release commit is fixed, an operator may render (but not infer) the
   canonical non-secret file with:

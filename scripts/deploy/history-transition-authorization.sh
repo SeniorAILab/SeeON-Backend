@@ -25,16 +25,36 @@ AUTHORIZATION_MODE=400
 MAP_PATH=docs/provenance/seeon-commit-map.txt
 MIGRATION_PATH=backend/prisma/migrations
 SNAPSHOT=''
+EXPECTED_FILE=''
 TEMP_FILE=''
+CLEANED_UP=0
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 valid_sha() { [ "${#1}" -eq 40 ] && printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
-cleanup() {
-  for file in "$SNAPSHOT" "$TEMP_FILE"; do
+valid_candidate_sha() { valid_sha "$1" && [ "$1" != "$REVIEWED_ANCHOR_SHA" ]; }
+cleanup_files() {
+  [ "$CLEANED_UP" -eq 0 ] || return 0
+  CLEANED_UP=1
+  for file in "$SNAPSHOT" "$EXPECTED_FILE" "$TEMP_FILE"; do
     [ -z "$file" ] || [ ! -e "$file" ] || rm -f "$file" || :
   done
 }
-trap cleanup EXIT HUP INT TERM
+exit_cleanup() {
+  status=$?
+  cleanup_files
+  trap - EXIT HUP INT TERM
+  exit "$status"
+}
+signal_cleanup() {
+  status=$1
+  cleanup_files
+  trap - EXIT HUP INT TERM
+  exit "$status"
+}
+trap exit_cleanup EXIT
+trap 'signal_cleanup 129' HUP
+trap 'signal_cleanup 130' INT
+trap 'signal_cleanup 143' TERM
 
 render_authorization() {
   candidate_sha=$1
@@ -44,20 +64,38 @@ render_authorization() {
     "$REVIEWED_ANCHOR_SHA" "$REVIEWED_ANCHOR_MIGRATION_TREE" "$candidate_sha"
 }
 
+render_consumed_receipt() {
+  candidate_sha=$1
+  authorization_sha=$2
+  activation_sha=$3
+  printf '{"schema":"1","transition_id":"%s","authorization_id":"%s","legacy_sha":"%s","current_sha":"%s","candidate_sha":"%s","authorization_sha256":"%s","activation_manifest_sha256":"%s"}\n' \
+    "$TRANSITION_ID" "$AUTHORIZATION_ID" "$LEGACY_SHA" "$LEGACY_SHA" "$candidate_sha" "$authorization_sha" "$activation_sha"
+}
+
 file_metadata() {
   path=$1
   stat -c '%u:%g:%a:%d:%i:%s' "$path" 2>/dev/null || stat -f '%u:%g:%Lp:%d:%i:%z' "$path"
 }
+owner_mode_is_exact() {
+  path=$1
+  label=$2
+  metadata=$(file_metadata "$path") || fail "Unable to inspect $label: $path"
+  owner_mode=$(printf '%s\n' "$metadata" | awk -F: '{print $1 ":" $2 ":" $3}')
+  [ "$owner_mode" = "$AUTHORIZATION_UID:$AUTHORIZATION_GID:$AUTHORIZATION_MODE" ] || fail "$label must be owned by $AUTHORIZATION_UID:$AUTHORIZATION_GID with mode $AUTHORIZATION_MODE: $path"
+}
+hash_file() {
+  path=$1
+  digest=$(sha256sum "$path" | awk 'NR == 1 {print $1}') || fail "Unable to hash file: $path"
+  printf '%s\n' "$digest" | grep -Eq '^[0-9a-f]{64}$' || fail "Invalid SHA-256 result for file: $path"
+  printf '%s\n' "$digest"
+}
 
 capture_authorization() {
   candidate_sha=$1
-  [ ! -e "$CONSUMED_PATH" ] && [ ! -L "$CONSUMED_PATH" ] || fail "History transition authorization was already consumed: $CONSUMED_PATH"
   [ ! -L "$AUTHORIZATION_PATH" ] && [ -f "$AUTHORIZATION_PATH" ] || fail "History transition authorization is a missing, symlinked, or non-regular file: $AUTHORIZATION_PATH"
+  owner_mode_is_exact "$AUTHORIZATION_PATH" 'History transition authorization'
 
   before=$(file_metadata "$AUTHORIZATION_PATH") || fail "Unable to inspect history transition authorization: $AUTHORIZATION_PATH"
-  owner_mode=$(printf '%s\n' "$before" | awk -F: '{print $1 ":" $2 ":" $3}')
-  [ "$owner_mode" = "$AUTHORIZATION_UID:$AUTHORIZATION_GID:$AUTHORIZATION_MODE" ] || fail "History transition authorization must be owned by $AUTHORIZATION_UID:$AUTHORIZATION_GID with mode $AUTHORIZATION_MODE: $AUTHORIZATION_PATH"
-
   SNAPSHOT=$(mktemp "${TMPDIR:-/tmp}/seeon-history-transition.XXXXXX") || fail 'Unable to create history transition authorization snapshot.'
   cat "$AUTHORIZATION_PATH" > "$SNAPSHOT" || fail 'Unable to snapshot history transition authorization.'
   after=$(file_metadata "$AUTHORIZATION_PATH") || fail "Unable to re-inspect history transition authorization: $AUTHORIZATION_PATH"
@@ -75,15 +113,15 @@ capture_authorization() {
   final_newline_count=$(tail -c 1 "$SNAPSHOT" | LC_ALL=C tr -cd '\n' | wc -c | awk '{print $1}')
   [ "$final_newline_count" = 1 ] || fail 'History transition authorization newline contract is invalid.'
 
-  TEMP_FILE=$(mktemp "${TMPDIR:-/tmp}/seeon-history-transition-expected.XXXXXX") || fail 'Unable to create expected authorization snapshot.'
-  render_authorization "$candidate_sha" > "$TEMP_FILE"
-  cmp -s "$TEMP_FILE" "$SNAPSHOT" || fail 'History transition authorization is not the exact canonical candidate-bound contract.'
-  rm -f "$TEMP_FILE"
-  TEMP_FILE=''
+  EXPECTED_FILE=$(mktemp "${TMPDIR:-/tmp}/seeon-history-transition-expected.XXXXXX") || fail 'Unable to create expected authorization snapshot.'
+  render_authorization "$candidate_sha" > "$EXPECTED_FILE"
+  cmp -s "$EXPECTED_FILE" "$SNAPSHOT" || fail 'History transition authorization is not the exact canonical candidate-bound contract.'
+  rm -f "$EXPECTED_FILE"
+  EXPECTED_FILE=''
 }
 
 require_runtime_tools() {
-  for tool in awk cat chmod cmp git grep mktemp mv rm sha256sum stat tail tr wc; do
+  for tool in awk cat chmod cmp git grep mktemp mv rm sed sha256sum stat sync tail tr wc; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required history transition tool is missing: $tool"
   done
 }
@@ -132,47 +170,84 @@ verify_authorization() {
   if ! valid_sha "$current_sha" || ! valid_sha "$candidate_sha"; then
     fail 'History transition SHAs must be exactly 40 lowercase hexadecimal characters.'
   fi
+  [ "$candidate_sha" != "$REVIEWED_ANCHOR_SHA" ] || fail 'History transition candidate must be a strict descendant of the reviewed v0.1.1 anchor.'
   [ "$current_sha" = "$LEGACY_SHA" ] || fail 'History transition authorization applies only to the exact legacy current SHA.'
+  [ ! -e "$CONSUMED_PATH" ] && [ ! -L "$CONSUMED_PATH" ] || fail "History transition authorization was already consumed: $CONSUMED_PATH"
   require_runtime_tools
   capture_authorization "$candidate_sha"
   verify_repository_contract "$candidate_sha"
   printf 'TRANSITION_BASELINE_SHA=%s\n' "$REVIEWED_ANCHOR_SHA"
 }
 
-consume_authorization() {
+validate_activation() {
   candidate_sha=$1
-  valid_sha "$candidate_sha" || fail 'History transition candidate SHA must be exactly 40 lowercase hexadecimal characters.'
+  activation_manifest=$2
+  current_manifest=$3
+  for manifest in "$activation_manifest" "$current_manifest"; do
+    [ ! -L "$manifest" ] && [ -f "$manifest" ] || fail "History transition activation manifest is a missing, symlinked, or non-regular file: $manifest"
+  done
+  cmp -s "$activation_manifest" "$current_manifest" || fail 'Current pointer does not match the activated immutable history transition manifest.'
+  activated_sha=$(sed -n 's/^.*"sha":"\([0-9a-f]*\)".*$/\1/p' "$activation_manifest")
+  [ "$activated_sha" = "$candidate_sha" ] || fail 'Activated history transition manifest does not match the exact candidate SHA.'
+}
+
+validate_existing_receipt() {
+  [ ! -L "$CONSUMED_PATH" ] && [ -f "$CONSUMED_PATH" ] || fail "Consumed history transition receipt is not a regular file: $CONSUMED_PATH"
+  owner_mode_is_exact "$CONSUMED_PATH" 'Consumed history transition receipt'
+  cmp -s "$EXPECTED_FILE" "$CONSUMED_PATH" || fail 'Consumed history transition receipt does not match the exact activated transition.'
+  sync -f "$CONSUMED_PATH" || fail 'Unable to fsync consumed history transition receipt.'
+  sync -f "$RELEASE_DIR" || fail 'Unable to fsync history transition release-state directory.'
+}
+
+finalize_consumption() {
+  current_sha=$1
+  candidate_sha=$2
+  activation_manifest=$3
+  current_manifest=$4
+  if ! valid_sha "$current_sha" || ! valid_sha "$candidate_sha"; then
+    fail 'History transition finalization SHAs must be exactly 40 lowercase hexadecimal characters.'
+  fi
+  [ "$candidate_sha" != "$REVIEWED_ANCHOR_SHA" ] || fail 'History transition candidate must be a strict descendant of the reviewed v0.1.1 anchor.'
+  [ "$current_sha" = "$LEGACY_SHA" ] || fail 'History transition finalization requires the exact legacy current SHA.'
   require_runtime_tools
   capture_authorization "$candidate_sha"
-  if mv "$AUTHORIZATION_PATH" "$CONSUMED_PATH" 2>/dev/null; then
-    if [ -L "$CONSUMED_PATH" ] || [ ! -f "$CONSUMED_PATH" ] || ! cmp -s "$SNAPSHOT" "$CONSUMED_PATH"; then
-      fail 'Consumed history transition receipt does not match the authorization.'
-    fi
-    printf '%s\n' 'History transition authorization atomically renamed to its consumed receipt.'
+  validate_activation "$candidate_sha" "$activation_manifest" "$current_manifest"
+  authorization_sha=$(hash_file "$SNAPSHOT")
+  activation_sha=$(hash_file "$activation_manifest")
+  EXPECTED_FILE=$(mktemp "${TMPDIR:-/tmp}/seeon-history-transition-receipt.XXXXXX") || fail 'Unable to create expected consumed receipt.'
+  render_consumed_receipt "$candidate_sha" "$authorization_sha" "$activation_sha" > "$EXPECTED_FILE"
+
+  if [ -e "$CONSUMED_PATH" ] || [ -L "$CONSUMED_PATH" ]; then
+    validate_existing_receipt
+    printf '%s\n' 'History transition consumption receipt is durable and exact.'
     return
   fi
 
-  TEMP_FILE=$(mktemp "$RELEASE_DIR/.history-transition-consumed.XXXXXX") || fail 'Unable to create durable consumed receipt.'
-  cat "$SNAPSHOT" > "$TEMP_FILE" || fail 'Unable to write durable consumed receipt.'
-  chmod "$AUTHORIZATION_MODE" "$TEMP_FILE" || fail 'Unable to restrict durable consumed receipt permissions.'
-  mv "$TEMP_FILE" "$CONSUMED_PATH" || fail 'Unable to atomically publish durable consumed receipt.'
+  TEMP_FILE=$(mktemp "$RELEASE_DIR/.history-transition-consumed.XXXXXX") || fail 'Unable to create consumed history transition receipt temp file.'
+  cat "$EXPECTED_FILE" > "$TEMP_FILE" || fail 'Unable to write consumed history transition receipt.'
+  chmod "$AUTHORIZATION_MODE" "$TEMP_FILE" || fail 'Unable to restrict consumed history transition receipt permissions.'
+  sync -f "$activation_manifest" || fail 'Unable to fsync activated immutable history transition manifest.'
+  sync -f "$current_manifest" || fail 'Unable to fsync activated history transition current pointer.'
+  sync -f "$TEMP_FILE" || fail 'Unable to fsync consumed history transition receipt temp file.'
+  mv "$TEMP_FILE" "$CONSUMED_PATH" || fail 'Unable to atomically publish consumed history transition receipt.'
   TEMP_FILE=''
-  if [ -L "$CONSUMED_PATH" ] || [ ! -f "$CONSUMED_PATH" ] || ! cmp -s "$SNAPSHOT" "$CONSUMED_PATH"; then
-    fail 'Durable consumed receipt does not match the authorization.'
-  fi
-  printf '%s\n' 'History transition authorization retained immutably; durable consumed receipt published.'
+  owner_mode_is_exact "$CONSUMED_PATH" 'Consumed history transition receipt'
+  cmp -s "$EXPECTED_FILE" "$CONSUMED_PATH" || fail 'Published consumed history transition receipt does not match the exact activated transition.'
+  sync -f "$RELEASE_DIR" || fail 'Unable to fsync history transition release-state directory.'
+  printf '%s\n' 'History transition consumption receipt atomically published and fsynced.'
 }
 
+usage='Usage: history-transition-authorization.sh --render <candidate-sha> | --verify <current-sha> <candidate-sha> | --finalize <legacy-current-sha> <candidate-sha> <activation-manifest> <current-manifest>'
 case "${1:-}" in
   --render)
-    [ "$#" -eq 2 ] || fail 'Usage: history-transition-authorization.sh --render <candidate-sha> | --verify <current-sha> <candidate-sha> | --consume <candidate-sha>'
-    valid_sha "$2" || fail 'History transition candidate SHA must be exactly 40 lowercase hexadecimal characters.'
+    [ "$#" -eq 2 ] || fail "$usage"
+    valid_candidate_sha "$2" || fail 'History transition candidate must be a 40-character SHA strictly after the reviewed v0.1.1 anchor.'
     render_authorization "$2" ;;
   --verify)
-    [ "$#" -eq 3 ] || fail 'Usage: history-transition-authorization.sh --render <candidate-sha> | --verify <current-sha> <candidate-sha> | --consume <candidate-sha>'
+    [ "$#" -eq 3 ] || fail "$usage"
     verify_authorization "$2" "$3" ;;
-  --consume)
-    [ "$#" -eq 2 ] || fail 'Usage: history-transition-authorization.sh --render <candidate-sha> | --verify <current-sha> <candidate-sha> | --consume <candidate-sha>'
-    consume_authorization "$2" ;;
-  *) fail 'Usage: history-transition-authorization.sh --render <candidate-sha> | --verify <current-sha> <candidate-sha> | --consume <candidate-sha>' ;;
+  --finalize)
+    [ "$#" -eq 5 ] || fail "$usage"
+    finalize_consumption "$2" "$3" "$4" "$5" ;;
+  *) fail "$usage" ;;
 esac

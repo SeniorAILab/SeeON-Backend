@@ -154,14 +154,44 @@ cat > "$TMP/bin/stat" <<'EOF'
 path=
 for argument do path=$argument; done
 case "$path" in
-  */history-transition-authorization-v1.json)
+  */history-transition-authorization-v1.json|*/history-transition-authorization-v1.consumed.json)
     size=$(wc -c < "$path" | awk '{print $1}')
     inode=$(ls -di "$path" | awk '{print $1}')
     printf '1001:1001:400:1:%s:%s\n' "$inode" "$size" ;;
   *) exec /usr/bin/stat "$@" ;;
 esac
 EOF
-chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git" "$TMP/bin/stat"
+cat > "$TMP/bin/sync" <<'EOF'
+#!/usr/bin/env sh
+path=${2:-}
+case "${MOCK_FINALIZE_FAILURE:-}:$path" in
+  file-fsync:*/.history-transition-consumed.*) exit 1 ;;
+  dir-fsync:*/releases) exit 1 ;;
+esac
+exit 0
+EOF
+cat > "$TMP/bin/mktemp" <<'EOF'
+#!/usr/bin/env sh
+case "${SIGNAL_DEPLOY_POINT:-}:$*" in
+  finalize-term:*history-transition-consumed*)
+    deploy_pid=$(ps -o ppid= -p "$PPID" | tr -d ' ')
+    kill -TERM "$deploy_pid"
+    exit 99 ;;
+esac
+case "${MOCK_FINALIZE_FAILURE:-}:$*" in temp:*history-transition-consumed*) exit 1 ;; esac
+exec /usr/bin/mktemp "$@"
+EOF
+cat > "$TMP/bin/mv" <<'EOF'
+#!/usr/bin/env sh
+case "${MOCK_FINALIZE_FAILURE:-}:${2:-}" in rename:*/history-transition-authorization-v1.consumed.json) exit 1 ;; esac
+exec /bin/mv "$@"
+EOF
+cat > "$TMP/bin/rm" <<'EOF'
+#!/usr/bin/env sh
+case "${MOCK_PRUNE_MANIFEST_FAIL:-0}:$*" in 1:*stale-transition-fixture.json*) exit 1 ;; esac
+exec /bin/rm "$@"
+EOF
+chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git" "$TMP/bin/stat" "$TMP/bin/sync" "$TMP/bin/mktemp" "$TMP/bin/mv" "$TMP/bin/rm"
 
 NO_NODE_BIN=$TMP/no-node-bin
 mkdir -p "$NO_NODE_BIN"
@@ -252,6 +282,8 @@ run_deploy() {
   MOCK_MISSING_IMAGE="${MOCK_MISSING_IMAGE:-}" MOCK_EDGE_AFTER_EPOCH="${MOCK_EDGE_AFTER_EPOCH:-101}" \
   MOCK_VOLUME_STATE="${MOCK_VOLUME_STATE:-ok}" MOCK_MOUNT_STATE="${MOCK_MOUNT_STATE:-ok}" MOCK_READABLE_STATE="${MOCK_READABLE_STATE:-ok}" \
   MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MOCK_HISTORY_TRANSITION="${MOCK_HISTORY_TRANSITION:-0}" \
+  MOCK_FINALIZE_FAILURE="${MOCK_FINALIZE_FAILURE:-}" MOCK_PRUNE_MANIFEST_FAIL="${MOCK_PRUNE_MANIFEST_FAIL:-0}" \
+  SIGNAL_DEPLOY_POINT="${SIGNAL_DEPLOY_POINT:-}" \
   MOCK_REAL_REPO="$REPO_ROOT" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
   sh "$SCRIPT" "$@" 2>&1
 }
@@ -263,6 +295,7 @@ run_deploy_without_node() {
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) printf 'unexpected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; *) ;; esac; }
 assert_failure() { [ "$1" -ne 0 ] || { printf 'command unexpectedly passed\n' >&2; exit 1; }; }
+json_value_for_test() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
 assert_order() {
   first=$(printf '%s\n' "$1" | grep -n -F "$2" | sed -n '1s/:.*//p')
   second=$(printf '%s\n' "$1" | grep -n -F "$3" | sed -n '1s/:.*//p')
@@ -440,25 +473,58 @@ assert_contains "$output" 'current release commit is unavailable for migration c
 assert_contains "$output" 'candidate migrations are additive/non-destructive'
 [ -f "$AUTH_PATH" ] && [ ! -e "$CONSUMED_PATH" ] || { printf '%s\n' 'failed v0.1.2 deployment consumed transition authorization' >&2; exit 1; }
 : > "$TMP/mock.log"
-output=$(MOCK_HISTORY_TRANSITION=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE")
-assert_contains "$output" "Deploy complete. sha=$V012_CANDIDATE"
-assert_contains "$output" 'atomically renamed to its consumed receipt'
-[ ! -e "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] || { printf '%s\n' 'successful v0.1.2 deployment did not consume transition authorization' >&2; exit 1; }
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 SIGNAL_DEPLOY_POINT=finalize-term MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+[ "$status" -eq 143 ] || { printf 'post-activation deploy TERM returned %s\n' "$status" >&2; exit 1; }
+assert_not_contains "$output" 'Deploy complete'
+assert_not_contains "$output" 'receipt atomically published'
+[ "$(json_value_for_test "$TMP/root/releases/current.json" sha)" = "$V012_CANDIDATE" ]
+[ -f "$AUTH_PATH" ] && [ ! -e "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ] || {
+  printf '%s\n' 'post-activation consumption failure did not preserve recoverable state' >&2; exit 1
+}
+# First recovery finalizes receipt before manifest pruning; a prune failure cannot resurrect auth.
+manifest "$ROLLBACK_SHA" > "$TMP/root/releases/stale-transition-fixture.json"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_PRUNE_MANIFEST_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unable to remove stale immutable manifest'
+[ -f "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ]
+# Receipt finalization is idempotent and remains first when image pruning fails.
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_IMAGES_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unable to list Docker images for pruning'
+assert_contains "$output" 'consumption receipt is durable and exact'
+[ -f "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ]
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE")
+assert_contains "$output" "History transition activation recovery complete. sha=$V012_CANDIDATE"
+assert_contains "$output" 'consumption receipt is durable and exact'
+[ -f "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] && [ ! -e "$TMP/root/releases/pending.json" ] || {
+  printf '%s\n' 'exact-candidate recovery did not converge durable consumption' >&2; exit 1
+}
 log=$(cat "$TMP/mock.log")
-assert_contains "$log" "merge-base --is-ancestor 4e23f9ef20b4899a17802905d729a2c12295f8d1 $V012_CANDIDATE"
-assert_contains "$log" "diff --name-status 4e23f9ef20b4899a17802905d729a2c12295f8d1 $V012_CANDIDATE"
+assert_not_contains "$log" 'prisma migrate deploy'
 
-# Restoring the exact auth after current changes is inert: a normal descendant
-# takes the byte-for-byte normal path and never consults transition state.
-sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_CANDIDATE" > "$AUTH_PATH"
+# Rollback to the legacy pointer cannot make restored authorization reusable.
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$LEGACY_SHA" run_deploy --rollback "$LEGACY_SHA")
+[ "$(json_value_for_test "$TMP/root/releases/current.json" sha)" = "$LEGACY_SHA" ]
+[ -f "$CONSUMED_PATH" ]
+rm -f "$AUTH_PATH"
+sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_NEXT" > "$AUTH_PATH"
 chmod 400 "$AUTH_PATH"
 : > "$TMP/mock.log"
-output=$(MOCK_SHA="$V012_NEXT" run_deploy --sha "$V012_NEXT")
-assert_contains "$output" "Deploy complete. sha=$V012_NEXT"
-[ -f "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] || { printf '%s\n' 'normal descendant consulted or pruned inert transition state' >&2; exit 1; }
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 MOCK_SHA="$V012_NEXT" run_deploy --sha "$V012_NEXT"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'already consumed'
 log=$(cat "$TMP/mock.log")
-assert_contains "$log" "diff --name-status $V012_CANDIDATE $V012_NEXT"
-assert_not_contains "$log" 'remote get-url origin'
+assert_not_contains "$log" 'volume inspect'
+assert_not_contains "$log" 'prisma migrate deploy'
 rm -f "$AUTH_PATH" "$CONSUMED_PATH" "$TMP/root/releases/current.json" "$TMP/root/releases/previous.json" \
   "$TMP/root/releases/pending.json" "$TMP/root/releases/$LEGACY_SHA.json" "$TMP/root/releases/$V012_CANDIDATE.json" "$TMP/root/releases/$V012_NEXT.json"
 
