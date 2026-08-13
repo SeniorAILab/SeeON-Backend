@@ -16,7 +16,7 @@ export {
 } from './edge-contract-jcs.js';
 
 export const EDGE_PROVISIONING_FIXTURE_SHA256 =
-  '5e64609fdeba5968864b9c78807ae71864a54143c70bffb82924788957c3f2ff';
+  '84d677d7ddac243efb3e6f4e0ea467b0cb37db072ca6a1b2acbbeab7cef710fe';
 
 export type LoadedEdgeProvisioningFixtures = {
   readonly document: JsonObject;

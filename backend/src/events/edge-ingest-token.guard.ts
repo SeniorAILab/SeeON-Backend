@@ -53,10 +53,7 @@ export class EdgeIngestTokenGuard implements CanActivate {
     // other value disables it — the transition-window opt-in must be
     // deliberate, never accidental. See edge-legacy-compat-characterization
     // spec for the pinned legacy behavior once explicitly enabled.
-    if (
-      !isEdgeLegacyCompatEnabled(this.config) ||
-      requestsValidationRun(request.body)
-    ) {
+    if (!isEdgeLegacyCompatEnabled(this.config)) {
       throw new ForbiddenException('edge facility token mismatch');
     }
     const expected = this.expectedToken();
@@ -112,13 +109,6 @@ function legacyRoute(url: string | undefined): string {
   return 'events.create';
 }
 
-function requestsValidationRun(body: unknown): boolean {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    ('validationRunId' in body || 'validation_run_id' in body)
-  );
-}
 function tokensMatch(token: string, expected: string): boolean {
   const tokenHash = createHash('sha256').update(token).digest();
   const expectedHash = createHash('sha256').update(expected).digest();

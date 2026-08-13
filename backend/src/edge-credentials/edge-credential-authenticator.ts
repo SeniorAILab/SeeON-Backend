@@ -91,16 +91,7 @@ export class EdgeCredentialAuthenticator {
     if (!(await this.repository.requestResourcesBelongTo(request, principal))) {
       throw edgeHttpError(403, EDGE_ERROR_CODES.MISMATCH);
     }
-    const validationRunId =
-      string(body?.validationRunId) ?? string(body?.validation_run_id);
-    if (validationRunId === null) return principal;
-    const grant = await this.repository.activeValidationGrant(
-      principal,
-      validationRunId,
-      this.clock.now(),
-    );
-    if (grant === null) throw edgeHttpError(403, EDGE_ERROR_CODES.MISMATCH);
-    return { ...principal, validationRunId };
+    return principal;
   }
 
   private async assertLifecycle(

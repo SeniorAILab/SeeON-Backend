@@ -48,8 +48,9 @@ COPY --from=build /prod/backend/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/dist-tools ./dist-tools
 COPY --from=build /prod/backend/prisma ./prisma
+COPY docs/openapi/v1.json ./docs/openapi/v1.json
 
 EXPOSE 8080
-# SWC builder compiles sourceRoot (src/) to a flat dist/, so the entry is dist/main
-# (matches package.json start:prod). prisma/ + scripts/ are CLI/seed tools, not runtime imports.
+# tsconfig.build.json compiles only non-spec src/ files to a flat dist/, so the
+# entry is dist/main. prisma/ + dist-tools/ are deploy/seed tools, not app imports.
 CMD ["node", "dist/main"]

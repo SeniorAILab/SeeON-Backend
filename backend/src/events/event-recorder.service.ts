@@ -27,7 +27,6 @@ export interface RecordEventInput {
   clipId?: string;
   edgeEventId?: string;
   facilityId?: string;
-  validationRunId?: string;
 }
 
 export interface RecordedEventResult {
@@ -94,7 +93,6 @@ export class EventRecorderService {
               snapshotKey: null,
               clockSource: input.clockSource ?? null,
               edgeEventId,
-              validationRunId: input.validationRunId ?? null,
             },
           }),
       );
@@ -134,7 +132,6 @@ export class EventRecorderService {
 
   async resolveForSnapshot(
     eventId: string,
-    validationRunId: string | null = null,
   ): Promise<{ id: string; facilityId: string }> {
     const rows = await this.prisma.$queryRaw<
       { id: string; facilityId: string }[]
@@ -146,7 +143,7 @@ export class EventRecorderService {
       candidate.facilityId,
       (tx) =>
         tx.event.findFirst({
-          where: { id: candidate.id, validationRunId },
+          where: { id: candidate.id },
           select: { id: true, facilityId: true },
         }),
     );
@@ -183,7 +180,6 @@ export class EventRecorderService {
     }
 
     const where: Prisma.EventWhereInput = {
-      validationRunId: null,
       ...(cursor
         ? {
             OR: [
@@ -250,8 +246,7 @@ function sameEdgeEvent(
     event.detectorVersion === (input.detectorVersion ?? null) &&
     event.operatingThreshold === (input.operatingThreshold ?? null) &&
     event.clockSource === (input.clockSource ?? null) &&
-    event.clipId === (input.clipId ?? null) &&
-    event.validationRunId === (input.validationRunId ?? null)
+    event.clipId === (input.clipId ?? null)
   );
 }
 

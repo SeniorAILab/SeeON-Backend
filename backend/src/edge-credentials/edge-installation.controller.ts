@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Get,
   Headers,
   Param,
   Post,
@@ -11,7 +10,6 @@ import {
 import { JwtAuthGuard, type RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { EdgeAdminService } from './edge-admin.service.js';
 import {
-  CreateValidationRunRequestDto,
   OwnershipTransferRequestDto,
   ReplaceEdgeInstallationRequestDto,
 } from './dto/edge-credential.dto.js';
@@ -35,28 +33,6 @@ export class EdgeInstallationAdminController {
     @Req() request: RequestWithAuth,
   ) {
     return this.credentials.replace(id, body, mutationContext(request, key));
-  }
-
-  @Post(':edgeInstallationId/validation-runs')
-  validationRun(
-    @Param('edgeInstallationId') id: string,
-    @Body() body: CreateValidationRunRequestDto,
-    @Headers('idempotency-key') key: string | undefined,
-    @Req() request: RequestWithAuth,
-  ) {
-    return this.admin.createValidationRun(
-      id,
-      body,
-      mutationContext(request, key),
-    );
-  }
-
-  @Get(':edgeInstallationId/validation-runs/:validationRunId/events')
-  validationEvents(
-    @Param('edgeInstallationId') id: string,
-    @Param('validationRunId') runId: string,
-  ) {
-    return this.admin.validationEvents(id, runId);
   }
 
   @Post(':edgeInstallationId/transfers')

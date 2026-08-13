@@ -85,15 +85,15 @@ describe('global api/v1 route matrix (e2e)', () => {
       .expect(404);
   });
 
-  it('removes temporary SYSTEM_TEST administration routes', async () => {
+  it('removes every validation-run administration route', async () => {
+    const base =
+      '/api/v1/admin/edge-installations/installation-id/validation-runs';
     await request(app.getHttpServer())
       .post('/api/v1/admin/system-test-retention/purge')
       .expect(404);
-    await request(app.getHttpServer())
-      .post(
-        '/api/v1/admin/edge-installations/installation-id/validation-runs/run-id/close',
-      )
-      .expect(404);
+    await request(app.getHttpServer()).post(base).expect(404);
+    await request(app.getHttpServer()).get(`${base}/run-id/events`).expect(404);
+    await request(app.getHttpServer()).post(`${base}/run-id/close`).expect(404);
   });
 
   it('keeps ordinary Alert REST and dashboard SSE routes mounted', async () => {
@@ -139,6 +139,20 @@ describe('global api/v1 route matrix (e2e)', () => {
     ]) {
       expect(document.components.schemas[schema]).toBeDefined();
     }
+    expect(
+      document.paths[
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs'
+      ],
+    ).toBeUndefined();
+    expect(
+      document.paths[
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/events'
+      ],
+    ).toBeUndefined();
+    expect(
+      document.components.schemas.CreateValidationRunRequest,
+    ).toBeUndefined();
+    expect(document.components.schemas.ValidationRunResponse).toBeUndefined();
     expect(JSON.stringify(document)).not.toContain('SYSTEM_TEST');
   });
 });

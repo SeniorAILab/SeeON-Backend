@@ -41,15 +41,12 @@ const spaceB = 'edge-migration-space-b';
 const cameraA = 'edge-migration-camera-a';
 const cameraB = 'edge-migration-camera-b';
 const eventA = 'edge-migration-event-a';
-const validationEventA = 'edge-migration-validation-event-a';
 const clipA = 'edge-migration-clip-a';
 const managedUser = 'edge-migration-managed-user';
 const generationA = 'edge-migration-generation-a';
 const generationB = 'edge-migration-generation-b';
 const installationA = '11111111-1111-4111-8111-111111111111';
 const installationB = '22222222-2222-4222-8222-222222222222';
-const validationRunA = '55555555-5555-4555-8555-555555555555';
-const validationRunB = '66666666-6666-4666-8666-666666666666';
 const processId = '33333333-3333-4333-8333-333333333333';
 const downloadId = '44444444-4444-4444-8444-444444444444';
 const completeTransferManifest = [
@@ -88,7 +85,6 @@ const cleanupTables = [
   'media_download_audits',
   'edge_provisioning_audit_history',
   'events',
-  'edge_validation_grants',
   'edge_omission_previews',
   'edge_topology_snapshots',
   'edge_ownership_transfers',
@@ -125,7 +121,7 @@ describe('edge provisioning persistence migration', () => {
   it('adds every frozen aggregate and guard without destructive SQL', () => {
     // Given: the frozen persistence contract and one additive migration.
     const models =
-      'EdgeInstallation EdgeInstallationGeneration EdgeCredential EdgeAdminOperation EdgeTopologySnapshot EdgeOmissionPreview EdgeTopologyAlias EdgeOwnershipTransfer EdgeValidationGrant EdgeProvisioningAudit MediaDownloadAudit MediaDownloadProcessHeartbeat MediaDownloadOutboxJob'.split(
+      'EdgeInstallation EdgeInstallationGeneration EdgeCredential EdgeAdminOperation EdgeTopologySnapshot EdgeOmissionPreview EdgeTopologyAlias EdgeOwnershipTransfer EdgeProvisioningAudit MediaDownloadAudit MediaDownloadProcessHeartbeat MediaDownloadOutboxJob'.split(
         ' ',
       );
     const fields =
@@ -158,77 +154,15 @@ describe('edge provisioning persistence migration', () => {
     expect(migration).toContain('media_download_audit_requires_outbox');
   });
 
-  it('adds an additive facility-safe validation grant discriminator', () => {
-    // Given: validation events need durable ownership without changing historical rows.
-    // When: the Prisma model and follow-up migration are inspected.
-    // Then: the nullable discriminator has a same-facility FK and supporting index.
-    expect(schema).toMatch(
-      /validationRunId\s+String\?\s+@map\("validation_run_id"\)\s+@db\.Uuid/,
-    );
-    expect(schema).toMatch(
-      /validationGrant\s+EdgeValidationGrant\?\s+@relation\(fields:\s*\[facilityId,\s*validationRunId\],\s*references:\s*\[facilityId,\s*id\],\s*onDelete:\s*Restrict,\s*onUpdate:\s*Cascade\)/,
-    );
-    expect(schema).toMatch(/events\s+Event\[\]/);
-    expect(schema).toContain('@@unique([facilityId, id])');
-    expect(schema).toContain('@@index([facilityId, validationRunId])');
+  it('keeps the retired additive link migration immutable but absent from the final schema', () => {
     expect(validationLinkMigration).toContain(
       'ALTER TABLE "events" ADD COLUMN "validation_run_id" UUID;',
     );
     expect(validationLinkMigration).toContain(
-      'edge_validation_grants_facility_id_id_key',
-    );
-    expect(validationLinkMigration).toContain(
-      'events_facility_id_validation_run_id_idx',
-    );
-    expect(validationLinkMigration).toContain(
       'events_facility_id_validation_run_id_fkey',
     );
-    expect(validationLinkMigration).not.toMatch(
-      /\bDROP\s+(?:TABLE|COLUMN|POLICY)\b/i,
-    );
-    expect(validationLinkMigration).not.toMatch(/\bREVOKE\b/i);
-  });
-
-  it('keeps ordinary events null while validation events resolve only to same-facility grants', async () => {
-    // Given: one validation grant per fixture facility and one historical ordinary event.
-    await executeAll(direct, [
-      `INSERT INTO edge_validation_grants (id,facility_id,edge_installation_id,enrollment_generation,expires_at) VALUES ('${validationRunA}','${facilityA}','${installationA}',1,now()+interval '15 minutes')`,
-      `INSERT INTO edge_validation_grants (id,facility_id,edge_installation_id,enrollment_generation,expires_at) VALUES ('${validationRunB}','${facilityB}','${installationB}',1,now()+interval '15 minutes')`,
-    ]);
-
-    // When: a post-v1 event links its grant and a cross-facility link is attempted.
-    await sql(
-      direct,
-      `INSERT INTO events (id,facility_id,camera_id,space_id,type,detected_at,modified_at,dedup_key,validation_run_id) VALUES ('${validationEventA}','${facilityA}','${cameraA}','${spaceA}','fall',now(),now(),'${validationEventA}','${validationRunA}')`,
-    );
-    await expect(
-      sql(
-        direct,
-        `UPDATE events SET validation_run_id='${validationRunB}' WHERE id='${eventA}'`,
-      ),
-    ).rejects.toThrow();
-
-    // Then: null retains historical semantics and the linked event joins its owning grant.
-    const rows = await direct.$queryRaw<
-      Array<{
-        event_id: string;
-        validation_run_id: string | null;
-        grant_id: string | null;
-      }>
-    >`SELECT event_row.id AS event_id,event_row.validation_run_id,grant_row.id AS grant_id
-      FROM events event_row
-      LEFT JOIN edge_validation_grants grant_row
-        ON grant_row.facility_id=event_row.facility_id AND grant_row.id=event_row.validation_run_id
-      WHERE event_row.id IN (${eventA},${validationEventA})
-      ORDER BY event_row.id`;
-    expect(rows).toEqual([
-      { event_id: eventA, validation_run_id: null, grant_id: null },
-      {
-        event_id: validationEventA,
-        validation_run_id: validationRunA,
-        grant_id: validationRunA,
-      },
-    ]);
+    expect(schema).not.toContain('validationRunId');
+    expect(schema).not.toContain('model EdgeValidationGrant');
   });
 
   it('scopes refs and requires an exact manifest for PRODUCT ownership transfer', async () => {
@@ -533,8 +467,8 @@ describe('edge provisioning persistence migration', () => {
     });
     const forced = await direct.$queryRaw<
       Array<{ count: number }>
-    >`SELECT count(*)::int AS count FROM pg_class WHERE relname=ANY(ARRAY['edge_topology_snapshots','edge_omission_previews','edge_topology_aliases','edge_ownership_transfers','edge_validation_grants','edge_provisioning_audit_history','media_download_audits','media_download_outbox_jobs']) AND relrowsecurity AND relforcerowsecurity`;
-    expect(forced).toEqual([{ count: 8 }]);
+    >`SELECT count(*)::int AS count FROM pg_class WHERE relname=ANY(ARRAY['edge_topology_snapshots','edge_omission_previews','edge_topology_aliases','edge_ownership_transfers','edge_provisioning_audit_history','media_download_audits','media_download_outbox_jobs']) AND relrowsecurity AND relforcerowsecurity`;
+    expect(forced).toEqual([{ count: 7 }]);
   });
 });
 

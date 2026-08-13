@@ -11,8 +11,11 @@ import { EdgeIngestTokenGuard } from './edge-ingest-token.guard';
 import type { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
 import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
 
-function contextFor(headers: Record<string, string | undefined>) {
-  const request = { headers };
+function contextFor(
+  headers: Record<string, string | undefined>,
+  body?: Record<string, unknown>,
+) {
+  const request = { headers, body };
   const context = {
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
@@ -20,13 +23,12 @@ function contextFor(headers: Record<string, string | undefined>) {
 }
 
 describe('EdgeIngestTokenGuard', () => {
-  it('injects facility, installation, generation, and active validation grant for v1', async () => {
+  it('injects only the ordinary facility, installation, and generation principal for v1', async () => {
     const principal = {
       tokenId: '7H2K9M4QXP3R',
       facilityId: 'facility-1',
       edgeInstallationId: 'c72bd9a7-3e04-47ba-a8cd-a56e54f98152',
       enrollmentGeneration: 1,
-      validationRunId: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
     };
     const authenticator = {
       authenticate: jest.fn().mockResolvedValue(principal),
@@ -46,6 +48,27 @@ describe('EdgeIngestTokenGuard', () => {
     expect(request).toHaveProperty('edgePrincipal', principal);
     expect(metrics.count('events.create')).toBe(0);
   });
+  it.each(['validationRunId', 'validation_run_id'])(
+    'leaves retired field %s rejection to the ingest DTO boundary',
+    (field) => {
+      const guard = new EdgeIngestTokenGuard(
+        new ConfigService({
+          EDGE_FACILITY_TOKEN: 'edge-token',
+          EDGE_LEGACY_COMPAT_ENABLED: 'true',
+        }),
+      );
+
+      expect(
+        guard.canActivate(
+          contextFor(
+            { authorization: 'Bearer edge-token' },
+            { [field]: '0197f671-3a31-7a6c-a6e4-83ed412de80f' },
+          ).context,
+        ),
+      ).toBe(true);
+    },
+  );
+
   it('accepts the configured bearer token', () => {
     const guard = new EdgeIngestTokenGuard(
       new ConfigService({

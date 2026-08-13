@@ -4,7 +4,7 @@
     "canonicalization": "RFC 8785 JSON Canonicalization Scheme (JCS)",
     "digestAlgorithm": "SHA-256",
     "digestScope": "Entire document with metadata.canonicalSha256 omitted",
-    "canonicalSha256": "5e64609fdeba5968864b9c78807ae71864a54143c70bffb82924788957c3f2ff",
+    "canonicalSha256": "84d677d7ddac243efb3e6f4e0ea467b0cb37db072ca6a1b2acbbeab7cef710fe",
     "redaction": "Synthetic identifiers and redacted one-time values only"
   },
   "happy": {
@@ -308,48 +308,6 @@
         "exactReplayReturnsStoredResult": true
       }
     },
-    "admin.validation-run": {
-      "method": "POST",
-      "path": "/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs",
-      "successStatus": "201",
-      "auth": {
-        "kind": "product-session",
-        "requiredRole": "SUPER_ADMIN"
-      },
-      "request": {
-        "headers": {
-          "Idempotency-Key": "0197f671-3a31-7a6c-a6e4-83ed412de80d"
-        },
-        "pathParams": {
-          "edgeInstallationId": "c72bd9a7-3e04-47ba-a8cd-a56e54f98152"
-        },
-        "body": {
-          "schemaVersion": 1,
-          "expectedEnrollmentGeneration": 1,
-          "durationSeconds": 900
-        }
-      },
-      "response": {
-        "schemaVersion": 1,
-        "operation": {
-          "operationId": "0197f671-3a31-7a6c-a6e4-83ed412de80e",
-          "status": "SUCCEEDED",
-          "createdAt": "2026-01-01T00:09:00.000Z",
-          "updatedAt": "2026-01-01T00:09:00.000Z"
-        },
-        "validationRunId": "0197f671-3a31-7a6c-a6e4-83ed412de80f",
-        "edgeInstallationId": "c72bd9a7-3e04-47ba-a8cd-a56e54f98152",
-        "enrollmentGeneration": 1,
-        "status": "ACTIVE",
-        "createdAt": "2026-01-01T00:09:00.000Z",
-        "expiresAt": "2026-01-01T00:15:00.000Z"
-      },
-      "semantics": {
-        "excludedFromOrdinaryReadSurfaces": true,
-        "excludedFromAlertsAndDelivery": true,
-        "cleanupRequired": true
-      }
-    },
     "edge.verify": {
       "method": "POST",
       "path": "/api/v1/edge/enrollments/verify",
@@ -457,9 +415,15 @@
           "confirmationId": "0197f671-3a31-7a6c-a6e4-83ed412de81b",
           "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "expiresAt": "2026-01-01T00:15:00.000Z",
-          "cameras": ["camera-000-old"],
-          "rooms": ["room-200-old"],
-          "floors": ["floor-1-old"]
+          "cameras": [
+            "camera-000-old"
+          ],
+          "rooms": [
+            "room-200-old"
+          ],
+          "floors": [
+            "floor-1-old"
+          ]
         }
       },
       "semantics": {
@@ -518,7 +482,11 @@
         "omissions": null
       },
       "semantics": {
-        "deactivationOrder": ["cameras", "rooms", "empty-floors"],
+        "deactivationOrder": [
+          "cameras",
+          "rooms",
+          "empty-floors"
+        ],
         "edgeOwnedRowsOnly": true,
         "exactReplayReturnsStoredResult": true,
         "stalePreviewWrites": 0
@@ -769,7 +737,9 @@
         },
         "body": {
           "camera_id": "camera-001",
-          "event_refs": ["e5555555-5555-4555-8555-555555555555"],
+          "event_refs": [
+            "e5555555-5555-4555-8555-555555555555"
+          ],
           "state_version": 1,
           "reason": "CAPTURE_FAILED"
         }

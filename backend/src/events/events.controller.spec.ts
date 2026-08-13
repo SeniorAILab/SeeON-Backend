@@ -21,14 +21,64 @@ function recordEventMock(): jest.Mock<
   return jest.fn<Promise<RecordedEventResponse>, [unknown]>();
 }
 
-function edgeRequest(principal?: {
-  facilityId?: string;
-  validationRunId?: string;
-}) {
+function edgeRequest(principal?: { facilityId?: string }) {
   return { edgePrincipal: principal } as never;
 }
 
 describe('EventsController record', () => {
+  it.each(['validationRunId', 'validation_run_id'])(
+    'rejects retired body field %s before recording',
+    async (field) => {
+      const record = recordEventMock();
+      const controller = new EventsController(
+        { record } as unknown as EventAlarmService,
+        {} as EventRecorderService,
+        {} as CamerasService,
+      );
+      const body = {
+        camera_id: 'camera-1',
+        type: 'fall',
+        detected_at: new Date('2026-06-26T01:02:03.456Z'),
+        [field]: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
+      };
+
+      await expect(
+        controller.record({ body, query: {} } as never, body),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['validationRunId', 'validation_run_id'])(
+    'rejects retired query field %s before recording',
+    async (field) => {
+      const record = recordEventMock();
+      const controller = new EventsController(
+        { record } as unknown as EventAlarmService,
+        {} as EventRecorderService,
+        {} as CamerasService,
+      );
+      const body = {
+        camera_id: 'camera-1',
+        type: 'fall',
+        detected_at: new Date('2026-06-26T01:02:03.456Z'),
+      };
+
+      await expect(
+        controller.record(
+          {
+            body,
+            query: {
+              [field]: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
+            },
+          } as never,
+          body,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
+
   // Event-type canonicalization (trim+lowercase) and enum-membership
   // rejection now live entirely in EventRecorderService.record() (see
   // event-recorder.service.spec.ts's "rejects unknown event types before
@@ -345,7 +395,7 @@ describe('EventsController uploadSnapshot', () => {
       controller.uploadSnapshot(req as never, 'client-route-id'),
     ).resolves.toEqual({ snapshotKey: 'facility-1/event-created-id.jpg' });
 
-    expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id', null);
+    expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
     expect(persistSnapshotKey).toHaveBeenCalledWith(
       'facility-1',
       'event-created-id',
