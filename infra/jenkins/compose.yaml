@@ -22,7 +22,6 @@ services:
         -Djenkins.model.Jenkins.crumbIssuerProxyCompatibility=true
         -Duser.timezone=Asia/Seoul
       JENKINS_OPTS: --httpListenAddress=0.0.0.0 --httpPort=8080
-      GIT_SSH_COMMAND: ssh -i /run/secrets/github_deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=/etc/ssh/ssh_known_hosts -o StrictHostKeyChecking=yes
     volumes:
       - /opt/jenkins/home:/var/jenkins_home
       - /opt/jenkins/casc.yaml:/var/jenkins_config/casc.yaml:ro
