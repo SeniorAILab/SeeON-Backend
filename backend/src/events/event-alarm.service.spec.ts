@@ -26,7 +26,6 @@ const event: RecordedEventResult['event'] = {
   clipId: null,
   edgeEventId: null,
   validationRunId: null,
-  retentionExpiresAt: null,
 };
 
 function setup(recordedEvent = event) {
@@ -89,7 +88,7 @@ describe('EventAlarmService', () => {
     );
   });
 
-  it('does not write or emit an alert for an ordinary validation-linked event', async () => {
+  it('does not write or emit an alert for a validation-linked event', async () => {
     const validationEvent = {
       ...event,
       validationRunId: '0197f671-3a31-7a6c-a6e4-83ed412de80f',
@@ -103,42 +102,6 @@ describe('EventAlarmService', () => {
     });
 
     expect(writeAlert).not.toHaveBeenCalled();
-  });
-
-  it('derives one in-app-only Alert for a capable SYSTEM_TEST validation event', async () => {
-    const validationRunId = '0197f671-3a31-7a6c-a6e4-83ed412de80f';
-    const systemTestEvent = {
-      ...event,
-      cameraId: null,
-      spaceId: null,
-      type: 'SYSTEM_TEST',
-      confidence: null,
-      validationRunId,
-    } as never;
-    const { service, writeAlert } = setup(systemTestEvent);
-
-    await service.record({
-      cameraId: null,
-      facilityId: event.facilityId,
-      type: 'SYSTEM_TEST',
-      testMode: 'SYSTEM_TEST',
-      validationRunId,
-      validationCapability: 'SYSTEM_TEST',
-      detectedAt: event.detectedAt,
-    } as never);
-
-    expect(writeAlert).toHaveBeenCalledWith({
-      facilityId: event.facilityId,
-      cameraId: null,
-      spaceId: null,
-      type: 'SYSTEM_TEST',
-      probability: null,
-      snapshotKey: null,
-      detectedAt: event.detectedAt,
-      idempotencyKey: event.dedupKey,
-      originEventId: event.id,
-      testMode: 'SYSTEM_TEST',
-    });
   });
   it('propagates Event.snapshotKey to the derived Alert', async () => {
     const eventWithSnapshot = { ...event, snapshotKey: 'events/event-1.jpg' };

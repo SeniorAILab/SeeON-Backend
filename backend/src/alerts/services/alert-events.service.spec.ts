@@ -133,28 +133,6 @@ describe('AlertEventsService', () => {
     expect(repository.recordDeliveryResult).not.toHaveBeenCalled();
   });
 
-  it('makes external delivery structurally unavailable for SYSTEM_TEST', async () => {
-    const repository = repositoryDouble();
-    const channel = channelDouble();
-    const prisma = prismaDouble([
-      recipientRecord('user-1', 'admin1@example.test'),
-    ]);
-    const service = createService(repository, channel, prisma);
-
-    await expect(
-      service.ensureOutboxForIngest({
-        facilityId: 'facility-1',
-        sourceId: 'SYSTEM_TEST',
-        externalEventId: 'system-test-1',
-        type: 'SYSTEM_TEST',
-        detectedAt: new Date('2026-06-13T10:00:00.000Z'),
-      } as never),
-    ).rejects.toThrow('SYSTEM_TEST is in-app only');
-
-    expect(repository.ensureIngestOutbox).not.toHaveBeenCalled();
-    expect(channel.send).not.toHaveBeenCalled();
-  });
-
   it('skips already-SENT attempts on duplicate repair (no double send)', async () => {
     const repository = repositoryDouble();
     repository.ensureIngestOutbox.mockResolvedValue({

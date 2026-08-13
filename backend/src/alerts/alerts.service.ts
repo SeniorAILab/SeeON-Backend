@@ -4,7 +4,6 @@ import type { AlertStatusDto } from './dto/alert-status.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import { AlertWriterService } from './alert-writer.service.js';
-import { SYSTEM_TEST_MODE } from '../events/system-test.constants.js';
 import {
   alertDetailInclude,
   alertInclude,
@@ -40,7 +39,6 @@ export class AlertsService {
         tx.alert.findMany({
           where: {
             status: status ?? undefined,
-            NOT: { type: SYSTEM_TEST_MODE, status: 'RESOLVED' },
             alertSeq:
               Object.keys(alertSeqFilter).length > 0
                 ? alertSeqFilter
@@ -149,10 +147,7 @@ export class AlertsService {
       facilityId,
       (tx: Prisma.TransactionClient) =>
         tx.alert.findMany({
-          where: {
-            alertSeq: { gt: afterSeq },
-            NOT: { type: SYSTEM_TEST_MODE, status: 'RESOLVED' },
-          },
+          where: { alertSeq: { gt: afterSeq } },
           orderBy: { alertSeq: 'asc' },
           include: alertInclude,
         }),

@@ -100,13 +100,7 @@ export class EdgeCredentialAuthenticator {
       this.clock.now(),
     );
     if (grant === null) throw edgeHttpError(403, EDGE_ERROR_CODES.MISMATCH);
-    return {
-      ...principal,
-      validationRunId,
-      ...(grant.capability === 'SYSTEM_TEST'
-        ? { validationCapability: 'SYSTEM_TEST' as const }
-        : {}),
-    };
+    return { ...principal, validationRunId };
   }
 
   private async assertLifecycle(

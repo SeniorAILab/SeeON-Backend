@@ -4,10 +4,7 @@ import type { AlertWriterService } from './alert-writer.service';
 import { AlertsService } from './alerts.service';
 
 type FindManyArg = {
-  where: {
-    alertSeq?: { gt?: bigint; lt?: bigint };
-    NOT?: { type: string; status: string };
-  };
+  where: { alertSeq?: { gt?: bigint; lt?: bigint } };
   take: number;
   orderBy: { alertSeq: 'desc' };
 };
@@ -95,18 +92,6 @@ describe('AlertsService (read-model)', () => {
     expect(arg.take).toBe(50);
   });
 
-  it('hides resolved SYSTEM_TEST rows from ordinary dashboard history', async () => {
-    const { service, alert } = setup();
-    alert.findMany.mockResolvedValue([]);
-
-    await service.list('facility-1');
-
-    const [[arg]] = alert.findMany.mock.calls as [[FindManyArg]];
-    expect(arg.where).toMatchObject({
-      NOT: { type: 'SYSTEM_TEST', status: 'RESOLVED' },
-    });
-  });
-
   it('throws FacilityScopedNotFoundException when getOne misses', async () => {
     const { service, alert } = setup();
     alert.findUnique.mockResolvedValue(null);
@@ -185,35 +170,6 @@ describe('AlertsService (read-model)', () => {
       note: 'checked with nurse',
       createdBy: 'user-1',
       authorRole: 'STAFF',
-    });
-  });
-
-  it('serializes the exact facility-level SYSTEM_TEST frontend contract', async () => {
-    const { service, alert } = setup();
-    alert.findUnique.mockResolvedValue(
-      alertRow({
-        backendEventId: 'event-system-test',
-        originEventId: 'event-system-test',
-        cameraId: null,
-        spaceId: null,
-        space: null,
-        type: 'SYSTEM_TEST',
-        probability: null,
-        snapshotKey: null,
-      }),
-    );
-
-    await expect(service.getOne('facility-1', 'a1')).resolves.toMatchObject({
-      backendEventId: 'event-system-test',
-      cameraId: null,
-      spaceId: null,
-      room: null,
-      type: 'SYSTEM_TEST',
-      probability: null,
-      snapshotKey: null,
-      testMode: 'SYSTEM_TEST',
-      label: 'SYSTEM TEST - NOT A RESIDENT ALERT',
-      ttsText: 'System test emergency notification',
     });
   });
 

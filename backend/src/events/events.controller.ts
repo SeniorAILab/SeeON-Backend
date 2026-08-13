@@ -37,10 +37,6 @@ import {
 import { CamerasService } from '../cameras/cameras.service.js';
 import { EventAlarmService } from './event-alarm.service.js';
 import {
-  assertSystemTestWirePayload,
-  isSystemTestWireRequest,
-} from './system-test-payload.js';
-import {
   EventRecorderService,
   type ListedEventsResult,
 } from './event-recorder.service.js';
@@ -74,10 +70,12 @@ export class EventsController {
     @Req() request: EdgeIngestRequest,
     @Body() body: RecordEventRequestDto,
   ): Promise<RecordEventResponseDto> {
-    const systemTest = isSystemTestWireRequest(body);
-    if (systemTest) assertSystemTestWirePayload(body);
+    // camera_id trim/blank checks, type canonicalization + enum membership,
+    // and detected_at timestamp validity are all independently re-validated
+    // by EventRecorderService.record(); the DTO's decorators only guarantee
+    // these arrive as the right JS types.
     const result = await this.eventAlarm.record({
-      cameraId: body.camera_id ?? null,
+      cameraId: body.camera_id,
       type: body.type,
       detectedAt: new Date(body.detected_at),
       confidence: body.confidence,
@@ -91,8 +89,6 @@ export class EventsController {
       edgeEventId: body.edge_event_id,
       facilityId: request.edgePrincipal?.facilityId,
       validationRunId: request.edgePrincipal?.validationRunId,
-      validationCapability: request.edgePrincipal?.validationCapability,
-      ...(systemTest ? { testMode: body.test_mode } : {}),
     });
     if (result.event.edgeEventId) {
       return {

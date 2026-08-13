@@ -1,7 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
   IsDate,
-  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -18,9 +17,8 @@ import {
 // the type-safety net needed to prevent a 500 (TypeError) if a field arrives
 // with the wrong JS type entirely.
 export class RecordEventRequestDto {
-  @ValidateIf((o: RecordEventRequestDto) => o.camera_id !== undefined)
   @IsString()
-  camera_id?: string;
+  camera_id!: string;
 
   @IsString()
   type!: string;
@@ -76,9 +74,9 @@ export class RecordEventRequestDto {
   @IsUUID()
   validation_run_id?: string;
 
-  @ValidateIf((o: RecordEventRequestDto) => o.test_mode !== undefined)
-  @IsIn(['SYSTEM_TEST'])
-  test_mode?: 'SYSTEM_TEST';
+  // Never read by the controller or service today (dead field on the wire
+  // contract) — stays fully permissive per the "no manual check today" rule.
+  facility_id?: string;
 }
 export class RecordHeartbeatRequestDto {
   @IsString()
@@ -117,8 +115,8 @@ export type RecordEventResponseDto =
 export interface EventResponseDto {
   id: string;
   facilityId: string;
-  cameraId: string | null;
-  spaceId: string | null;
+  cameraId: string;
+  spaceId: string;
   type: string;
   confidence: number | null;
   detectedAt: Date;

@@ -116,54 +116,72 @@ describe('edge provisioning v1 schema artifacts', () => {
     );
     for (const check of checks) expectSchemaCheck(schemas, check);
   });
-  it('pins the SYSTEM_TEST capability, close route, and exact dashboard sentinel', () => {
+  it('preserves ordinary Alert REST/SSE contracts while omitting SYSTEM_TEST', () => {
     const paths = record(artifacts.openApi.paths, 'OpenAPI paths');
-    expect(
-      record(
-        paths[
-          '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close'
-        ],
-        'validation close path',
-      ).post,
-    ).toBeDefined();
     const schemas = record(
       record(artifacts.openApi.components, 'OpenAPI components').schemas,
       'OpenAPI schemas',
     );
-    const request = record(
-      schemas.SystemTestRecordEventRequest,
-      'SYSTEM_TEST request',
-    );
-    expect(request.required).toEqual([
-      'type',
-      'test_mode',
-      'validation_run_id',
-      'edge_event_id',
-      'detected_at',
-    ]);
-    expect(request.additionalProperties).toBe(false);
-    const alert = record(schemas.SystemTestAlert, 'SYSTEM_TEST alert');
-    const properties = record(alert.properties, 'SYSTEM_TEST alert properties');
-    expect(record(properties.type, 'type').const).toBe('SYSTEM_TEST');
-    expect(record(properties.testMode, 'testMode').const).toBe('SYSTEM_TEST');
-    expect(record(properties.label, 'label').const).toBe(
-      'SYSTEM TEST - NOT A RESIDENT ALERT',
-    );
-    expect(record(properties.ttsText, 'ttsText').const).toBe(
-      'System test emergency notification',
-    );
-    for (const field of [
-      'residentId',
-      'cameraId',
-      'spaceId',
-      'room',
-      'probability',
-      'snapshotKey',
-    ]) {
-      expect(record(properties[field], field).type).toBe('null');
+    const requiredOperations = [
+      ['get', '/api/v1/alerts'],
+      ['get', '/api/v1/alerts/{id}'],
+      ['patch', '/api/v1/alerts/{id}/resolve'],
+      ['get', '/api/v1/dashboard/stream'],
+    ] as const;
+    for (const [method, path] of requiredOperations) {
+      expect(record(paths[path], path)[method]).toBeDefined();
     }
-  });
+    for (const schema of [
+      'Alert',
+      'AlertDetail',
+      'AlertList',
+      'AlertSseData',
+      'AlertUpdatedSseData',
+    ]) {
+      expect(schemas[schema]).toBeDefined();
+    }
+    expect(responseSchemaRef(paths, '/api/v1/alerts', 'get')).toBe(
+      '#/components/schemas/AlertList',
+    );
+    expect(responseSchemaRef(paths, '/api/v1/alerts/{id}', 'get')).toBe(
+      '#/components/schemas/AlertDetail',
+    );
+    expect(
+      responseSchemaRef(paths, '/api/v1/alerts/{id}/resolve', 'patch'),
+    ).toBe('#/components/schemas/Alert');
+    expect(
+      record(
+        record(paths['/api/v1/dashboard/stream'], 'dashboard stream path').get,
+        'dashboard stream operation',
+      )['x-sse-event-schemas'],
+    ).toEqual({
+      alert: '#/components/schemas/AlertSseData',
+      'alert-updated': '#/components/schemas/AlertUpdatedSseData',
+    });
+    const validationProperties = record(
+      record(schemas.CreateValidationRunRequest, 'validation request')
+        .properties,
+      'validation request properties',
+    );
+    const eventProperties = record(
+      record(schemas.RecordEventRequest, 'event request').properties,
+      'event request properties',
+    );
 
+    expect(paths['/api/v1/admin/system-test-retention/purge']).toBeUndefined();
+    expect(
+      paths[
+        '/api/v1/admin/edge-installations/{edgeInstallationId}/validation-runs/{validationRunId}/close'
+      ],
+    ).toBeUndefined();
+    expect(validationProperties.capability).toBeUndefined();
+    expect(eventProperties.test_mode).toBeUndefined();
+    expect(eventProperties.camera_id).toBeDefined();
+    expect(
+      Object.keys(schemas).some((name) => name.includes('SystemTest')),
+    ).toBe(false);
+    expect(JSON.stringify(artifacts.openApi)).not.toContain('SYSTEM_TEST');
+  });
   it('contains complete redacted happy fixtures for every frozen v1 operation', () => {
     const happy = record(artifacts.fixtures.happy, 'happy fixtures');
     expect(Object.keys(happy).sort()).toEqual(
@@ -227,3 +245,21 @@ describe('edge provisioning v1 schema artifacts', () => {
     expect(metadata.rawCredential).toBeUndefined();
   });
 });
+
+function responseSchemaRef(
+  paths: Record<string, unknown>,
+  path: string,
+  method: string,
+): unknown {
+  const operation = record(
+    record(paths[path], path)[method],
+    `${method} ${path}`,
+  );
+  const response = record(
+    record(operation.responses, 'responses')['200'],
+    '200',
+  );
+  const content = record(response.content, 'response content');
+  const media = record(content['application/json'], 'application/json');
+  return record(media.schema, 'response schema').$ref;
+}

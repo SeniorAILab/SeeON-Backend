@@ -15,7 +15,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -25,6 +30,7 @@ import { FacilityContextInterceptor } from '../auth/facility-context.interceptor
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
 import { AlertsService } from './alerts.service.js';
 import { CreateAlertNoteRequestDto } from './dto/alert-note.dto.js';
+import { Alert, AlertDetail } from './dto/alert-response.dto.js';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import {
   MAX_SNAPSHOT_BYTES,
@@ -35,18 +41,40 @@ import {
 } from '../common/snapshot-storage.js';
 
 @Controller({ path: 'alerts', version: '1' })
-@ApiCookieAuth()
+@ApiCookieAuth('app_session')
 @UseGuards(JwtAuthGuard, RequireFacilityGuard)
 @UseInterceptors(FacilityContextInterceptor)
 export class AlertsController {
   constructor(private readonly service: AlertsService) {}
 
   @ApiOperation({
+    operationId: 'listAlerts',
     summary: 'List alerts',
     description:
       'Returns facility-scoped alerts with optional status, sequence, and limit filters for dashboard history and reconciliation.',
   })
   @Get()
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['NEW', 'ACKED', 'RESOLVED'],
+  })
+  @ApiQuery({
+    name: 'afterSeq',
+    required: false,
+    schema: { type: 'string', pattern: '^[0-9]+$' },
+  })
+  @ApiQuery({
+    name: 'beforeSeq',
+    required: false,
+    schema: { type: 'string', pattern: '^[0-9]+$' },
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+  })
+  @ApiOkResponse({ type: [Alert] })
   list(
     @Req() req: RequestWithAuth,
     @Query('status') status?: string,
@@ -64,10 +92,12 @@ export class AlertsController {
   }
 
   @ApiOperation({
+    operationId: 'getAlert',
     summary: 'Get one alert',
     description: `Returns a single facility-scoped alert by id or 404 when it is outside the caller's facility.`,
   })
   @Get(':id')
+  @ApiOkResponse({ type: AlertDetail })
   getOne(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.getOne(requireFacilityId(req), id);
   }
@@ -106,12 +136,14 @@ export class AlertsController {
   }
 
   @ApiOperation({
+    operationId: 'resolveAlert',
     summary: 'Resolve an alert',
     description:
       'Marks an alert resolved by the current user and emits the live alert-updated dashboard frame.',
   })
   @Patch(':id/resolve')
   @HttpCode(200)
+  @ApiOkResponse({ type: Alert })
   resolve(@Req() req: RequestWithAuth, @Param('id') id: string) {
     return this.service.resolve(requireFacilityId(req), id, requireUserId(req));
   }

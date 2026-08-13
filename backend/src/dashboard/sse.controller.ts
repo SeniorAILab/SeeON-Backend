@@ -29,7 +29,14 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiExtension,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import { RequireFacilityGuard, JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
@@ -39,12 +46,11 @@ import type {
   AlertUpdateEvent,
 } from '../alerts/alert-writer.service.js';
 import { AlertsService } from '../alerts/alerts.service.js';
-import { AuthService } from '../auth/auth.service.js';
 import {
-  SYSTEM_TEST_LABEL,
-  SYSTEM_TEST_MODE,
-  SYSTEM_TEST_TTS_TEXT,
-} from '../events/system-test.constants.js';
+  AlertSseData,
+  AlertUpdatedSseData,
+} from '../alerts/dto/alert-response.dto.js';
+import { AuthService } from '../auth/auth.service.js';
 
 /** Injection token for the SSE re-auth tick interval (ms). Override in tests. */
 export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
@@ -52,7 +58,7 @@ export const SSE_REAUTH_INTERVAL_MS = 'SSE_REAUTH_INTERVAL_MS';
 const HEARTBEAT_MS = 20_000;
 
 @Controller({ path: 'dashboard', version: '1' })
-@ApiCookieAuth()
+@ApiCookieAuth('app_session')
 @UseGuards(JwtAuthGuard, RequireFacilityGuard)
 export class DashboardStreamController {
   constructor(
@@ -64,11 +70,19 @@ export class DashboardStreamController {
   ) {}
 
   @ApiOperation({
+    operationId: 'streamDashboardAlerts',
     summary: 'Stream live dashboard alerts',
     description:
       'Opens the facility-scoped SSE stream that emits only room-centric alert and alert-updated frames plus session-invalid control frames.',
   })
   @Get('stream')
+  @ApiExtraModels(AlertSseData, AlertUpdatedSseData)
+  @ApiExtension('x-sse-event-schemas', {
+    alert: '#/components/schemas/AlertSseData',
+    'alert-updated': '#/components/schemas/AlertUpdatedSseData',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiOkResponse({ schema: { type: 'string' } })
   @Header('content-type', 'text/event-stream')
   @Header('cache-control', 'no-cache')
   @Header('connection', 'keep-alive')
@@ -234,11 +248,9 @@ type SseAlertLike = Pick<
   | 'probability'
   | 'detectedAt'
   | 'status'
-  | 'snapshotKey'
 >;
 
 export function formatAlertEvent(event: SseAlertLike): string {
-  const systemTest = event.type === SYSTEM_TEST_MODE;
   return formatSseEvent(event.alertSeq, {
     id: event.id,
     backendEventId: event.originEventId,
@@ -250,17 +262,6 @@ export function formatAlertEvent(event: SseAlertLike): string {
     status: event.status,
     probability: event.probability,
     detectedAt: event.detectedAt,
-    ...(systemTest
-      ? {
-          source: SYSTEM_TEST_MODE,
-          testMode: SYSTEM_TEST_MODE,
-          label: SYSTEM_TEST_LABEL,
-          ttsText: SYSTEM_TEST_TTS_TEXT,
-          snapshotKey: null,
-          residentId: null,
-          room: null,
-        }
-      : {}),
   });
 }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   DeliveryAttemptStatus,
   Role,
@@ -18,7 +18,6 @@ import {
   type DeliveryResult,
 } from '../ports/channel.port.js';
 import { AlertEventsRepository } from '../repositories/alert-events.repository.js';
-import { SYSTEM_TEST_MODE } from '../../events/system-test.constants.js';
 
 const DEFAULT_DELIVERY_TIMEOUT_MS = 5_000;
 
@@ -46,9 +45,6 @@ export class AlertEventsService {
   async ensureOutboxForIngest(
     input: EnsureOutboxForIngestInput,
   ): Promise<void> {
-    if ((input.type as string) === SYSTEM_TEST_MODE) {
-      throw new BadRequestException('SYSTEM_TEST is in-app only');
-    }
     const event: AlertEventRequestDto = {
       type: input.type,
       source_id: input.sourceId,

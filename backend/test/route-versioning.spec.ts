@@ -85,9 +85,61 @@ describe('global api/v1 route matrix (e2e)', () => {
       .expect(404);
   });
 
+  it('removes temporary SYSTEM_TEST administration routes', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/admin/system-test-retention/purge')
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(
+        '/api/v1/admin/edge-installations/installation-id/validation-runs/run-id/close',
+      )
+      .expect(404);
+  });
+
+  it('keeps ordinary Alert REST and dashboard SSE routes mounted', async () => {
+    await request(app.getHttpServer()).get('/api/v1/alerts').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/alerts/alert-id')
+      .expect(401);
+    await request(app.getHttpServer())
+      .patch('/api/v1/alerts/alert-id/resolve')
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/dashboard/stream')
+      .expect(401);
+  });
+
   it('keeps swagger docs at /api/docs', async () => {
     await request(app.getHttpServer()).get('/api/docs').expect(200);
     await request(app.getHttpServer()).get('/api/v1/docs').expect(404);
+  });
+
+  it('generates ordinary Alert REST and dashboard SSE contracts from runtime', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/docs-json')
+      .expect(200);
+    const document = response.body as {
+      paths: Record<string, Record<string, unknown>>;
+      components: { schemas: Record<string, unknown> };
+    };
+    for (const [method, path] of [
+      ['get', '/api/v1/alerts'],
+      ['get', '/api/v1/alerts/{id}'],
+      ['patch', '/api/v1/alerts/{id}/resolve'],
+      ['get', '/api/v1/dashboard/stream'],
+    ] as const) {
+      expect(document.paths[path][method]).toBeDefined();
+    }
+    for (const schema of [
+      'Alert',
+      'AlertDetail',
+      'AlertList',
+      'AlertSseData',
+      'AlertUpdatedSseData',
+    ]) {
+      expect(document.components.schemas[schema]).toBeDefined();
+    }
+    expect(JSON.stringify(document)).not.toContain('SYSTEM_TEST');
   });
 });
 
