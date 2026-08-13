@@ -103,7 +103,18 @@ printf '%s\n' 'Mem: 6144 1024 1024 0 4096 4096' 'Swap: 4096 0 4096'
 EOF
 cat > "$TMP/bin/sha256sum" <<'EOF'
 #!/usr/bin/env sh
-printf '%s  %s\n' '0000000000000000000000000000000000000000000000000000000000000000' "${1:--}"
+if [ "$#" -eq 0 ]; then
+  input=$(mktemp)
+  cat > "$input"
+  if grep -Fq '450ed6a20959ce3f48cc06fb03afc3da1c25799a d71f1b2acc55e21175d1fe8efac467d88c006d20' "$input"; then
+    printf '%s  -\n' 'e0d31f55fddd59ac35338e70c13f794cddf6feccb5f9d71b4364b2c42a49b73e'
+  else
+    printf '%s  -\n' '0000000000000000000000000000000000000000000000000000000000000000'
+  fi
+  rm -f "$input"
+  exit 0
+fi
+printf '%s  %s\n' '0000000000000000000000000000000000000000000000000000000000000000' "$1"
 EOF
 cat > "$TMP/bin/rmdir" <<'EOF'
 #!/usr/bin/env sh
@@ -113,10 +124,21 @@ EOF
 cat > "$TMP/bin/git" <<'EOF'
 #!/usr/bin/env sh
 [ "${1:-}" = -C ] || exit 1
+[ -z "${MOCK_LOG:-}" ] || printf 'git %s\n' "$*" >> "$MOCK_LOG"
 shift 2
 case "$1 $2" in
   'rev-parse --git-dir') printf '%s\n' .git ;;
-  'cat-file -e'|'merge-base --is-ancestor') ;;
+  'remote get-url') printf '%s\n' 'git@github.com:SeniorAILab/SeeON-Backend.git' ;;
+  'cat-file -e')
+    case "${MOCK_HISTORY_TRANSITION:-0}:${3:-}" in
+      1:450ed6a20959ce3f48cc06fb03afc3da1c25799a*commit*) exit 1 ;;
+    esac ;;
+  'cat-file -t') printf '%s\n' blob ;;
+  'cat-file blob') cat "$MOCK_REAL_REPO/docs/provenance/seeon-commit-map.txt" ;;
+  'merge-base --is-ancestor') ;;
+  'rev-parse d71f1b2acc55e21175d1fe8efac467d88c006d20:backend/prisma/migrations') printf '%s\n' 1c388d6bffeb862b8f778d2c2fe4ec44ba63193a ;;
+  'rev-parse 4e23f9ef20b4899a17802905d729a2c12295f8d1:backend/prisma/migrations') printf '%s\n' ba59e654fd9ddff7833eb079d79dda72ffec7335 ;;
+  rev-parse*':docs/provenance/seeon-commit-map.txt') printf '%s\n' 17224325e94a6694763ad7cb66ec8de9f404003a ;;
   'diff --name-status')
     [ "${MOCK_DESTRUCTIVE_MIGRATION:-0}" != 1 ] || printf 'A\t%s\n' 'backend/prisma/migrations/20990101000000_destructive/migration.sql'
     ;;
@@ -127,7 +149,19 @@ case "$1 $2" in
   *) exit 1 ;;
 esac
 EOF
-chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git"
+cat > "$TMP/bin/stat" <<'EOF'
+#!/usr/bin/env sh
+path=
+for argument do path=$argument; done
+case "$path" in
+  */history-transition-authorization-v1.json)
+    size=$(wc -c < "$path" | awk '{print $1}')
+    inode=$(ls -di "$path" | awk '{print $1}')
+    printf '1001:1001:400:1:%s:%s\n' "$inode" "$size" ;;
+  *) exec /usr/bin/stat "$@" ;;
+esac
+EOF
+chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git" "$TMP/bin/stat"
 
 NO_NODE_BIN=$TMP/no-node-bin
 mkdir -p "$NO_NODE_BIN"
@@ -167,6 +201,9 @@ EOF
 SHA=0123456789abcdef0123456789abcdef01234567
 ROLLBACK_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CURRENT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LEGACY_SHA=450ed6a20959ce3f48cc06fb03afc3da1c25799a
+V012_CANDIDATE=7777777777777777777777777777777777777777
+V012_NEXT=8888888888888888888888888888888888888888
 FIXTURE_BACKEND_ID=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 FIXTURE_INGRESS_ID=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 FIXTURE_FRONT_ID=sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
@@ -214,7 +251,8 @@ run_deploy() {
   MEMORY_MIN_MB="${TEST_MEMORY_MIN_MB:-1}" DISK_MIN_MB="${TEST_DISK_MIN_MB:-1}" MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
   MOCK_MISSING_IMAGE="${MOCK_MISSING_IMAGE:-}" MOCK_EDGE_AFTER_EPOCH="${MOCK_EDGE_AFTER_EPOCH:-101}" \
   MOCK_VOLUME_STATE="${MOCK_VOLUME_STATE:-ok}" MOCK_MOUNT_STATE="${MOCK_MOUNT_STATE:-ok}" MOCK_READABLE_STATE="${MOCK_READABLE_STATE:-ok}" \
-  MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
+  MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MOCK_HISTORY_TRANSITION="${MOCK_HISTORY_TRANSITION:-0}" \
+  MOCK_REAL_REPO="$REPO_ROOT" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
   sh "$SCRIPT" "$@" 2>&1
 }
 run_deploy_without_node() {
@@ -384,6 +422,45 @@ assert_not_contains "$log" 'volume inspect'
 assert_not_contains "$log" 'pull db'
 assert_not_contains "$log" 'pg_dump'
 rm -f "$TMP/root/releases/current.json" "$TMP/root/releases/$CURRENT_SHA.json"
+
+# Build #38's exact legacy current pointer may use the bridge only after the
+# unchanged normal classifier fails. A failed v0.1.2 migration attempt retains
+# authorization; success classifies from the reviewed anchor and consumes it.
+pointer "$LEGACY_SHA" current
+AUTH_PATH=$TMP/root/releases/history-transition-authorization-v1.json
+CONSUMED_PATH=$TMP/root/releases/history-transition-authorization-v1.consumed.json
+sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_CANDIDATE" > "$AUTH_PATH"
+chmod 400 "$AUTH_PATH"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 MOCK_MIGRATE_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'current release commit is unavailable for migration classification'
+assert_contains "$output" 'candidate migrations are additive/non-destructive'
+[ -f "$AUTH_PATH" ] && [ ! -e "$CONSUMED_PATH" ] || { printf '%s\n' 'failed v0.1.2 deployment consumed transition authorization' >&2; exit 1; }
+: > "$TMP/mock.log"
+output=$(MOCK_HISTORY_TRANSITION=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE")
+assert_contains "$output" "Deploy complete. sha=$V012_CANDIDATE"
+assert_contains "$output" 'atomically renamed to its consumed receipt'
+[ ! -e "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] || { printf '%s\n' 'successful v0.1.2 deployment did not consume transition authorization' >&2; exit 1; }
+log=$(cat "$TMP/mock.log")
+assert_contains "$log" "merge-base --is-ancestor 4e23f9ef20b4899a17802905d729a2c12295f8d1 $V012_CANDIDATE"
+assert_contains "$log" "diff --name-status 4e23f9ef20b4899a17802905d729a2c12295f8d1 $V012_CANDIDATE"
+
+# Restoring the exact auth after current changes is inert: a normal descendant
+# takes the byte-for-byte normal path and never consults transition state.
+sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_CANDIDATE" > "$AUTH_PATH"
+chmod 400 "$AUTH_PATH"
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$V012_NEXT" run_deploy --sha "$V012_NEXT")
+assert_contains "$output" "Deploy complete. sha=$V012_NEXT"
+[ -f "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] || { printf '%s\n' 'normal descendant consulted or pruned inert transition state' >&2; exit 1; }
+log=$(cat "$TMP/mock.log")
+assert_contains "$log" "diff --name-status $V012_CANDIDATE $V012_NEXT"
+assert_not_contains "$log" 'remote get-url origin'
+rm -f "$AUTH_PATH" "$CONSUMED_PATH" "$TMP/root/releases/current.json" "$TMP/root/releases/previous.json" \
+  "$TMP/root/releases/pending.json" "$TMP/root/releases/$LEGACY_SHA.json" "$TMP/root/releases/$V012_CANDIDATE.json" "$TMP/root/releases/$V012_NEXT.json"
 
 set +e
 output=$(TEST_MEMORY_MIN_MB=999999 run_deploy --sha "$SHA" --dry-run); status=$?

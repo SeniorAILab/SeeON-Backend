@@ -55,9 +55,10 @@ assert_contains "$deploy" "HAS_FRONT=0"
 assert_contains "$deploy" 'embedded_front_image'
 assert_contains "$deploy" 'verify_deploy_receipts'
 assert_not_contains "$deploy" 'MEDIA_RECEIPT'
-assert_order "$deploy" '  verify_deploy_receipts' 'verify-additive-migrations.sh'
-assert_order "$deploy" 'verify-additive-migrations.sh' 'verify-live-event-media-volume.sh'
+assert_order "$deploy" '  verify_deploy_receipts' '    verify_candidate_migrations "$CURRENT_RELEASE_SHA" "$SHA"'
+assert_order "$deploy" '    verify_candidate_migrations "$CURRENT_RELEASE_SHA" "$SHA"' 'verify-live-event-media-volume.sh'
 assert_order "$deploy" 'verify-live-event-media-volume.sh' '  verify_image_ids'
+assert_order "$deploy" 'if APP_DIR="$APP_DIR" sh "$migration_classifier" "$current_sha" "$candidate_sha"' 'transition_output=$(APP_DIR="$APP_DIR" RELEASE_DIR="$RELEASE_DIR"'
 assert_order "$deploy" 'verify_edge_continuity' 'activate_manifest "$RELEASE_DIR/$SHA.json"'
 
 printf '%s\n' 'overlap release integration contract tests passed'
