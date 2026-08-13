@@ -103,7 +103,18 @@ printf '%s\n' 'Mem: 6144 1024 1024 0 4096 4096' 'Swap: 4096 0 4096'
 EOF
 cat > "$TMP/bin/sha256sum" <<'EOF'
 #!/usr/bin/env sh
-printf '%s  %s\n' '0000000000000000000000000000000000000000000000000000000000000000' "${1:--}"
+if [ "$#" -eq 0 ]; then
+  input=$(mktemp)
+  cat > "$input"
+  if grep -Fq '450ed6a20959ce3f48cc06fb03afc3da1c25799a d71f1b2acc55e21175d1fe8efac467d88c006d20' "$input"; then
+    printf '%s  -\n' 'e0d31f55fddd59ac35338e70c13f794cddf6feccb5f9d71b4364b2c42a49b73e'
+  else
+    printf '%s  -\n' '0000000000000000000000000000000000000000000000000000000000000000'
+  fi
+  rm -f "$input"
+  exit 0
+fi
+printf '%s  %s\n' '0000000000000000000000000000000000000000000000000000000000000000' "$1"
 EOF
 cat > "$TMP/bin/rmdir" <<'EOF'
 #!/usr/bin/env sh
@@ -113,10 +124,21 @@ EOF
 cat > "$TMP/bin/git" <<'EOF'
 #!/usr/bin/env sh
 [ "${1:-}" = -C ] || exit 1
+[ -z "${MOCK_LOG:-}" ] || printf 'git %s\n' "$*" >> "$MOCK_LOG"
 shift 2
 case "$1 $2" in
   'rev-parse --git-dir') printf '%s\n' .git ;;
-  'cat-file -e'|'merge-base --is-ancestor') ;;
+  'remote get-url') printf '%s\n' 'git@github.com:SeniorAILab/SeeON-Backend.git' ;;
+  'cat-file -e')
+    case "${MOCK_HISTORY_TRANSITION:-0}:${3:-}" in
+      1:450ed6a20959ce3f48cc06fb03afc3da1c25799a*commit*) exit 1 ;;
+    esac ;;
+  'cat-file -t') printf '%s\n' blob ;;
+  'cat-file blob') cat "$MOCK_REAL_REPO/docs/provenance/seeon-commit-map.txt" ;;
+  'merge-base --is-ancestor') ;;
+  'rev-parse d71f1b2acc55e21175d1fe8efac467d88c006d20:backend/prisma/migrations') printf '%s\n' 1c388d6bffeb862b8f778d2c2fe4ec44ba63193a ;;
+  'rev-parse 4e23f9ef20b4899a17802905d729a2c12295f8d1:backend/prisma/migrations') printf '%s\n' ba59e654fd9ddff7833eb079d79dda72ffec7335 ;;
+  rev-parse*':docs/provenance/seeon-commit-map.txt') printf '%s\n' 17224325e94a6694763ad7cb66ec8de9f404003a ;;
   'diff --name-status')
     [ "${MOCK_DESTRUCTIVE_MIGRATION:-0}" != 1 ] || printf 'A\t%s\n' 'backend/prisma/migrations/20990101000000_destructive/migration.sql'
     ;;
@@ -127,7 +149,49 @@ case "$1 $2" in
   *) exit 1 ;;
 esac
 EOF
-chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git"
+cat > "$TMP/bin/stat" <<'EOF'
+#!/usr/bin/env sh
+path=
+for argument do path=$argument; done
+case "$path" in
+  */history-transition-authorization-v1.json|*/history-transition-authorization-v1.consumed.json)
+    size=$(wc -c < "$path" | awk '{print $1}')
+    inode=$(ls -di "$path" | awk '{print $1}')
+    printf '1001:1001:400:1:%s:%s\n' "$inode" "$size" ;;
+  *) exec /usr/bin/stat "$@" ;;
+esac
+EOF
+cat > "$TMP/bin/sync" <<'EOF'
+#!/usr/bin/env sh
+path=${2:-}
+case "${MOCK_FINALIZE_FAILURE:-}:$path" in
+  file-fsync:*/.history-transition-consumed.*) exit 1 ;;
+  dir-fsync:*/releases) exit 1 ;;
+esac
+exit 0
+EOF
+cat > "$TMP/bin/mktemp" <<'EOF'
+#!/usr/bin/env sh
+case "${SIGNAL_DEPLOY_POINT:-}:$*" in
+  finalize-term:*history-transition-consumed*)
+    deploy_pid=$(ps -o ppid= -p "$PPID" | tr -d ' ')
+    kill -TERM "$deploy_pid"
+    exit 99 ;;
+esac
+case "${MOCK_FINALIZE_FAILURE:-}:$*" in temp:*history-transition-consumed*) exit 1 ;; esac
+exec /usr/bin/mktemp "$@"
+EOF
+cat > "$TMP/bin/mv" <<'EOF'
+#!/usr/bin/env sh
+case "${MOCK_FINALIZE_FAILURE:-}:${2:-}" in rename:*/history-transition-authorization-v1.consumed.json) exit 1 ;; esac
+exec /bin/mv "$@"
+EOF
+cat > "$TMP/bin/rm" <<'EOF'
+#!/usr/bin/env sh
+case "${MOCK_PRUNE_MANIFEST_FAIL:-0}:$*" in 1:*stale-transition-fixture.json*) exit 1 ;; esac
+exec /bin/rm "$@"
+EOF
+chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git" "$TMP/bin/stat" "$TMP/bin/sync" "$TMP/bin/mktemp" "$TMP/bin/mv" "$TMP/bin/rm"
 
 NO_NODE_BIN=$TMP/no-node-bin
 mkdir -p "$NO_NODE_BIN"
@@ -167,6 +231,9 @@ EOF
 SHA=0123456789abcdef0123456789abcdef01234567
 ROLLBACK_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CURRENT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LEGACY_SHA=450ed6a20959ce3f48cc06fb03afc3da1c25799a
+V012_CANDIDATE=7777777777777777777777777777777777777777
+V012_NEXT=8888888888888888888888888888888888888888
 FIXTURE_BACKEND_ID=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 FIXTURE_INGRESS_ID=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 FIXTURE_FRONT_ID=sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
@@ -214,7 +281,10 @@ run_deploy() {
   MEMORY_MIN_MB="${TEST_MEMORY_MIN_MB:-1}" DISK_MIN_MB="${TEST_DISK_MIN_MB:-1}" MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
   MOCK_MISSING_IMAGE="${MOCK_MISSING_IMAGE:-}" MOCK_EDGE_AFTER_EPOCH="${MOCK_EDGE_AFTER_EPOCH:-101}" \
   MOCK_VOLUME_STATE="${MOCK_VOLUME_STATE:-ok}" MOCK_MOUNT_STATE="${MOCK_MOUNT_STATE:-ok}" MOCK_READABLE_STATE="${MOCK_READABLE_STATE:-ok}" \
-  MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
+  MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MOCK_HISTORY_TRANSITION="${MOCK_HISTORY_TRANSITION:-0}" \
+  MOCK_FINALIZE_FAILURE="${MOCK_FINALIZE_FAILURE:-}" MOCK_PRUNE_MANIFEST_FAIL="${MOCK_PRUNE_MANIFEST_FAIL:-0}" \
+  SIGNAL_DEPLOY_POINT="${SIGNAL_DEPLOY_POINT:-}" \
+  MOCK_REAL_REPO="$REPO_ROOT" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
   sh "$SCRIPT" "$@" 2>&1
 }
 run_deploy_without_node() {
@@ -225,6 +295,7 @@ run_deploy_without_node() {
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) printf 'unexpected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; *) ;; esac; }
 assert_failure() { [ "$1" -ne 0 ] || { printf 'command unexpectedly passed\n' >&2; exit 1; }; }
+json_value_for_test() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
 assert_order() {
   first=$(printf '%s\n' "$1" | grep -n -F "$2" | sed -n '1s/:.*//p')
   second=$(printf '%s\n' "$1" | grep -n -F "$3" | sed -n '1s/:.*//p')
@@ -384,6 +455,78 @@ assert_not_contains "$log" 'volume inspect'
 assert_not_contains "$log" 'pull db'
 assert_not_contains "$log" 'pg_dump'
 rm -f "$TMP/root/releases/current.json" "$TMP/root/releases/$CURRENT_SHA.json"
+
+# Build #38's exact legacy current pointer may use the bridge only after the
+# unchanged normal classifier fails. A failed v0.1.2 migration attempt retains
+# authorization; success classifies from the reviewed anchor and consumes it.
+pointer "$LEGACY_SHA" current
+AUTH_PATH=$TMP/root/releases/history-transition-authorization-v1.json
+CONSUMED_PATH=$TMP/root/releases/history-transition-authorization-v1.consumed.json
+sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_CANDIDATE" > "$AUTH_PATH"
+chmod 400 "$AUTH_PATH"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 MOCK_MIGRATE_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'current release commit is unavailable for migration classification'
+assert_contains "$output" 'candidate migrations are additive/non-destructive'
+[ -f "$AUTH_PATH" ] && [ ! -e "$CONSUMED_PATH" ] || { printf '%s\n' 'failed v0.1.2 deployment consumed transition authorization' >&2; exit 1; }
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 SIGNAL_DEPLOY_POINT=finalize-term MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+[ "$status" -eq 143 ] || { printf 'post-activation deploy TERM returned %s\n' "$status" >&2; exit 1; }
+assert_not_contains "$output" 'Deploy complete'
+assert_not_contains "$output" 'receipt atomically published'
+[ "$(json_value_for_test "$TMP/root/releases/current.json" sha)" = "$V012_CANDIDATE" ]
+[ -f "$AUTH_PATH" ] && [ ! -e "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ] || {
+  printf '%s\n' 'post-activation consumption failure did not preserve recoverable state' >&2; exit 1
+}
+# First recovery finalizes receipt before manifest pruning; a prune failure cannot resurrect auth.
+manifest "$ROLLBACK_SHA" > "$TMP/root/releases/stale-transition-fixture.json"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_PRUNE_MANIFEST_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unable to remove stale immutable manifest'
+[ -f "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ]
+# Receipt finalization is idempotent and remains first when image pruning fails.
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_IMAGES_FAIL=1 MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unable to list Docker images for pruning'
+assert_contains "$output" 'consumption receipt is durable and exact'
+[ -f "$CONSUMED_PATH" ] && [ -f "$TMP/root/releases/pending.json" ]
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$V012_CANDIDATE" run_deploy --sha "$V012_CANDIDATE")
+assert_contains "$output" "History transition activation recovery complete. sha=$V012_CANDIDATE"
+assert_contains "$output" 'consumption receipt is durable and exact'
+[ -f "$AUTH_PATH" ] && [ -f "$CONSUMED_PATH" ] && [ ! -e "$TMP/root/releases/pending.json" ] || {
+  printf '%s\n' 'exact-candidate recovery did not converge durable consumption' >&2; exit 1
+}
+log=$(cat "$TMP/mock.log")
+assert_not_contains "$log" 'prisma migrate deploy'
+
+# Rollback to the legacy pointer cannot make restored authorization reusable.
+: > "$TMP/mock.log"
+output=$(MOCK_SHA="$LEGACY_SHA" run_deploy --rollback "$LEGACY_SHA")
+[ "$(json_value_for_test "$TMP/root/releases/current.json" sha)" = "$LEGACY_SHA" ]
+[ -f "$CONSUMED_PATH" ]
+rm -f "$AUTH_PATH"
+sh "$REPO_ROOT/scripts/deploy/history-transition-authorization.sh" --render "$V012_NEXT" > "$AUTH_PATH"
+chmod 400 "$AUTH_PATH"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_HISTORY_TRANSITION=1 MOCK_SHA="$V012_NEXT" run_deploy --sha "$V012_NEXT"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'already consumed'
+log=$(cat "$TMP/mock.log")
+assert_not_contains "$log" 'volume inspect'
+assert_not_contains "$log" 'prisma migrate deploy'
+rm -f "$AUTH_PATH" "$CONSUMED_PATH" "$TMP/root/releases/current.json" "$TMP/root/releases/previous.json" \
+  "$TMP/root/releases/pending.json" "$TMP/root/releases/$LEGACY_SHA.json" "$TMP/root/releases/$V012_CANDIDATE.json" "$TMP/root/releases/$V012_NEXT.json"
 
 set +e
 output=$(TEST_MEMORY_MIN_MB=999999 run_deploy --sha "$SHA" --dry-run); status=$?

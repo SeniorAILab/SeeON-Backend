@@ -149,7 +149,11 @@ jobs:
     if: needs.changes.outputs.deploy_contract == 'true'
     runs-on: ubuntu-latest
     steps:
+      # History-transition verification intentionally resolves pinned pre-PR
+      # commits offline; a one-commit synthetic PR checkout is insufficient.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

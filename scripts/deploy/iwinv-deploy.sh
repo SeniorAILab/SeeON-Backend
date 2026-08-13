@@ -20,7 +20,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
 
 usage() {
   printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
@@ -117,29 +117,44 @@ assert_backend_stopped() {
   running_backend=$(compose ps -q --status running backend)
   [ -z "$running_backend" ] || fail 'Old backend is still running; zero-overlap replacement refused.'
 }
-cleanup() {
-  status=$?
-  cleanup_status=0
+cleanup_resources() {
+  [ "$DEPLOY_CLEANED_UP" -eq 0 ] || return 0
+  DEPLOY_CLEANED_UP=1
+  CLEANUP_STATUS=0
   if [ "$LOCK_HELD" -eq 1 ] && ! rmdir "$LOCK_DIR"; then
     log "Failed to release deployment lock: $LOCK_DIR"
-    cleanup_status=1
+    CLEANUP_STATUS=1
   fi
+  LOCK_HELD=0
   for cleanup_file in "$TEMP_FILE" "$TEMP_FILE_SECOND"; do
     if [ -n "$cleanup_file" ] && [ -e "$cleanup_file" ] && ! rm -f "$cleanup_file"; then
       log "Failed to remove temporary file: $cleanup_file"
-      cleanup_status=1
+      CLEANUP_STATUS=1
     fi
   done
+}
+cleanup() {
+  status=$?
+  cleanup_resources
   trap - 0 HUP INT TERM
   if [ "$status" -ne 0 ]; then exit "$status"; fi
-  exit "$cleanup_status"
+  exit "$CLEANUP_STATUS"
+}
+signal_cleanup() {
+  status=$1
+  cleanup_resources
+  trap - 0 HUP INT TERM
+  exit "$status"
 }
 acquire_lock() {
   if [ "$DRY_RUN" -eq 1 ]; then log "would acquire deployment lock $LOCK_DIR"; return; fi
   mkdir -p "$APP_ROOT/shared" "$BACKUP_DIR" "$RELEASE_DIR"
   mkdir "$LOCK_DIR" 2>/dev/null || fail "Another deployment is already running: $LOCK_DIR"
   LOCK_HELD=1
-  trap cleanup 0 HUP INT TERM
+  trap cleanup 0
+  trap 'signal_cleanup 129' HUP
+  trap 'signal_cleanup 130' INT
+  trap 'signal_cleanup 143' TERM
 }
 owner_only_receipt() {
   receipt=$1
@@ -473,6 +488,40 @@ verify_image_ids() {
   fi
   IMAGE_IDS_VERIFIED=1
 }
+verify_candidate_migrations() {
+  current_sha=$1
+  candidate_sha=$2
+  migration_classifier=$APP_DIR/scripts/deploy/verify-additive-migrations.sh
+  if APP_DIR="$APP_DIR" sh "$migration_classifier" "$current_sha" "$candidate_sha"; then
+    return 0
+  else
+    normal_status=$?
+  fi
+
+  # The normal classifier remains the first and unchanged path. Only the one
+  # audited pre-extraction pointer may consult the out-of-band bridge after
+  # that normal path has failed.
+  [ "$current_sha" = 450ed6a20959ce3f48cc06fb03afc3da1c25799a ] || return "$normal_status"
+  transition_authorizer=$APP_DIR/scripts/deploy/history-transition-authorization.sh
+  transition_output=$(APP_DIR="$APP_DIR" RELEASE_DIR="$RELEASE_DIR" sh "$transition_authorizer" --verify "$current_sha" "$candidate_sha") || fail 'History transition authorization verification failed.'
+  [ "$transition_output" = 'TRANSITION_BASELINE_SHA=4e23f9ef20b4899a17802905d729a2c12295f8d1' ] || fail 'History transition authorization returned an invalid reviewed baseline.'
+  APP_DIR="$APP_DIR" sh "$migration_classifier" 4e23f9ef20b4899a17802905d729a2c12295f8d1 "$candidate_sha"
+  HISTORY_TRANSITION_AUTHORIZED=1
+}
+finalize_history_transition_consumption() {
+  candidate_sha=$1
+  transition_authorizer=$APP_DIR/scripts/deploy/history-transition-authorization.sh
+  activation_manifest=$RELEASE_DIR/$candidate_sha.json
+  activation_pointer=$RELEASE_DIR/current.json
+  APP_DIR="$APP_DIR" RELEASE_DIR="$RELEASE_DIR" sh "$transition_authorizer" --finalize \
+    450ed6a20959ce3f48cc06fb03afc3da1c25799a "$candidate_sha" \
+    "$activation_manifest" "$activation_pointer"
+}
+consume_history_transition_authorization() {
+  [ "$HISTORY_TRANSITION_AUTHORIZED" -eq 1 ] || return 0
+  finalize_history_transition_consumption "$SHA"
+}
+
 verify_overlap_surfaces() {
   smoke_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'const base="http://api-ingress:3000";const origin="https://seeon.seniorsailab.com";const forwarded={Origin:origin,"X-Forwarded-Proto":"https"};const check=(value,message)=>{if(!value)throw new Error(message)};(async()=>{const preflight=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{...forwarded,"Access-Control-Request-Method":"GET","Access-Control-Request-Headers":"content-type,x-facility-id"}});check(preflight.ok,"cors-preflight");check(preflight.headers.get("access-control-allow-origin")===origin,"cors-origin");check(preflight.headers.get("access-control-allow-credentials")==="true","cors-credentials");check((preflight.headers.get("vary")??"").toLowerCase().includes("origin"),"cors-vary");const evil=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{Origin:"https://evil.example","X-Forwarded-Proto":"https","Access-Control-Request-Method":"GET"}});check(!evil.headers.has("access-control-allow-origin"),"evil-cors");check(process.env.SUPER_ADMIN_EMAIL&&process.env.SUPER_ADMIN_PASSWORD,"smoke-credentials");const login=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{...forwarded,"Content-Type":"application/json"},body:JSON.stringify({email:process.env.SUPER_ADMIN_EMAIL,password:process.env.SUPER_ADMIN_PASSWORD})});check(login.ok,"auth-login");const cookie=(login.headers.get("set-cookie")??"").split(";")[0];const setCookie=login.headers.get("set-cookie")??"";check(cookie.startsWith("app_session="),"auth-cookie");for(const literal of ["HttpOnly","Secure","SameSite=Strict","Path=/"])check(setCookie.includes(literal),"cookie-"+literal);const loginBody=await login.json();const me=await fetch(base+"/api/v1/auth/me",{headers:{...forwarded,Cookie:cookie}});check(me.ok,"auth-me");let facilityId=loginBody.user?.facilityId??null;if(!facilityId){const facilities=await fetch(base+"/api/v1/facilities",{headers:{...forwarded,Cookie:cookie}});check(facilities.ok,"facilities");const rows=await facilities.json();facilityId=Array.isArray(rows)?rows[0]?.id:null}check(typeof facilityId==="string"&&facilityId.length>0,"facility-scope");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),10000);try{const stream=await fetch(base+"/api/v1/dashboard/stream?facilityId="+encodeURIComponent(facilityId),{headers:{...forwarded,Cookie:cookie},signal:controller.signal});check(stream.ok,"sse-status");check((stream.headers.get("content-type")??"").includes("text/event-stream"),"sse-content-type");check(stream.headers.get("access-control-allow-origin")===origin,"sse-cors");const first=await stream.body.getReader().read();check(!first.done&&new TextDecoder().decode(first.value).includes(": connected"),"sse-open")}finally{clearTimeout(timer);controller.abort()}console.log("OVERLAP_SMOKE_OK")})().catch(error=>{console.error("OVERLAP_SMOKE_FAILED "+error.message);process.exit(1)})' 2>&1) || { printf 'Overlap CORS/SSE/auth smoke failed:\n%s\n' "$smoke_output" >&2; return 1; }
   printf '%s\n' "$smoke_output" | grep -Fx 'OVERLAP_SMOKE_OK' >/dev/null || { printf 'Overlap CORS/SSE/auth smoke returned an invalid receipt:\n%s\n' "$smoke_output" >&2; return 1; }
@@ -620,7 +669,9 @@ prune_release_manifests() {
   protected_shas=$(pointer_shas)
   for manifest in "$RELEASE_DIR"/*.json; do
     [ -f "$manifest" ] || continue
-    case "$manifest" in "$RELEASE_DIR/current.json"|"$RELEASE_DIR/previous.json"|"$RELEASE_DIR/pending.json") continue;; esac
+    case "$manifest" in
+      "$RELEASE_DIR/current.json"|"$RELEASE_DIR/previous.json"|"$RELEASE_DIR/pending.json"|"$RELEASE_DIR/history-transition-authorization-v1.json"|"$RELEASE_DIR/history-transition-authorization-v1.consumed.json") continue ;;
+    esac
     manifest_sha=${manifest##*/}; manifest_sha=${manifest_sha%.json}
     printf '%s\n' "$protected_shas" | grep -Fx "$manifest_sha" >/dev/null || { log "remove stale immutable manifest $manifest"; [ "$DRY_RUN" -eq 1 ] || rm -f "$manifest" || fail "Unable to remove stale immutable manifest: $manifest"; }
   done
@@ -638,9 +689,39 @@ $images
 EOF
 }
 
+interrupted_history_transition_sha() {
+  [ -f "$RELEASE_DIR/current.json" ] && [ -f "$RELEASE_DIR/previous.json" ] || return 0
+  interrupted_current=$(json_value "$RELEASE_DIR/current.json" sha)
+  interrupted_previous=$(json_value "$RELEASE_DIR/previous.json" sha)
+  [ "$interrupted_previous" = 450ed6a20959ce3f48cc06fb03afc3da1c25799a ] || return 0
+  [ -n "$PENDING_SHA" ] && [ "$PENDING_SHA" = "$interrupted_current" ] || return 0
+  [ -f "$RELEASE_DIR/$interrupted_current.json" ] && cmp -s "$RELEASE_DIR/current.json" "$RELEASE_DIR/$interrupted_current.json" || return 0
+  printf '%s\n' "$interrupted_current"
+}
+
 validate_existing_pointers
 load_pending_recovery
 [ -f "$RELEASE_DIR/current.json" ] && HAS_CURRENT=1
+INTERRUPTED_TRANSITION_SHA=$(interrupted_history_transition_sha)
+if [ -n "$INTERRUPTED_TRANSITION_SHA" ]; then
+  # Activation may have completed immediately before a crash or any later
+  # cleanup failure. Finalize the durable one-shot receipt under the deploy lock
+  # before rollback, another candidate, or the already-current guard can run.
+  acquire_lock
+  validate_existing_pointers
+  load_pending_recovery
+  [ "$(interrupted_history_transition_sha)" = "$INTERRUPTED_TRANSITION_SHA" ] || fail 'Interrupted history transition activation changed before receipt finalization.'
+  finalize_history_transition_consumption "$INTERRUPTED_TRANSITION_SHA"
+  if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$SHA" = "$INTERRUPTED_TRANSITION_SHA" ]; then
+    read_manifest "$RELEASE_DIR/current.json"
+    prune_release_manifests
+    prune_images
+    printf 'History transition activation recovery complete. sha=%s\n' "$INTERRUPTED_TRANSITION_SHA"
+    finalize_success 1
+    exit 0
+  fi
+  finalize_success 0
+fi
 if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ -n "$PENDING_SHA" ] && [ "$PENDING_SHA" != "$SHA" ]; then
   fail "Pending recovery record belongs to a different SHA: $PENDING_SHA"
 fi
@@ -675,8 +756,7 @@ preflight
 if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
   verify_deploy_receipts
   if [ -n "$CURRENT_RELEASE_SHA" ]; then
-    migration_classifier=$APP_DIR/scripts/deploy/verify-additive-migrations.sh
-    APP_DIR="$APP_DIR" sh "$migration_classifier" "$CURRENT_RELEASE_SHA" "$SHA"
+    verify_candidate_migrations "$CURRENT_RELEASE_SHA" "$SHA"
   fi
   live_volume_verifier=$APP_DIR/scripts/deploy/verify-live-event-media-volume.sh
   APP_DIR="$APP_DIR" ENV_FILE="$ENV_FILE" sh "$live_volume_verifier"
@@ -772,6 +852,7 @@ run compose up -d --wait --wait-timeout 120 $APP_SERVICES
 [ "$DRY_RUN" -eq 1 ] || verify_services
 write_immutable_manifest
 activate_manifest "$RELEASE_DIR/$SHA.json"
+consume_history_transition_authorization
 prune_release_manifests
 prune_images
 printf 'Deploy complete. sha=%s\n' "$SHA"

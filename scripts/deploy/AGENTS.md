@@ -79,6 +79,32 @@ imaged, or started here.
 - Deployment and pruning may remove only individually classified stale images
   and manifests. They must never run broad image/system pruning or remove/prune
   Docker volumes; current and previous manifest images stay protected.
+- The sole history exception is the one-shot v0.1.2 extraction transition in
+  `history-transition-authorization.sh`. It is considered only after the
+  unchanged normal ancestry/classifier path fails and only when canonical
+  `current.json` names legacy SHA `450ed6a20959ce3f48cc06fb03afc3da1c25799a`.
+  Never generalize it to another current, branch, tag, repository, map, tree, or
+  candidate. The out-of-band file has the fixed release-state path
+  `/opt/eldercare-fall-ai/releases/history-transition-authorization-v1.json`,
+  exact owner `1001:1001`, and exact mode `0400`; symlinks and noncanonical bytes
+  are invalid. Verification is offline and pins the tracked authoritative map,
+  mapped commit/tree, reviewed v0.1.1 anchor
+  `4e23f9ef20b4899a17802905d729a2c12295f8d1` and migration tree
+  `ba59e654fd9ddff7833eb079d79dda72ffec7335`, then runs the unchanged migration
+  classifier from that anchor to the exact manifest candidate, which must be a
+  strict descendant and never the v0.1.1 anchor itself. Activation alone permits
+  consumption: before any pruning, publish an exact activation-manifest-bound
+  receipt with file and release-directory fsync. Interrupted post-activation
+  deploys must finalize that receipt idempotently before any other action;
+  rollback or restored authorization cannot replay a consumed transition. Failed
+  pre-activation deploys retain authorization, and normal descendants never
+  inspect it.
+- The final v0.1.2 candidate cannot be known before this PR is merged. After the
+  exact release commit is fixed, an operator may render (but not infer) the
+  canonical non-secret file with:
+  `sh scripts/deploy/history-transition-authorization.sh --render <exact-v0.1.2-40-character-sha>`.
+  Install those bytes later at the fixed path as `1001:1001`/`0400`; never use a
+  symbolic branch, `latest`, v0.1.1, or a pre-merge PR head as the candidate.
 - Fail on the first resolution, checkout, build, preflight, backup, migration,
   Compose, or health error. No hidden retry, automatic rollback, alternate path,
   or secret output.
