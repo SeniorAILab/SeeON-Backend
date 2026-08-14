@@ -4,6 +4,7 @@ set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-deploy.sh
+SMOKE_SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-overlap-smoke.mjs
 JENKINSFILE=$REPO_ROOT/Jenkinsfile
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -75,9 +76,94 @@ if [ "${1:-}" = compose ]; then
     *'api-ingress wget'*)
       [ "${MOCK_INGRESS_FAIL:-0}" != 1 ] || exit 1
       printf '{"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
-    *OVERLAP_SMOKE_OK*)
-      [ "${MOCK_OVERLAP_SMOKE_FAIL:-0}" != 1 ] || { printf '%s\n' 'OVERLAP_SMOKE_FAILED synthetic'; exit 1; }
-      printf '%s\n' 'OVERLAP_SMOKE_OK' ;;
+    *'backend node --input-type=module'*)
+      program=$(mktemp)
+      trap 'rm -f "$program"' EXIT HUP INT TERM
+      cat > "$program" <<'NODE'
+class MockHeaders {
+  constructor(values = {}) {
+    this.values = new Map(
+      Object.entries(values).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+  }
+  get(key) {
+    return this.values.get(key.toLowerCase()) ?? null;
+  }
+  has(key) {
+    return this.values.has(key.toLowerCase());
+  }
+}
+const origins = (process.env.MOCK_RUNTIME_FRONT_ORIGINS ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const cookieMode = process.env.MOCK_RUNTIME_COOKIE_SAME_SITE ?? 'None';
+const response = ({ status = 200, headers = {}, json = {}, stream = false } = {}) => ({
+  status,
+  ok: status >= 200 && status < 300,
+  headers: new MockHeaders(headers),
+  json: async () => json,
+  text: async () => JSON.stringify(json),
+  body: stream
+    ? { getReader: () => ({ read: async () => ({ done: false, value: new TextEncoder().encode(': connected\\n') }) }) }
+    : null,
+});
+globalThis.fetch = async (input, init = {}) => {
+  const url = String(input);
+  const headers = init.headers ?? {};
+  const origin = headers.Origin ?? headers.origin ?? null;
+  const allowed = origin !== null && origins.includes(origin);
+  if ((init.method ?? 'GET') === 'OPTIONS') {
+    return response({
+      status: 204,
+      headers: allowed
+        ? {
+            'access-control-allow-origin': origin,
+            'access-control-allow-credentials': 'true',
+            'access-control-allow-methods': 'GET,HEAD,PUT,PATCH,POST,DELETE',
+            'access-control-allow-headers': 'content-type,x-facility-id,idempotency-key',
+            vary: 'Origin',
+          }
+        : {},
+    });
+  }
+  if (url.endsWith('/api/v1/auth/login')) {
+    return response({
+      status: allowed ? 200 : 403,
+      headers: allowed
+        ? { 'set-cookie': `app_session=fixture; HttpOnly; Secure; SameSite=${cookieMode}; Path=/` }
+        : {},
+      json: { user: { facilityId: 'facility-1' } },
+    });
+  }
+  if (url.includes('/api/v1/dashboard/stream')) {
+    return response({
+      status: allowed ? 200 : 403,
+      headers: allowed
+        ? { 'content-type': 'text/event-stream', 'access-control-allow-origin': origin }
+        : {},
+      stream: true,
+    });
+  }
+  if (url.endsWith('/api/v1/auth/me')) return response();
+  if (url.endsWith('/api/v1/facilities')) return response({ json: [{ id: 'facility-1' }] });
+  return response({ status: 404 });
+};
+NODE
+      cat >> "$program"
+      runtime_origins=${MOCK_RUNTIME_FRONT_ORIGINS-https://seeon-front.vercel.app}
+      [ "${MOCK_OVERLAP_SMOKE_FAIL:-0}" != 1 ] || runtime_origins=https://blocked.example
+      FRONT_ORIGINS="${MOCK_SMOKE_FRONT_ORIGINS-https://seeon-front.vercel.app}" \
+      AUTH_COOKIE_SAME_SITE="${MOCK_SMOKE_COOKIE_SAME_SITE-none}" \
+      SUPER_ADMIN_EMAIL=admin@example.com SUPER_ADMIN_PASSWORD=fixture \
+      MOCK_RUNTIME_FRONT_ORIGINS="$runtime_origins" \
+      MOCK_RUNTIME_COOKIE_SAME_SITE="${MOCK_RUNTIME_COOKIE_SAME_SITE-None}" \
+        node --input-type=module < "$program"
+      status=$?
+      rm -f "$program"
+      trap - EXIT HUP INT TERM
+      exit "$status"
+      ;;
     *'backend node'*)
       if [ "${MOCK_BACKEND_FAIL:-0}" = 1 ]; then printf 'status=503\nbody={"sha":"wrong","database":"down"}\n'; exit 1; fi
       printf 'status=200\nbody={"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
@@ -286,6 +372,10 @@ run_deploy() {
   MOCK_VOLUME_STATE="${MOCK_VOLUME_STATE:-ok}" MOCK_MOUNT_STATE="${MOCK_MOUNT_STATE:-ok}" MOCK_READABLE_STATE="${MOCK_READABLE_STATE:-ok}" \
   MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MOCK_HISTORY_TRANSITION="${MOCK_HISTORY_TRANSITION:-0}" \
   MOCK_FINALIZE_FAILURE="${MOCK_FINALIZE_FAILURE:-}" MOCK_PRUNE_MANIFEST_FAIL="${MOCK_PRUNE_MANIFEST_FAIL:-0}" \
+  MOCK_SMOKE_FRONT_ORIGINS="${MOCK_SMOKE_FRONT_ORIGINS:-https://seeon-front.vercel.app}" \
+  MOCK_SMOKE_COOKIE_SAME_SITE="${MOCK_SMOKE_COOKIE_SAME_SITE:-none}" \
+  MOCK_RUNTIME_FRONT_ORIGINS="${MOCK_RUNTIME_FRONT_ORIGINS:-https://seeon-front.vercel.app}" \
+  MOCK_RUNTIME_COOKIE_SAME_SITE="${MOCK_RUNTIME_COOKIE_SAME_SITE:-None}" \
   SIGNAL_DEPLOY_POINT="${SIGNAL_DEPLOY_POINT:-}" \
   MOCK_REAL_REPO="$REPO_ROOT" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
   sh "$SCRIPT" "$@" 2>&1
@@ -298,7 +388,42 @@ run_deploy_without_node() {
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) printf 'unexpected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; *) ;; esac; }
 assert_failure() { [ "$1" -ne 0 ] || { printf 'command unexpectedly passed\n' >&2; exit 1; }; }
+run_smoke_fixture() {
+  MOCK_SMOKE_FRONT_ORIGINS=$1 MOCK_SMOKE_COOKIE_SAME_SITE=$2 \
+  MOCK_RUNTIME_FRONT_ORIGINS=$3 MOCK_RUNTIME_COOKIE_SAME_SITE=$4 \
+  MOCK_LOG="$TMP/mock.log" "$TMP/bin/docker" compose exec -T backend node --input-type=module < "$SMOKE_SCRIPT" 2>&1
+}
 json_value_for_test() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
+
+[ -f "$SMOKE_SCRIPT" ] || { printf 'overlap smoke program is missing: %s\n' "$SMOKE_SCRIPT" >&2; exit 1; }
+deploy_source=$(cat "$SCRIPT")
+smoke_source=$(cat "$SMOKE_SCRIPT")
+assert_not_contains "$deploy_source" 'https://seeon.seniorsailab.com'
+assert_not_contains "$deploy_source" 'SameSite=Strict'
+assert_not_contains "$smoke_source" 'https://seeon.seniorsailab.com'
+assert_not_contains "$smoke_source" 'SameSite=Strict'
+
+output=$(run_smoke_fixture 'https://seeon-front.vercel.app' none 'https://seeon-front.vercel.app' None)
+assert_contains "$output" OVERLAP_SMOKE_OK
+output=$(run_smoke_fixture 'https://strict-front.example' strict 'https://strict-front.example' Strict)
+assert_contains "$output" OVERLAP_SMOKE_OK
+output=$(run_smoke_fixture ' https://front-a.example , https://front-b.example ' strict 'https://front-a.example,https://front-b.example' Strict)
+assert_contains "$output" OVERLAP_SMOKE_OK
+set +e
+output=$(run_smoke_fixture 'https://front-a.example,https://front-b.example' strict 'https://front-a.example' Strict); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED cors-origin'
+for invalid_origins in '' '*' 'not-a-url' 'ftp://front.example' 'https://user:pass@front.example' 'https://front.example/path' 'http://127.0.0.1:3000' 'https://front.example,https://front.example' 'https://front.example,'; do
+  set +e
+  output=$(run_smoke_fixture "$invalid_origins" strict 'https://front.example' Strict); status=$?
+  set -e
+  assert_failure "$status"; assert_contains "$output" OVERLAP_SMOKE_FAILED
+done
+set +e
+output=$(run_smoke_fixture 'https://seeon-front.vercel.app' None 'https://seeon-front.vercel.app' None); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED cookie-same-site-mode'
+
 assert_order() {
   first=$(printf '%s\n' "$1" | grep -n -F "$2" | sed -n '1s/:.*//p')
   second=$(printf '%s\n' "$1" | grep -n -F "$3" | sed -n '1s/:.*//p')
@@ -964,7 +1089,7 @@ assert_not_contains "$output" 'backend api-ingress front'
 assert_contains "$output" 'audit Prisma migration history before migrate deploy'
 assert_contains "$log" 'api-ingress wget'
 assert_not_contains "$log" 'front wget'
-assert_contains "$log" 'OVERLAP_SMOKE_OK'
+assert_contains "$log" 'backend node --input-type=module'
 assert_contains "$log" 'edge_observations'
 assert_order "$log" 'finished_at IS NULL AND rolled_back_at IS NULL' 'prisma migrate deploy'
 [ -f "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" ] || { printf '%s\n' 'post-deploy Edge receipt was not published' >&2; exit 1; }
