@@ -34,6 +34,7 @@ export function parseFrontendOrigins(rawValue) {
   for (const member of members) {
     const entry = member.trim();
     check(entry !== "*", "front-origins-wildcard");
+    check(!entry.includes("\\"), "front-origins-backslash");
     check(!entry.includes("?"), "front-origins-query");
     check(!entry.includes("#"), "front-origins-hash");
     const syntax = absoluteUrlSyntax.exec(entry);

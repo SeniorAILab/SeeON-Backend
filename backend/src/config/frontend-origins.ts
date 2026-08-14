@@ -86,6 +86,10 @@ function parseExactOrigin(
     errors.push(`${sourceKey} must not contain a wildcard origin`);
     return undefined;
   }
+  if (entry.includes('\\')) {
+    errors.push(`${sourceKey} origins must not contain backslashes: ${entry}`);
+    return undefined;
+  }
   if (entry.includes('?')) {
     errors.push(`${sourceKey} origins must not contain a query: ${entry}`);
   }

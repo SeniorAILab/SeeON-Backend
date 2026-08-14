@@ -49,6 +49,22 @@
       "name": "encoded dot traversal path",
       "value": "https://front.example/%2e"
     },
+    {
+      "name": "trailing backslash",
+      "value": "https://front.example\\"
+    },
+    {
+      "name": "backslash dot traversal",
+      "value": "https://front.example\\a\\.."
+    },
+    {
+      "name": "encoded-dot backslash traversal",
+      "value": "https://front.example\\%2e%2e\\"
+    },
+    {
+      "name": "mixed slash and backslash traversal",
+      "value": "https://front.example/a\\..\\"
+    },
     { "name": "empty query marker", "value": "https://front.example?" },
     { "name": "query", "value": "https://front.example?next=evil" },
     { "name": "empty hash marker", "value": "https://front.example#" },
