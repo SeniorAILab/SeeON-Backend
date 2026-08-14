@@ -1,0 +1,58 @@
+{
+  "validProduction": [
+    {
+      "name": "current Vercel origin",
+      "value": "https://seeon-front.vercel.app",
+      "canonical": ["https://seeon-front.vercel.app"]
+    },
+    {
+      "name": "multiple origins canonicalize scheme host and default ports",
+      "value": " HTTPS://Front-A.Example:443/ , http://Front-B.Example:80 ",
+      "canonical": ["https://front-a.example", "http://front-b.example"]
+    }
+  ],
+  "invalidProduction": [
+    { "name": "empty value", "value": "" },
+    { "name": "whitespace-only value", "value": "   " },
+    { "name": "leading empty member", "value": ",https://front.example" },
+    {
+      "name": "middle empty member",
+      "value": "https://front-a.example,,https://front-b.example"
+    },
+    { "name": "trailing empty member", "value": "https://front.example," },
+    {
+      "name": "canonical duplicate",
+      "value": "https://FRONT.example:443/,https://front.example"
+    },
+    { "name": "newline control", "value": "https://front.example\n" },
+    { "name": "tab control", "value": "https://front.example\t" },
+    { "name": "nul control", "value": "https://front.example\u0000" },
+    { "name": "DEL control", "value": "https://front.example\u007f" },
+    { "name": "bare wildcard", "value": "*" },
+    { "name": "wildcard host", "value": "https://*.front.example" },
+    { "name": "localhost", "value": "http://localhost:3000" },
+    { "name": "localhost trailing dot", "value": "http://localhost.:3000" },
+    { "name": "localhost subdomain", "value": "http://api.localhost:3000" },
+    { "name": "IPv4 loopback", "value": "http://127.0.0.2:3000" },
+    { "name": "IPv4 noncanonical loopback", "value": "http://127.1:3000" },
+    { "name": "IPv4 integer loopback", "value": "http://2130706433:3000" },
+    { "name": "IPv6 loopback", "value": "http://[0:0:0:0:0:0:0:1]:3000" },
+    {
+      "name": "IPv4-mapped IPv6 loopback",
+      "value": "http://[::ffff:127.0.0.1]:3000"
+    },
+    { "name": "userinfo", "value": "https://user:pass@front.example" },
+    { "name": "non-http protocol", "value": "ftp://front.example" },
+    { "name": "non-root path", "value": "https://front.example/api" },
+    { "name": "dot traversal path", "value": "https://front.example/a/../" },
+    {
+      "name": "encoded dot traversal path",
+      "value": "https://front.example/%2e"
+    },
+    { "name": "empty query marker", "value": "https://front.example?" },
+    { "name": "query", "value": "https://front.example?next=evil" },
+    { "name": "empty hash marker", "value": "https://front.example#" },
+    { "name": "hash", "value": "https://front.example#evil" },
+    { "name": "invalid URL", "value": "not a URL" }
+  ]
+}

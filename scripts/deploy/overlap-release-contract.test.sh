@@ -8,6 +8,7 @@ DEPLOY=$REPO_ROOT/scripts/deploy/iwinv-deploy.sh
 CI_GATE=$REPO_ROOT/scripts/release/verify-github-ci-gate.sh
 READINESS=$REPO_ROOT/scripts/deploy/iwinv-overlap-readiness.sh
 MANUAL_MEDIA_BACKUP=$REPO_ROOT/scripts/deploy/event-media-backup.sh
+CI_WORKFLOW=$REPO_ROOT/.github/workflows/ci.yml
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "missing contract fragment: $2" ;; esac; }
@@ -22,7 +23,9 @@ assert_order() {
 [ -f "$READINESS" ] || fail 'overlap release readiness gate is required'
 jenkins=$(cat "$JENKINSFILE")
 deploy=$(cat "$DEPLOY")
+ci_workflow=$(cat "$CI_WORKFLOW")
 
+assert_contains "$ci_workflow" "'scripts/deploy/iwinv-overlap-smoke*.mjs'"
 assert_contains "$jenkins" 'git@github.com:SeniorAILab/SeeON-Backend.git'
 assert_not_contains "$jenkins" 'git@github.com:SeniorAILab/eldercare-fall-ai.git'
 assert_contains "$jenkins" 'stage('\''Verify GitHub CI gate'\'')'

@@ -76,6 +76,41 @@ for test_ambient in true false; do
 done
 unset EVENT_CLIPS_ENABLED
 
+# Every production-file value consumed as an exact smoke authority is absent
+# from the Compose process environment, so ordered env files cannot be
+# overridden by the caller's shell. Credentials are included because the smoke
+# authenticates with the effective container values.
+cat > "$TMP/assert-controlled-unset.sh" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  FRONT_ORIGINS) [ "${FRONT_ORIGINS+x}" != x ] ;;
+  AUTH_COOKIE_SAME_SITE) [ "${AUTH_COOKIE_SAME_SITE+x}" != x ] ;;
+  AUTH_COOKIE_SECURE) [ "${AUTH_COOKIE_SECURE+x}" != x ] ;;
+  SUPER_ADMIN_EMAIL) [ "${SUPER_ADMIN_EMAIL+x}" != x ] ;;
+  SUPER_ADMIN_PASSWORD) [ "${SUPER_ADMIN_PASSWORD+x}" != x ] ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod 700 "$TMP/assert-controlled-unset.sh"
+for key in FRONT_ORIGINS AUTH_COOKIE_SAME_SITE AUTH_COOKIE_SECURE SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD; do
+  case "$key" in
+    FRONT_ORIGINS) FRONT_ORIGINS=ambient-override; export FRONT_ORIGINS ;;
+    AUTH_COOKIE_SAME_SITE) AUTH_COOKIE_SAME_SITE=ambient-override; export AUTH_COOKIE_SAME_SITE ;;
+    AUTH_COOKIE_SECURE) AUTH_COOKIE_SECURE=ambient-override; export AUTH_COOKIE_SECURE ;;
+    SUPER_ADMIN_EMAIL) SUPER_ADMIN_EMAIL=ambient-override; export SUPER_ADMIN_EMAIL ;;
+    SUPER_ADMIN_PASSWORD) SUPER_ADMIN_PASSWORD=ambient-override; export SUPER_ADMIN_PASSWORD ;;
+  esac
+  set +e
+  controlled_compose "$TMP/assert-controlled-unset.sh" "$key"
+  status=$?
+  set -e
+  unset "$key"
+  [ "$status" -eq 0 ] || {
+    printf 'controlled Compose leaked inherited %s\n' "$key" >&2
+    exit 1
+  }
+done
+
 # The seam returns the command producer status unchanged in sourced and direct modes.
 set +e
 controlled_compose sh -c 'exit 37'

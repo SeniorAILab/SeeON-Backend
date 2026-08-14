@@ -1,10 +1,13 @@
 #!/usr/bin/env sh
 
 # Compose gives inherited process variables precedence over ordered --env-file
-# inputs. Run every controlled production invocation without that ambient key so
-# the normal default and verified emergency override remain authoritative.
+# inputs. Remove every production-file value used as an exact deploy-smoke
+# authority, plus the two credentials consumed by that smoke, so only ordered
+# validated env files can supply them. EVENT_CLIPS_ENABLED retains its separate
+# normal/default and emergency-override ownership contract.
 controlled_compose() (
-  unset EVENT_CLIPS_ENABLED
+  unset EVENT_CLIPS_ENABLED FRONT_ORIGINS AUTH_COOKIE_SAME_SITE AUTH_COOKIE_SECURE
+  unset SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD
   "$@"
 )
 

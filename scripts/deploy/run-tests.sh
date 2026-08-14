@@ -20,6 +20,7 @@ for test_script in $(find scripts/deploy -maxdepth 1 -type f -name '*.test.sh' |
   run sh "$test_script"
 done
 run node scripts/deploy/verify-edge-provisioning-evidence.mjs --fixture
+run node --test scripts/deploy/iwinv-overlap-smoke.test.mjs
 run node --test scripts/deploy/iwinv-workflow-contract.test.mjs
 run sh scripts/release/verify-github-ci-gate.test.sh
 

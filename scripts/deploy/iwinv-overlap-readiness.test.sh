@@ -68,10 +68,13 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   exit 0
 fi
 if [ "${1:-}" = compose ]; then
-  [ "${EVENT_CLIPS_ENABLED+x}" != x ] || {
-    printf '%s\n' 'inherited EVENT_CLIPS_ENABLED reached controlled Compose' >&2
-    exit 91
-  }
+  for controlled_key in EVENT_CLIPS_ENABLED FRONT_ORIGINS AUTH_COOKIE_SAME_SITE AUTH_COOKIE_SECURE SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD; do
+    eval "controlled_present=\${$controlled_key+x}"
+    [ "$controlled_present" != x ] || {
+      printf 'inherited %s reached controlled Compose\n' "$controlled_key" >&2
+      exit 91
+    }
+  done
   case " $* " in
     *' config '*) exit "${COMPOSE_CONFIG_EXIT:-0}" ;;
     *' ps -q --status running backend '*) printf '%s\n' backend-container; exit 0 ;;
@@ -95,7 +98,10 @@ assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: 
 assert_pointer_unchanged() { [ "$(cat "$TMP/root/releases/current.json")" = sentinel ] || { printf '%s\n' 'readiness gate changed release pointer' >&2; exit 1; }; }
 
 : > "$TMP/docker.log"
-output=$(EVENT_CLIPS_ENABLED=false run_readiness --pre-build "$SHA")
+output=$(EVENT_CLIPS_ENABLED=false FRONT_ORIGINS=https://ambient.invalid \
+  AUTH_COOKIE_SAME_SITE=none AUTH_COOKIE_SECURE=false \
+  SUPER_ADMIN_EMAIL=ambient@example.invalid SUPER_ADMIN_PASSWORD=ambient-invalid \
+  run_readiness --pre-build "$SHA")
 assert_contains "$output" 'overlap pre-build readiness verified'
 assert_pointer_unchanged
 

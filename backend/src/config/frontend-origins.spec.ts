@@ -1,18 +1,50 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   FrontendOriginsValidationError,
   parseFrontendOrigins,
 } from './frontend-origins.js';
 
+type OriginConformanceVectors = {
+  readonly validProduction: readonly {
+    readonly name: string;
+    readonly value: string;
+    readonly canonical: readonly string[];
+  }[];
+  readonly invalidProduction: readonly {
+    readonly name: string;
+    readonly value: string;
+  }[];
+};
+
+const vectors = JSON.parse(
+  readFileSync(join(__dirname, 'frontend-origin-conformance.json'), 'utf8'),
+) as OriginConformanceVectors;
+
 describe('parseFrontendOrigins', () => {
-  it('canonicalizes and deduplicates the production overlap allowlist', () => {
-    expect(
-      parseFrontendOrigins({
-        NODE_ENV: 'production',
-        FRONT_ORIGINS:
-          ' https://seeon.seniorsailab.com:443/, http://49.247.204.81, https://seeon.seniorsailab.com ',
-      }),
-    ).toEqual(['https://seeon.seniorsailab.com', 'http://49.247.204.81']);
-  });
+  it.each(vectors.validProduction)(
+    'accepts shared production vector: $name',
+    ({ value, canonical }) => {
+      expect(
+        parseFrontendOrigins({
+          NODE_ENV: 'production',
+          FRONT_ORIGINS: value,
+        }),
+      ).toEqual(canonical);
+    },
+  );
+
+  it.each(vectors.invalidProduction)(
+    'rejects shared production vector: $name',
+    ({ value }) => {
+      expect(() =>
+        parseFrontendOrigins({
+          NODE_ENV: 'production',
+          FRONT_ORIGINS: value,
+        }),
+      ).toThrow(FrontendOriginsValidationError);
+    },
+  );
 
   it('uses FRONT_ORIGIN only when FRONT_ORIGINS is absent', () => {
     expect(
@@ -42,7 +74,7 @@ describe('parseFrontendOrigins', () => {
         NODE_ENV: 'production',
         FRONT_ORIGINS: 'http://localhost:3000',
       }),
-    ).toThrow('FRONT_ORIGINS must not use localhost in production');
+    ).toThrow('FRONT_ORIGINS must not use localhost or loopback in production');
   });
 
   it.each([

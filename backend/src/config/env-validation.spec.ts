@@ -1,7 +1,20 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   BackendEnvValidationError,
   validateBackendEnv,
 } from './env-validation.js';
+
+type OriginConformanceVectors = {
+  readonly invalidProduction: readonly {
+    readonly name: string;
+    readonly value: string;
+  }[];
+};
+
+const originVectors = JSON.parse(
+  readFileSync(join(__dirname, 'frontend-origin-conformance.json'), 'utf8'),
+) as OriginConformanceVectors;
 
 const VALID_PROD_ENV = {
   NODE_ENV: 'production',
@@ -53,6 +66,18 @@ describe('validateBackendEnv', () => {
 
     expect(() => validateBackendEnv(env)).toThrow(BackendEnvValidationError);
   });
+
+  it.each(originVectors.invalidProduction)(
+    'fails startup validation for shared origin vector: $name',
+    ({ value }) => {
+      expect(() =>
+        validateBackendEnv({
+          ...VALID_PROD_ENV,
+          FRONT_ORIGINS: value,
+        }),
+      ).toThrow(BackendEnvValidationError);
+    },
+  );
 
   it('accepts a complete production environment', () => {
     expect(validateBackendEnv(VALID_PROD_ENV)).toBe(VALID_PROD_ENV);
