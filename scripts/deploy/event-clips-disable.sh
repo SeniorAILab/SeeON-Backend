@@ -61,13 +61,13 @@ compose() {
     owner_only_file "$FEATURE_ENV" 'feature override'
     printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail 'feature override changed after activation'
     # shellcheck disable=SC2086 # Fixed Compose file pair.
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
   elif [ -f "$FEATURE_ENV" ]; then
     # shellcheck disable=SC2086 # Fixed Compose file pair.
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
   else
     # shellcheck disable=SC2086 # Fixed Compose file pair.
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
   fi
 }
 
@@ -100,6 +100,10 @@ need stat
 [ -d "$APP_DIR" ] || fail 'application directory is required'
 [ -f "$APP_DIR/compose.yaml" ] && [ ! -L "$APP_DIR/compose.yaml" ] || fail 'compose.yaml must be a regular non-symbolic file'
 [ -f "$APP_DIR/compose.prod.yaml" ] && [ ! -L "$APP_DIR/compose.prod.yaml" ] || fail 'compose.prod.yaml must be a regular non-symbolic file'
+CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
+[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail 'controlled Compose helper must be a regular non-symbolic file'
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$CONTROLLED_COMPOSE_HELPER"
 owner_only_file "$ENV_FILE" 'production environment file'
 owner_only_file "$RELEASE_ENV" 'release image environment'
 current_manifest=$RELEASE_DIR/current.json

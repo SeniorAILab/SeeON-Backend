@@ -26,6 +26,11 @@ fail() {
   exit 1
 }
 
+CONTROLLED_COMPOSE_HELPER=$SCRIPT_DIR/controlled-compose.sh
+[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail 'controlled Compose helper is required'
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$CONTROLLED_COMPOSE_HELPER"
+
 usage() {
   printf '%s\n' 'Usage: event-media-backup.sh [--check-inputs-only]' >&2
   exit 2
@@ -105,18 +110,18 @@ validate_inputs() {
 compose() {
   if [ -n "$COMPOSE_PROJECT_NAME" ]; then
     if [ -f "$RELEASE_ENV" ]; then
-      docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
+      controlled_compose docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
     else
-      BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
+      BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only controlled_compose docker compose \
         --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         -f compose.yaml -f compose.prod.yaml "$@"
     fi
   elif [ -f "$RELEASE_ENV" ]; then
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" \
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" \
       -f compose.yaml -f compose.prod.yaml "$@"
   else
-    BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
+    BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only controlled_compose docker compose \
       --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
   fi
 }
@@ -165,7 +170,13 @@ need tar
 need wc
 
 cd "$APP_DIR"
-compose config --services | grep -Fx db >/dev/null || fail 'compose configuration must contain the database service'
+if controlled_command_has_exact_line db compose config --services; then
+  :
+else
+  compose_services_status=$?
+  [ "$compose_services_status" -ne 1 ] || fail 'compose configuration must contain the database service'
+  exit "$compose_services_status"
+fi
 docker volume inspect "$CLIP_VOLUME_NAME" >/dev/null 2>&1 || fail 'clip volume does not exist'
 backend_container=$(compose ps -q backend)
 [ -n "$backend_container" ] || fail 'backend must be running for an event media backup'
@@ -209,8 +220,10 @@ docker run --rm --network none --read-only \
 [ -s "$STAGE/clips.tar" ] || fail 'clip archive is empty'
 tar -tf "$STAGE/clips.tar" >/dev/null || fail 'clip archive is unreadable'
 
-database_sha=$(sha256sum "$STAGE/database.dump" | awk '{print $1}')
-clip_sha=$(sha256sum "$STAGE/clips.tar" | awk '{print $1}')
+database_hash_line=$(sha256sum "$STAGE/database.dump") || fail 'unable to hash database archive'
+clip_hash_line=$(sha256sum "$STAGE/clips.tar") || fail 'unable to hash clip archive'
+database_sha=${database_hash_line%%[[:space:]]*}
+clip_sha=${clip_hash_line%%[[:space:]]*}
 cat > "$STAGE/MANIFEST" <<EOF
 FORMAT=event-media-backup-v1
 CREATED_AT=$timestamp
@@ -232,7 +245,8 @@ sync -f "$BACKUP_DESTINATION"
 mkdir -p "$RECEIPT_DIR"
 chmod 700 "$RECEIPT_DIR"
 [ ! -L "$RECEIPT_FILE" ] || fail 'backup receipt must not be a symbolic link'
-receipt_manifest_sha=$(sha256sum "$FINAL/MANIFEST" | awk '{print $1}')
+receipt_manifest_hash_line=$(sha256sum "$FINAL/MANIFEST") || fail 'unable to hash published backup manifest'
+receipt_manifest_sha=${receipt_manifest_hash_line%%[[:space:]]*}
 RECEIPT_TEMP=$RECEIPT_FILE.$$.tmp
 printf 'FORMAT=seeon-event-media-backup-receipt-v1\nBUNDLE=%s\nMANIFEST_SHA256=%s\nCOMPLETED_EPOCH=%s\n' \
   "$FINAL" "$receipt_manifest_sha" "$(date -u +%s)" > "$RECEIPT_TEMP"

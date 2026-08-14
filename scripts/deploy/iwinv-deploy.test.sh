@@ -52,6 +52,10 @@ if [ "${1:-}" = image ] && [ "${2:-}" = rm ]; then
   exit 0
 fi
 if [ "${1:-}" = compose ]; then
+  [ "${EVENT_CLIPS_ENABLED+x}" != x ] || {
+    printf '%s\n' 'inherited EVENT_CLIPS_ENABLED reached controlled Compose' >&2
+    exit 91
+  }
   case " $* " in
     *pg_dump*) [ "${MOCK_PGDUMP_FAIL:-0}" != 1 ] || exit 1; printf 'mock dump\n' ;;
     *'pg_restore --list'*) [ "${MOCK_RESTORE_LIST_FAIL:-0}" != 1 ] || exit 1 ;;
@@ -222,7 +226,6 @@ SMTP_HOST=mail
 SMTP_USER=user
 SMTP_PASSWORD=password
 EDGE_FACILITY_TOKEN=token
-EVENT_CLIPS_ENABLED=false
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -369,7 +372,7 @@ assert_preflight_mixed --ack-data-loss
 assert_preflight_mixed --dry-run
 
 # Dry-run exposes the db-only pull, protected-image pruning, retention, and preflight gates.
-output=$(run_deploy --sha "$SHA" --dry-run)
+output=$(EVENT_CLIPS_ENABLED=true run_deploy --sha "$SHA" --dry-run)
 assert_contains "$output" 'compose pull db'
 assert_not_contains "$output" 'compose pull backend'
 assert_not_contains "$output" 'compose pull front'
@@ -561,12 +564,13 @@ set -e
 assert_failure "$status"; assert_contains "$output" 'Rollback manifest SHA does not match requested SHA'
 
 # A schema-2 current pointer can roll back through a schema-1 previous pointer.
+# Inherited feature state is stripped before every controlled Compose call.
 schema_two_manifest "$CURRENT_SHA" > "$TMP/root/releases/$CURRENT_SHA.json"
 cp "$TMP/root/releases/$CURRENT_SHA.json" "$TMP/root/releases/current.json"
 manifest "$ROLLBACK_SHA" > "$TMP/root/releases/$ROLLBACK_SHA.json"
 cp "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/previous.json"
 : > "$TMP/mock.log"
-output=$(MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback)
+output=$(EVENT_CLIPS_ENABLED=true MOCK_SHA="$ROLLBACK_SHA" run_deploy --rollback)
 assert_contains "$output" 'compose up -d --wait --wait-timeout 120 backend'
 assert_not_contains "$output" 'backend front'
 cmp -s "$TMP/root/releases/$ROLLBACK_SHA.json" "$TMP/root/releases/current.json"

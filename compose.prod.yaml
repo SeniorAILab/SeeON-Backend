@@ -57,7 +57,9 @@ services:
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
       SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL: ${SUPER_ADMIN_BOOTSTRAP_SOURCE_EMAIL:-}
-      EVENT_CLIPS_ENABLED: ${EVENT_CLIPS_ENABLED:-false}
+      # Host storage stays ready; only the exact owner-only emergency override
+      # file may set this false through the guarded deploy path.
+      EVENT_CLIPS_ENABLED: ${EVENT_CLIPS_ENABLED:-true}
       MEDIA_CLIP_DIR: /app/backend/clips
       MEDIA_RETENTION_DAYS: ${MEDIA_RETENTION_DAYS:?MEDIA_RETENTION_DAYS is required in prod}
       MEDIA_MIN_FREE_BYTES: ${MEDIA_MIN_FREE_BYTES:?MEDIA_MIN_FREE_BYTES is required in prod}

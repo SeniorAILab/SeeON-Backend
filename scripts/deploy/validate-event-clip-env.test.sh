@@ -8,7 +8,6 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
 write_valid_env() {
   cat > "$1" <<'EOF'
-EVENT_CLIPS_ENABLED=false
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -42,6 +41,73 @@ assert_not_contains() {
 valid_env=$TMP/valid.env
 write_valid_env "$valid_env"
 sh "$SCRIPT" "$valid_env"
+
+# Every Docker Compose dotenv declaration form for the retired normal-operation
+# key is rejected, regardless of value or quoting. Comments remain comments.
+assert_forbidden_feature_declaration() {
+  name=$1
+  declaration=$2
+  feature_env=$TMP/feature-$name.env
+  write_valid_env "$feature_env"
+  printf '%s\n' "$declaration" >> "$feature_env"
+  set +e
+  output=$(sh "$SCRIPT" "$feature_env" 2>&1); status=$?
+  set -e
+  assert_failure "$status"
+  assert_contains "$output" 'EVENT_CLIPS_ENABLED must not appear in the production environment'
+}
+
+tab=$(printf '\t')
+assert_forbidden_feature_declaration exact 'EVENT_CLIPS_ENABLED=false'
+assert_forbidden_feature_declaration export 'export EVENT_CLIPS_ENABLED=false'
+assert_forbidden_feature_declaration leading-space '  EVENT_CLIPS_ENABLED=true'
+assert_forbidden_feature_declaration spaced-equals 'EVENT_CLIPS_ENABLED = any-value'
+assert_forbidden_feature_declaration tabs "${tab}export${tab}EVENT_CLIPS_ENABLED${tab}=${tab}\"false\""
+assert_forbidden_feature_declaration quoted "EVENT_CLIPS_ENABLED='false'"
+assert_forbidden_feature_declaration bare 'EVENT_CLIPS_ENABLED'
+assert_forbidden_feature_declaration bare-export '  export EVENT_CLIPS_ENABLED  '
+assert_forbidden_feature_declaration bare-comment 'EVENT_CLIPS_ENABLED # inherited lookup is forbidden'
+assert_forbidden_feature_declaration bare-export-comment ' export EVENT_CLIPS_ENABLED#forbidden'
+assert_forbidden_feature_declaration bare-crlf "$(printf 'EVENT_CLIPS_ENABLED\r')"
+assert_forbidden_feature_declaration bare-export-crlf "$(printf ' export EVENT_CLIPS_ENABLED \r')"
+
+duplicate_env=$TMP/feature-duplicates.env
+write_valid_env "$duplicate_env"
+printf '%s\n' ' export EVENT_CLIPS_ENABLED = "false"' 'EVENT_CLIPS_ENABLED=true' >> "$duplicate_env"
+set +e
+output=$(sh "$SCRIPT" "$duplicate_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'EVENT_CLIPS_ENABLED must not appear in the production environment'
+
+comment_env=$TMP/feature-comment.env
+write_valid_env "$comment_env"
+printf '%s\n' '  # export EVENT_CLIPS_ENABLED = false' '#EVENT_CLIPS_ENABLED=true' >> "$comment_env"
+printf '  # EVENT_CLIPS_ENABLED\r\n' >> "$comment_env"
+sh "$SCRIPT" "$comment_env"
+
+# An unreadable declaration source and an inspection-producer failure both fail
+# closed rather than being interpreted as an absent feature declaration.
+unreadable_env=$TMP/unreadable.env
+write_valid_env "$unreadable_env"
+chmod 000 "$unreadable_env"
+set +e
+output=$(sh "$SCRIPT" "$unreadable_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'production environment file permissions must be 400 or 600'
+
+mkdir "$TMP/failing-bin"
+cat > "$TMP/failing-bin/awk" <<'EOF'
+#!/usr/bin/env sh
+exit 73
+EOF
+chmod +x "$TMP/failing-bin/awk"
+set +e
+output=$(PATH="$TMP/failing-bin:$PATH" sh "$SCRIPT" "$valid_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'unable to inspect production environment keys'
 
 # Given 59-day retention, when validated, then release preparation fails closed.
 retention_env=$TMP/retention.env

@@ -45,21 +45,29 @@ positive_integer() {
   [ "$value" -gt 0 ] 2>/dev/null || fail "$name must be a positive integer"
 }
 
-boolean_value() {
-  name=$1
-  value=$2
-  case "$value" in
-    true|false) ;;
-    *) fail "$name must be true or false" ;;
-  esac
+case $0 in
+  */*) SCRIPT_DIR=${0%/*} ;;
+  *) SCRIPT_DIR=. ;;
+esac
+HOST_ENV_CHECK=$SCRIPT_DIR/check-event-clip-host-env.sh
+[ -f "$HOST_ENV_CHECK" ] && [ ! -L "$HOST_ENV_CHECK" ] || {
+  fail 'event clip host environment checker is required'
 }
+if sh "$HOST_ENV_CHECK" "$ENV_FILE"; then
+  host_env_status=0
+else
+  host_env_status=$?
+fi
+case "$host_env_status" in
+  0) ;;
+  3) fail 'EVENT_CLIPS_ENABLED must not appear in the production environment' ;;
+  *) fail 'unable to inspect production environment keys' ;;
+esac
 
-event_clips_enabled=$(env_value EVENT_CLIPS_ENABLED)
 retention_days=$(env_value MEDIA_RETENTION_DAYS)
 minimum_free_bytes=$(env_value MEDIA_MIN_FREE_BYTES)
 maximum_clip_bytes=$(env_value MEDIA_CLIP_MAX_BYTES)
 
-boolean_value EVENT_CLIPS_ENABLED "$event_clips_enabled"
 positive_integer MEDIA_RETENTION_DAYS "$retention_days"
 [ "$retention_days" -ge 60 ] || fail 'MEDIA_RETENTION_DAYS must be an integer of at least 60'
 positive_integer MEDIA_MIN_FREE_BYTES "$minimum_free_bytes"
