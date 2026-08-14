@@ -14,7 +14,7 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 . "$HELPER"
 
 cat > "$TMP/host.env" <<'EOF'
-FRONT_ORIGINS=https://seeon.seniorsailab.com,http://49.247.204.81
+FRONT_ORIGINS=https://seeon.seniorsailab.com,http://127.0.0.1
 ALERT_DASHBOARD_URL=https://seeon.seniorsailab.com
 POSTGRES_USER=fall
 POSTGRES_PASSWORD=test
@@ -37,29 +37,44 @@ EOF
 printf '%s\n' 'EVENT_CLIPS_ENABLED=false' > "$TMP/event-clips-runtime.env"
 chmod 600 "$TMP/host.env" "$TMP/event-clips-runtime.env"
 
+cat > "$TMP/render-child.sh" <<'EOF'
+#!/usr/bin/env sh
+set -eu
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$HELPER"
+controlled_compose docker compose --env-file "$HOST_ENV" "$@" \
+  --profile full -f "$REPO_ROOT/compose.yaml" -f "$REPO_ROOT/compose.prod.yaml" \
+  config --format json |
+  node -e 'let value=""; process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => process.stdout.write(String(JSON.parse(value).services.backend.environment.EVENT_CLIPS_ENABLED)));'
+EOF
+chmod 700 "$TMP/render-child.sh"
+
 render_flag() {
   inherited=$1
   shift
-  EVENT_CLIPS_ENABLED=$inherited controlled_compose \
-    docker compose --env-file "$TMP/host.env" "$@" \
-      --profile full -f "$REPO_ROOT/compose.yaml" -f "$REPO_ROOT/compose.prod.yaml" \
-      config --format json |
-    node -e 'let value=""; process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => process.stdout.write(String(JSON.parse(value).services.backend.environment.EVENT_CLIPS_ENABLED)));'
+  env EVENT_CLIPS_ENABLED="$inherited" HELPER="$HELPER" HOST_ENV="$TMP/host.env" \
+    REPO_ROOT="$REPO_ROOT" sh "$TMP/render-child.sh" "$@"
 }
 
-# Inherited state never outranks the ordered, verified dotenv inputs.
-[ "$(render_flag true --env-file "$TMP/event-clips-runtime.env")" = false ] || {
-  printf '%s\n' 'exact false emergency override lost to inherited true' >&2
-  exit 1
-}
-[ "$(render_flag false)" = true ] || {
-  printf '%s\n' 'inherited false disabled normal active render' >&2
-  exit 1
-}
-[ "$(render_flag true)" = true ] || {
-  printf '%s\n' 'inherited true altered normal active render' >&2
-  exit 1
-}
+# A real exported child environment never outranks ordered, verified dotenv
+# inputs, regardless of the test process's own ambient value.
+for test_ambient in true false; do
+  EVENT_CLIPS_ENABLED=$test_ambient
+  export EVENT_CLIPS_ENABLED
+  [ "$(render_flag true --env-file "$TMP/event-clips-runtime.env")" = false ] || {
+    printf '%s\n' 'exact false emergency override lost to inherited true' >&2
+    exit 1
+  }
+  [ "$(render_flag false)" = true ] || {
+    printf '%s\n' 'inherited false disabled normal active render' >&2
+    exit 1
+  }
+  [ "$(render_flag true)" = true ] || {
+    printf '%s\n' 'inherited true altered normal active render' >&2
+    exit 1
+  }
+done
+unset EVENT_CLIPS_ENABLED
 
 # The seam returns the command producer status unchanged in sourced and direct modes.
 set +e
@@ -77,8 +92,31 @@ set -e
   exit 1
 }
 
-grep -F '"compose:prod:up": "sh scripts/deploy/controlled-compose.sh docker compose' "$REPO_ROOT/package.json" >/dev/null || {
-  printf '%s\n' 'production package Compose command bypasses the controlled seam' >&2
+cat > "$TMP/output-then-fail.sh" <<'EOF'
+#!/usr/bin/env sh
+printf '%s\n' db
+exit 42
+EOF
+chmod 700 "$TMP/output-then-fail.sh"
+set +e
+controlled_command_has_exact_line db "$TMP/output-then-fail.sh"
+producer_status=$?
+set -e
+[ "$producer_status" -eq 42 ] || {
+  printf 'captured command failure returned %s, expected 42\n' "$producer_status" >&2
+  exit 1
+}
+set +e
+controlled_command_has_exact_line db sh -c 'printf "%s\n" backend'
+malformed_status=$?
+set -e
+[ "$malformed_status" -eq 1 ] || {
+  printf 'malformed controlled output returned %s, expected 1\n' "$malformed_status" >&2
+  exit 1
+}
+
+grep -F 'controlled_command_has_exact_line db compose config --services' "$REPO_ROOT/scripts/deploy/event-media-backup.sh" >/dev/null || {
+  printf '%s\n' 'event-media backup bypasses explicit Compose service capture' >&2
   exit 1
 }
 

@@ -92,12 +92,11 @@ CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
 [ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail "Missing controlled Compose helper: $CONTROLLED_COMPOSE_HELPER"
 # shellcheck source=scripts/deploy/controlled-compose.sh
 . "$CONTROLLED_COMPOSE_HELPER"
-if [ -e "$FEATURE_ENV" ] || [ -L "$FEATURE_ENV" ]; then
-  [ ! -L "$FEATURE_ENV" ] && [ -f "$FEATURE_ENV" ] || fail "Invalid event clip feature override: $FEATURE_ENV"
-  printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
-  feature_mode=$(stat -c '%a' "$FEATURE_ENV" 2>/dev/null || stat -f '%Lp' "$FEATURE_ENV") || fail "Unable to inspect event clip feature override: $FEATURE_ENV"
-  case "$feature_mode" in 400|600) ;; *) fail "Invalid event clip feature override permissions: $FEATURE_ENV" ;; esac
-fi
+EVENT_CLIP_RUNTIME_HELPER=$APP_DIR/scripts/deploy/event-clip-runtime-env.sh
+[ -f "$EVENT_CLIP_RUNTIME_HELPER" ] && [ ! -L "$EVENT_CLIP_RUNTIME_HELPER" ] || fail "Missing event clip runtime environment helper: $EVENT_CLIP_RUNTIME_HELPER"
+# shellcheck source=scripts/deploy/event-clip-runtime-env.sh
+. "$EVENT_CLIP_RUNTIME_HELPER"
+validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 cd "$APP_DIR"
 
 compose() {

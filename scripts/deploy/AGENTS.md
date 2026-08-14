@@ -68,6 +68,9 @@ imaged, or started here.
 - Every controlled production Compose invocation uses `controlled-compose.sh`,
   which removes inherited `EVENT_CLIPS_ENABLED` before Compose interpolation so
   only ordered, validated env files can select the normal or emergency state.
+  Direct `compose:prod:up` use goes through `production-compose.sh`; that owned
+  entrypoint validates the normal host env and the fixed optional owner-only
+  emergency override before adding either file to Compose.
 - Event-media bundle backup is not an iwinv deployment prerequisite. Jenkins,
   readiness, and deploy must not call `event-media-backup.sh`, require an
   off-host destination, or consume its receipt. The script remains optional,

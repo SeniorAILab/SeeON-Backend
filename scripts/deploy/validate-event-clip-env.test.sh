@@ -64,6 +64,12 @@ assert_forbidden_feature_declaration leading-space '  EVENT_CLIPS_ENABLED=true'
 assert_forbidden_feature_declaration spaced-equals 'EVENT_CLIPS_ENABLED = any-value'
 assert_forbidden_feature_declaration tabs "${tab}export${tab}EVENT_CLIPS_ENABLED${tab}=${tab}\"false\""
 assert_forbidden_feature_declaration quoted "EVENT_CLIPS_ENABLED='false'"
+assert_forbidden_feature_declaration bare 'EVENT_CLIPS_ENABLED'
+assert_forbidden_feature_declaration bare-export '  export EVENT_CLIPS_ENABLED  '
+assert_forbidden_feature_declaration bare-comment 'EVENT_CLIPS_ENABLED # inherited lookup is forbidden'
+assert_forbidden_feature_declaration bare-export-comment ' export EVENT_CLIPS_ENABLED#forbidden'
+assert_forbidden_feature_declaration bare-crlf "$(printf 'EVENT_CLIPS_ENABLED\r')"
+assert_forbidden_feature_declaration bare-export-crlf "$(printf ' export EVENT_CLIPS_ENABLED \r')"
 
 duplicate_env=$TMP/feature-duplicates.env
 write_valid_env "$duplicate_env"
@@ -77,6 +83,7 @@ assert_contains "$output" 'EVENT_CLIPS_ENABLED must not appear in the production
 comment_env=$TMP/feature-comment.env
 write_valid_env "$comment_env"
 printf '%s\n' '  # export EVENT_CLIPS_ENABLED = false' '#EVENT_CLIPS_ENABLED=true' >> "$comment_env"
+printf '  # EVENT_CLIPS_ENABLED\r\n' >> "$comment_env"
 sh "$SCRIPT" "$comment_env"
 
 # An unreadable declaration source and an inspection-producer failure both fail

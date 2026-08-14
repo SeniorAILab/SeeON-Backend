@@ -8,8 +8,15 @@ ENV_FILE=$1
 # Exit 3 only for a Compose-supported declaration. Other nonzero statuses are
 # producer/read failures and must remain distinguishable to the caller.
 awk '
-  /^[[:space:]]*(export[[:space:]]+)?EVENT_CLIPS_ENABLED[[:space:]]*=/ {
-    found = 1
+  {
+    line = $0
+    sub(/\r$/, "", line)
+    if (match(line, /^[[:blank:]]*(export[[:blank:]]+)?EVENT_CLIPS_ENABLED[[:blank:]]*/)) {
+      remainder = substr(line, RLENGTH + 1)
+      if (remainder == "" || substr(remainder, 1, 1) == "=" || substr(remainder, 1, 1) == "#") {
+        found = 1
+      }
+    }
   }
   END {
     if (found) exit 3
