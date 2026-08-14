@@ -37,6 +37,9 @@ jobs:
             backend:
               - 'backend/**'
               - 'scripts/backend-guard/**'
+              # The production smoke enforces backend CORS/auth behavior and
+              # shares frontend-origin conformance vectors with backend Jest.
+              - 'scripts/deploy/iwinv-overlap-smoke*.mjs'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'

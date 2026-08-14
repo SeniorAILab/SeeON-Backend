@@ -21,6 +21,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
 LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
+SMOKE_EXPECTED_FRONT_ORIGINS='' SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE='' SMOKE_EXPECTED_AUTH_COOKIE_SECURE=''
 
 usage() {
   printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
@@ -87,7 +88,9 @@ need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need he
 [ -d "$APP_DIR" ] || fail "Missing deployment directory: $APP_DIR"
 [ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
 [ -f "$APP_DIR/compose.prod.yaml" ] || fail "Missing compose.prod.yaml in $APP_DIR"
-[ -f "$ENV_FILE" ] || fail "Missing production environment file: $ENV_FILE"
+[ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || fail "Production environment must be a regular non-symbolic file: $ENV_FILE"
+env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE") || fail 'Unable to inspect production environment permissions.'
+case "$env_mode" in 400|600) ;; *) fail 'Production environment permissions must be 400 or 600.' ;; esac
 CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
 [ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail "Missing controlled Compose helper: $CONTROLLED_COMPOSE_HELPER"
 # shellcheck source=scripts/deploy/controlled-compose.sh
@@ -98,6 +101,24 @@ EVENT_CLIP_RUNTIME_HELPER=$APP_DIR/scripts/deploy/event-clip-runtime-env.sh
 . "$EVENT_CLIP_RUNTIME_HELPER"
 validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 cd "$APP_DIR"
+
+production_env_value() {
+  env_key=$1
+  env_result=$(awk -v key="$env_key" '
+    index($0, key "=") == 1 {
+      count += 1
+      value = substr($0, length(key) + 2)
+    }
+    END { if (count != 1 || value == "") exit 2; print value }
+  ' "$ENV_FILE") || fail "$env_key must appear exactly once with a nonempty value in the production environment."
+  printf '%s\n' "$env_result"
+}
+load_smoke_authorities() {
+  SMOKE_EXPECTED_FRONT_ORIGINS=$(production_env_value FRONT_ORIGINS)
+  SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE=$(production_env_value AUTH_COOKIE_SAME_SITE)
+  SMOKE_EXPECTED_AUTH_COOKIE_SECURE=$(production_env_value AUTH_COOKIE_SECURE)
+}
+load_smoke_authorities
 
 compose() {
   # shellcheck disable=SC2086 # Fixed pair of Compose file arguments.
@@ -526,8 +547,21 @@ consume_history_transition_authorization() {
 }
 
 verify_overlap_surfaces() {
-  smoke_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'const base="http://api-ingress:3000";const origin="https://seeon.seniorsailab.com";const forwarded={Origin:origin,"X-Forwarded-Proto":"https"};const check=(value,message)=>{if(!value)throw new Error(message)};(async()=>{const preflight=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{...forwarded,"Access-Control-Request-Method":"GET","Access-Control-Request-Headers":"content-type,x-facility-id"}});check(preflight.ok,"cors-preflight");check(preflight.headers.get("access-control-allow-origin")===origin,"cors-origin");check(preflight.headers.get("access-control-allow-credentials")==="true","cors-credentials");check((preflight.headers.get("vary")??"").toLowerCase().includes("origin"),"cors-vary");const evil=await fetch(base+"/api/v1/auth/me",{method:"OPTIONS",headers:{Origin:"https://evil.example","X-Forwarded-Proto":"https","Access-Control-Request-Method":"GET"}});check(!evil.headers.has("access-control-allow-origin"),"evil-cors");check(process.env.SUPER_ADMIN_EMAIL&&process.env.SUPER_ADMIN_PASSWORD,"smoke-credentials");const login=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{...forwarded,"Content-Type":"application/json"},body:JSON.stringify({email:process.env.SUPER_ADMIN_EMAIL,password:process.env.SUPER_ADMIN_PASSWORD})});check(login.ok,"auth-login");const cookie=(login.headers.get("set-cookie")??"").split(";")[0];const setCookie=login.headers.get("set-cookie")??"";check(cookie.startsWith("app_session="),"auth-cookie");for(const literal of ["HttpOnly","Secure","SameSite=Strict","Path=/"])check(setCookie.includes(literal),"cookie-"+literal);const loginBody=await login.json();const me=await fetch(base+"/api/v1/auth/me",{headers:{...forwarded,Cookie:cookie}});check(me.ok,"auth-me");let facilityId=loginBody.user?.facilityId??null;if(!facilityId){const facilities=await fetch(base+"/api/v1/facilities",{headers:{...forwarded,Cookie:cookie}});check(facilities.ok,"facilities");const rows=await facilities.json();facilityId=Array.isArray(rows)?rows[0]?.id:null}check(typeof facilityId==="string"&&facilityId.length>0,"facility-scope");const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),10000);try{const stream=await fetch(base+"/api/v1/dashboard/stream?facilityId="+encodeURIComponent(facilityId),{headers:{...forwarded,Cookie:cookie},signal:controller.signal});check(stream.ok,"sse-status");check((stream.headers.get("content-type")??"").includes("text/event-stream"),"sse-content-type");check(stream.headers.get("access-control-allow-origin")===origin,"sse-cors");const first=await stream.body.getReader().read();check(!first.done&&new TextDecoder().decode(first.value).includes(": connected"),"sse-open")}finally{clearTimeout(timer);controller.abort()}console.log("OVERLAP_SMOKE_OK")})().catch(error=>{console.error("OVERLAP_SMOKE_FAILED "+error.message);process.exit(1)})' 2>&1) || { printf 'Overlap CORS/SSE/auth smoke failed:\n%s\n' "$smoke_output" >&2; return 1; }
-  printf '%s\n' "$smoke_output" | grep -Fx 'OVERLAP_SMOKE_OK' >/dev/null || { printf 'Overlap CORS/SSE/auth smoke returned an invalid receipt:\n%s\n' "$smoke_output" >&2; return 1; }
+  smoke_program=$APP_DIR/scripts/deploy/iwinv-overlap-smoke.mjs
+  [ -f "$smoke_program" ] && [ ! -L "$smoke_program" ] || fail 'Overlap smoke program must be a regular non-symbolic file.'
+  smoke_output=$(compose exec -T \
+    -e EXPECTED_SHA="$SHA" \
+    -e EXPECTED_FRONT_ORIGINS="$SMOKE_EXPECTED_FRONT_ORIGINS" \
+    -e EXPECTED_AUTH_COOKIE_SAME_SITE="$SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE" \
+    -e EXPECTED_AUTH_COOKIE_SECURE="$SMOKE_EXPECTED_AUTH_COOKIE_SECURE" \
+    backend node --input-type=module < "$smoke_program" 2>&1) || {
+    printf 'Overlap CORS/SSE/auth smoke failed:\n%s\n' "$smoke_output" >&2
+    return 1
+  }
+  printf '%s\n' "$smoke_output" | grep -Fx 'OVERLAP_SMOKE_OK' >/dev/null || {
+    printf 'Overlap CORS/SSE/auth smoke returned an invalid receipt:\n%s\n' "$smoke_output" >&2
+    return 1
+  }
 }
 edge_heartbeat_epoch() {
   compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT COALESCE(FLOOR(EXTRACT(EPOCH FROM MAX(observed_at)))::bigint, 0) FROM (SELECT last_heartbeat_at AS observed_at FROM edge_installations UNION ALL SELECT last_seen_at FROM cameras) edge_observations;"'

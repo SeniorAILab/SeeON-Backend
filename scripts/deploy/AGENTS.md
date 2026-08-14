@@ -68,6 +68,10 @@ imaged, or started here.
 - Every controlled production Compose invocation uses `controlled-compose.sh`,
   which removes inherited `EVENT_CLIPS_ENABLED` before Compose interpolation so
   only ordered, validated env files can select the normal or emergency state.
+  It also removes the CORS/cookie authorities and super-admin credentials used
+  by the overlap smoke (`FRONT_ORIGINS`, `AUTH_COOKIE_SAME_SITE`,
+  `AUTH_COOKIE_SECURE`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`), preventing
+  ambient shell values from outranking the owner-only production env file.
   Direct `compose:prod:up` use goes through `production-compose.sh`; that owned
   entrypoint validates the normal host env and the fixed optional owner-only
   emergency override before adding either file to Compose.

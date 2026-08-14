@@ -4,6 +4,7 @@ set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-deploy.sh
+SMOKE_SCRIPT=$REPO_ROOT/scripts/deploy/iwinv-overlap-smoke.mjs
 JENKINSFILE=$REPO_ROOT/Jenkinsfile
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -52,10 +53,13 @@ if [ "${1:-}" = image ] && [ "${2:-}" = rm ]; then
   exit 0
 fi
 if [ "${1:-}" = compose ]; then
-  [ "${EVENT_CLIPS_ENABLED+x}" != x ] || {
-    printf '%s\n' 'inherited EVENT_CLIPS_ENABLED reached controlled Compose' >&2
-    exit 91
-  }
+  for controlled_key in EVENT_CLIPS_ENABLED FRONT_ORIGINS AUTH_COOKIE_SAME_SITE AUTH_COOKIE_SECURE SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD; do
+    eval "controlled_present=\${$controlled_key+x}"
+    [ "$controlled_present" != x ] || {
+      printf 'inherited %s reached controlled Compose\n' "$controlled_key" >&2
+      exit 91
+    }
+  done
   case " $* " in
     *pg_dump*) [ "${MOCK_PGDUMP_FAIL:-0}" != 1 ] || exit 1; printf 'mock dump\n' ;;
     *'pg_restore --list'*) [ "${MOCK_RESTORE_LIST_FAIL:-0}" != 1 ] || exit 1 ;;
@@ -75,9 +79,129 @@ if [ "${1:-}" = compose ]; then
     *'api-ingress wget'*)
       [ "${MOCK_INGRESS_FAIL:-0}" != 1 ] || exit 1
       printf '{"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
-    *OVERLAP_SMOKE_OK*)
-      [ "${MOCK_OVERLAP_SMOKE_FAIL:-0}" != 1 ] || { printf '%s\n' 'OVERLAP_SMOKE_FAILED synthetic'; exit 1; }
-      printf '%s\n' 'OVERLAP_SMOKE_OK' ;;
+    *'backend node --input-type=module'*)
+      program=$(mktemp)
+      trap 'rm -f "$program"' EXIT HUP INT TERM
+      cat > "$program" <<'NODE'
+class MockHeaders {
+  constructor(values = {}) {
+    this.values = new Map(
+      Object.entries(values).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+  }
+  get(key) {
+    return this.values.get(key.toLowerCase()) ?? null;
+  }
+  has(key) {
+    return this.values.has(key.toLowerCase());
+  }
+  getSetCookie() {
+    const value = this.get('set-cookie');
+    return value === null ? [] : [value];
+  }
+}
+const origins = (process.env.MOCK_RUNTIME_FRONT_ORIGINS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const response = ({ status = 200, headers = {}, json = {}, stream = false } = {}) => ({
+  status,
+  ok: status >= 200 && status < 300,
+  headers: new MockHeaders(headers),
+  json: async () => json,
+  text: async () => JSON.stringify(json),
+  body: stream
+    ? { getReader: () => ({ read: async () => ({ done: false, value: new TextEncoder().encode(": connected\\n") }) }) }
+    : null,
+});
+globalThis.fetch = async (input, init = {}) => {
+  const url = String(input);
+  const headers = init.headers ?? {};
+  const origin = headers.Origin ?? headers.origin ?? null;
+  const allowed = origin !== null && origins.includes(origin);
+  if ((init.method ?? "GET") === "OPTIONS") {
+    const exposeCors = allowed || process.env.MOCK_REJECTED_PREFLIGHT_LEAK === "1";
+    return response({
+      status: 204,
+      headers: exposeCors
+        ? {
+            "access-control-allow-origin": origin,
+            "access-control-allow-credentials": "true",
+            "access-control-allow-methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
+            "access-control-allow-headers": "content-type,x-facility-id,idempotency-key",
+            vary: process.env.MOCK_RESPONSE_VARY ?? "Accept-Encoding, Origin",
+          }
+        : {},
+    });
+  }
+  if (url.endsWith("/api/v1/auth/login")) {
+    const permitLogin = allowed || process.env.MOCK_REJECTED_LOGIN_LEAK === "1";
+    return response({
+      status: permitLogin ? 200 : 403,
+      headers: permitLogin
+        ? { "set-cookie": process.env.MOCK_RESPONSE_SET_COOKIE }
+        : {},
+      json: { user: { facilityId: "facility-1" } },
+    });
+  }
+  if (url.includes("/api/v1/dashboard/stream")) {
+    return response({
+      status: allowed ? 200 : 403,
+      headers: allowed
+        ? { "content-type": "text/event-stream; charset=utf-8", "access-control-allow-origin": origin }
+        : {},
+      stream: true,
+    });
+  }
+  if (url.endsWith("/api/v1/auth/me")) return response();
+  if (url.endsWith("/api/v1/facilities")) return response({ json: [{ id: "facility-1" }] });
+  return response({ status: 404 });
+};
+NODE
+      cat >> "$program"
+      exec_env_value() {
+        target=$1
+        expect_value=0
+        for argument do
+          if [ "$expect_value" -eq 1 ]; then
+            case "$argument" in "$target="*) printf '%s\n' "${argument#*=}"; return 0 ;; esac
+            expect_value=0
+          fi
+          [ "$argument" = -e ] && expect_value=1
+        done
+        return 1
+      }
+      expected_front=$(exec_env_value EXPECTED_FRONT_ORIGINS "$@") || exit 92
+      expected_same_site=$(exec_env_value EXPECTED_AUTH_COOKIE_SAME_SITE "$@") || exit 92
+      expected_secure=$(exec_env_value EXPECTED_AUTH_COOKIE_SECURE "$@") || exit 92
+      runtime_front=${MOCK_STALE_RUNTIME_FRONT_ORIGINS:-$expected_front}
+      runtime_same_site=${MOCK_STALE_RUNTIME_COOKIE_SAME_SITE:-$expected_same_site}
+      runtime_secure=${MOCK_STALE_RUNTIME_COOKIE_SECURE:-$expected_secure}
+      [ "${MOCK_OVERLAP_SMOKE_FAIL:-0}" != 1 ] || runtime_front=https://blocked.example
+      case "$runtime_same_site" in
+        strict) cookie_same_site=Strict ;;
+        none) cookie_same_site=None ;;
+        *) cookie_same_site=$runtime_same_site ;;
+      esac
+      case "$runtime_secure" in true|auto) secure_attribute='; Secure' ;; *) secure_attribute= ;; esac
+      default_cookie="app_session=fixture; HttpOnly${secure_attribute}; SameSite=${cookie_same_site}; Path=/"
+      FRONT_ORIGINS="$runtime_front" \
+      AUTH_COOKIE_SAME_SITE="$runtime_same_site" AUTH_COOKIE_SECURE="$runtime_secure" \
+      EXPECTED_FRONT_ORIGINS="$expected_front" \
+      EXPECTED_AUTH_COOKIE_SAME_SITE="$expected_same_site" \
+      EXPECTED_AUTH_COOKIE_SECURE="$expected_secure" \
+      SUPER_ADMIN_EMAIL=admin@example.com SUPER_ADMIN_PASSWORD=fixture \
+      MOCK_RUNTIME_FRONT_ORIGINS="$runtime_front" \
+      MOCK_RESPONSE_SET_COOKIE="${MOCK_RESPONSE_SET_COOKIE:-$default_cookie}" \
+      MOCK_RESPONSE_VARY="${MOCK_RESPONSE_VARY:-Accept-Encoding, Origin}" \
+      MOCK_REJECTED_PREFLIGHT_LEAK="${MOCK_REJECTED_PREFLIGHT_LEAK-0}" \
+      MOCK_REJECTED_LOGIN_LEAK="${MOCK_REJECTED_LOGIN_LEAK-0}" \
+        node --input-type=module < "$program"
+      status=$?
+      rm -f "$program"
+      trap - EXIT HUP INT TERM
+      exit "$status"
+      ;;
     *'backend node'*)
       if [ "${MOCK_BACKEND_FAIL:-0}" = 1 ]; then printf 'status=503\nbody={"sha":"wrong","database":"down"}\n'; exit 1; fi
       printf 'status=200\nbody={"sha":"%s","database":"ok"}\n' "$MOCK_SHA" ;;
@@ -230,6 +354,7 @@ MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
 EOF
+chmod 600 "$TMP/host.env"
 
 SHA=0123456789abcdef0123456789abcdef01234567
 ROLLBACK_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -280,12 +405,17 @@ run_deploy() {
     previous=$argument
   done
   if [ -n "$candidate" ] && [ "${SKIP_RECEIPT_SETUP:-0}" != 1 ]; then prepare_overlap_receipts "$candidate"; fi
-  PATH="$TMP/bin:$PATH" APP_ROOT="$TMP/root" APP_DIR="$REPO_ROOT" ENV_FILE="$TMP/host.env" \
+  PATH="$TMP/bin:$PATH" APP_ROOT="$TMP/root" APP_DIR="$REPO_ROOT" ENV_FILE="${TEST_ENV_FILE:-$TMP/host.env}" \
   MEMORY_MIN_MB="${TEST_MEMORY_MIN_MB:-1}" DISK_MIN_MB="${TEST_DISK_MIN_MB:-1}" MOCK_SHA="${MOCK_SHA:-$SHA}" MOCK_LOG="$TMP/mock.log" \
   MOCK_MISSING_IMAGE="${MOCK_MISSING_IMAGE:-}" MOCK_EDGE_AFTER_EPOCH="${MOCK_EDGE_AFTER_EPOCH:-101}" \
   MOCK_VOLUME_STATE="${MOCK_VOLUME_STATE:-ok}" MOCK_MOUNT_STATE="${MOCK_MOUNT_STATE:-ok}" MOCK_READABLE_STATE="${MOCK_READABLE_STATE:-ok}" \
   MOCK_DESTRUCTIVE_MIGRATION="${MOCK_DESTRUCTIVE_MIGRATION:-0}" MOCK_HISTORY_TRANSITION="${MOCK_HISTORY_TRANSITION:-0}" \
   MOCK_FINALIZE_FAILURE="${MOCK_FINALIZE_FAILURE:-}" MOCK_PRUNE_MANIFEST_FAIL="${MOCK_PRUNE_MANIFEST_FAIL:-0}" \
+  MOCK_STALE_RUNTIME_FRONT_ORIGINS="${MOCK_STALE_RUNTIME_FRONT_ORIGINS-}" \
+  MOCK_STALE_RUNTIME_COOKIE_SAME_SITE="${MOCK_STALE_RUNTIME_COOKIE_SAME_SITE-}" \
+  MOCK_STALE_RUNTIME_COOKIE_SECURE="${MOCK_STALE_RUNTIME_COOKIE_SECURE-}" \
+  MOCK_RESPONSE_SET_COOKIE="${MOCK_RESPONSE_SET_COOKIE-}" MOCK_RESPONSE_VARY="${MOCK_RESPONSE_VARY-}" \
+  MOCK_REJECTED_PREFLIGHT_LEAK="${MOCK_REJECTED_PREFLIGHT_LEAK:-0}" MOCK_REJECTED_LOGIN_LEAK="${MOCK_REJECTED_LOGIN_LEAK:-0}" \
   SIGNAL_DEPLOY_POINT="${SIGNAL_DEPLOY_POINT:-}" \
   MOCK_REAL_REPO="$REPO_ROOT" MEDIA_RECEIPT="$TMP/intentionally-absent-media-receipt" \
   sh "$SCRIPT" "$@" 2>&1
@@ -298,7 +428,66 @@ run_deploy_without_node() {
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) printf 'unexpected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; *) ;; esac; }
 assert_failure() { [ "$1" -ne 0 ] || { printf 'command unexpectedly passed\n' >&2; exit 1; }; }
+run_smoke_fixture() {
+  fixture_front=$1
+  fixture_same_site=$2
+  fixture_secure=$3
+  MOCK_LOG="$TMP/mock.log" "$TMP/bin/docker" compose exec -T \
+    -e EXPECTED_FRONT_ORIGINS="$fixture_front" \
+    -e EXPECTED_AUTH_COOKIE_SAME_SITE="$fixture_same_site" \
+    -e EXPECTED_AUTH_COOKIE_SECURE="$fixture_secure" \
+    backend node --input-type=module < "$SMOKE_SCRIPT" 2>&1
+}
 json_value_for_test() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
+
+[ -f "$SMOKE_SCRIPT" ] || { printf 'overlap smoke program is missing: %s\n' "$SMOKE_SCRIPT" >&2; exit 1; }
+deploy_source=$(cat "$SCRIPT")
+smoke_source=$(cat "$SMOKE_SCRIPT")
+assert_not_contains "$deploy_source" 'https://seeon.seniorsailab.com'
+assert_not_contains "$deploy_source" 'SameSite=Strict'
+assert_not_contains "$smoke_source" 'https://seeon.seniorsailab.com'
+assert_not_contains "$smoke_source" 'SameSite=Strict'
+
+output=$(run_smoke_fixture 'https://seeon-front.vercel.app' none true)
+assert_contains "$output" OVERLAP_SMOKE_OK
+output=$(run_smoke_fixture 'https://strict-front.example' strict auto)
+assert_contains "$output" OVERLAP_SMOKE_OK
+output=$(run_smoke_fixture ' https://front-a.example , https://front-b.example ' strict auto)
+assert_contains "$output" OVERLAP_SMOKE_OK
+set +e
+output=$(MOCK_STALE_RUNTIME_FRONT_ORIGINS=https://front-a.example run_smoke_fixture 'https://front-a.example,https://front-b.example' strict auto); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED runtime-front-origins-drift'
+set +e
+output=$(MOCK_STALE_RUNTIME_COOKIE_SAME_SITE=none run_smoke_fixture 'https://strict-front.example' strict auto); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED runtime-cookie-same-site-drift'
+set +e
+output=$(MOCK_STALE_RUNTIME_COOKIE_SECURE=false run_smoke_fixture 'https://strict-front.example' strict auto); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED runtime-cookie-secure-drift'
+for invalid_origins in '' '*' 'not-a-url' 'ftp://front.example' 'https://user:pass@front.example' 'https://front.example/path' 'http://127.0.0.1:3000' 'https://front.example,https://front.example' 'https://front.example,'; do
+  set +e
+  output=$(run_smoke_fixture "$invalid_origins" strict auto); status=$?
+  set -e
+  assert_failure "$status"; assert_contains "$output" OVERLAP_SMOKE_FAILED
+done
+set +e
+output=$(run_smoke_fixture 'https://seeon-front.vercel.app' None true); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'OVERLAP_SMOKE_FAILED cookie-same-site-mode'
+for response_failure in vary-substring duplicate-samesite rejected-preflight rejected-login; do
+  set +e
+  case "$response_failure" in
+    vary-substring) output=$(MOCK_RESPONSE_VARY=X-Origin-Policy run_smoke_fixture 'https://strict-front.example' strict auto); status=$? ;;
+    duplicate-samesite) output=$(MOCK_RESPONSE_SET_COOKIE='app_session=x; HttpOnly; Secure; SameSite=Strict; SameSite=None; Path=/' run_smoke_fixture 'https://strict-front.example' strict auto); status=$? ;;
+    rejected-preflight) output=$(MOCK_REJECTED_PREFLIGHT_LEAK=1 run_smoke_fixture 'https://strict-front.example' strict auto); status=$? ;;
+    rejected-login) output=$(MOCK_REJECTED_LOGIN_LEAK=1 run_smoke_fixture 'https://strict-front.example' strict auto); status=$? ;;
+  esac
+  set -e
+  assert_failure "$status"; assert_contains "$output" OVERLAP_SMOKE_FAILED
+done
+
 assert_order() {
   first=$(printf '%s\n' "$1" | grep -n -F "$2" | sed -n '1s/:.*//p')
   second=$(printf '%s\n' "$1" | grep -n -F "$3" | sed -n '1s/:.*//p')
@@ -381,6 +570,17 @@ assert_contains "$output" 'would create and validate pre-migration dump'
 assert_contains "$output" 'would sync app role, audit Prisma migration history, run migrate deploy, and bootstrap super-admin'
 assert_not_contains "$output" "docker image rm eldercare-backend:$SHA"
 assert_contains "$output" "docker image rm eldercare-front:$SHA"
+# Smoke expectations come only from a regular owner-only host file and every
+# authority must have exactly one nonempty declaration before Docker runs.
+cp "$TMP/host.env" "$TMP/host-duplicate.env"
+printf '%s\n' 'FRONT_ORIGINS=https://duplicate.invalid' >> "$TMP/host-duplicate.env"
+chmod 600 "$TMP/host-duplicate.env"
+: > "$TMP/mock.log"
+set +e
+output=$(TEST_ENV_FILE="$TMP/host-duplicate.env" run_deploy --sha "$SHA" --dry-run); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'FRONT_ORIGINS must appear exactly once'
+[ ! -s "$TMP/mock.log" ] || { printf '%s\n' 'duplicate smoke authority reached Docker' >&2; exit 1; }
 # Normal deploy rejects a preexisting target manifest or current SHA before Docker, backups, or database work.
 manifest "$SHA" > "$TMP/root/releases/$SHA.json"
 : > "$TMP/mock.log"
@@ -954,7 +1154,10 @@ assert_failure "$status"; assert_contains "$output" 'Release manifest references
 
 # Existing-release deployments stop writers and validate the dump before DB pull/up.
 : > "$TMP/mock.log"
-output=$(run_deploy --sha "$SHA")
+output=$(FRONT_ORIGINS=https://ambient.invalid \
+  AUTH_COOKIE_SAME_SITE=none AUTH_COOKIE_SECURE=false \
+  SUPER_ADMIN_EMAIL=ambient@example.invalid SUPER_ADMIN_PASSWORD=ambient-invalid \
+  run_deploy --sha "$SHA")
 log=$(sed -n '1,320p' "$TMP/mock.log")
 assert_order "$log" 'stop api-ingress backend' 'pg_dump'
 assert_order "$log" 'pg_dump' 'pull db'
@@ -964,7 +1167,7 @@ assert_not_contains "$output" 'backend api-ingress front'
 assert_contains "$output" 'audit Prisma migration history before migrate deploy'
 assert_contains "$log" 'api-ingress wget'
 assert_not_contains "$log" 'front wget'
-assert_contains "$log" 'OVERLAP_SMOKE_OK'
+assert_contains "$log" 'backend node --input-type=module'
 assert_contains "$log" 'edge_observations'
 assert_order "$log" 'finished_at IS NULL AND rolled_back_at IS NULL' 'prisma migrate deploy'
 [ -f "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" ] || { printf '%s\n' 'post-deploy Edge receipt was not published' >&2; exit 1; }
@@ -993,9 +1196,18 @@ output=$(PATH="$WRITER_GIT_BIN:$PATH" RELEASES_DIR="$TMP/root/releases" sh "$REP
 assert_contains "$output" "RELEASE_SHA=$writer_sha"
 assert_contains "$output" 'NO_OP=1'
 
-# Candidate image IDs are not inherited from the current release.
+# Candidate image IDs are not inherited from the current release. A stale
+# effective container authority is detected against the separately parsed host
+# file before activation; the exact pending recovery owner remains reusable.
 NEXT_SHA=1111111111111111111111111111111111111111
 cp "$TMP/root/releases/current.json" "$TMP/current.before-edge-failure"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_STALE_RUNTIME_FRONT_ORIGINS=https://stale-container.invalid MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'runtime-front-origins-drift'
+cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+[ -f "$TMP/root/releases/pending.json" ] || { printf '%s\n' 'stale-container smoke failure lost pending recovery ownership' >&2; exit 1; }
 : > "$TMP/mock.log"
 set +e
 output=$(MOCK_EDGE_AFTER_EPOCH=100 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
