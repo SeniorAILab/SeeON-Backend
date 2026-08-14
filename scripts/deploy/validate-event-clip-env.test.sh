@@ -8,7 +8,6 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
 write_valid_env() {
   cat > "$1" <<'EOF'
-EVENT_CLIPS_ENABLED=false
 MEDIA_RETENTION_DAYS=60
 MEDIA_MIN_FREE_BYTES=1073741824
 MEDIA_CLIP_MAX_BYTES=268435456
@@ -42,6 +41,17 @@ assert_not_contains() {
 valid_env=$TMP/valid.env
 write_valid_env "$valid_env"
 sh "$SCRIPT" "$valid_env"
+
+# Given the retired normal-operation feature key, when validated, then the host
+# environment is rejected instead of silently disabling an Edge runtime set ON.
+feature_env=$TMP/feature.env
+write_valid_env "$feature_env"
+printf '%s\n' 'EVENT_CLIPS_ENABLED=false' >> "$feature_env"
+set +e
+output=$(sh "$SCRIPT" "$feature_env" 2>&1); status=$?
+set -e
+assert_failure "$status"
+assert_contains "$output" 'EVENT_CLIPS_ENABLED must not appear in the production environment'
 
 # Given 59-day retention, when validated, then release preparation fails closed.
 retention_env=$TMP/retention.env

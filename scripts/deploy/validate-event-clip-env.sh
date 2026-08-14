@@ -45,21 +45,18 @@ positive_integer() {
   [ "$value" -gt 0 ] 2>/dev/null || fail "$name must be a positive integer"
 }
 
-boolean_value() {
-  name=$1
-  value=$2
-  case "$value" in
-    true|false) ;;
-    *) fail "$name must be true or false" ;;
-  esac
+event_clips_enabled_count=$(awk '
+  index($0, "EVENT_CLIPS_ENABLED=") == 1 { count += 1 }
+  END { print count + 0 }
+' "$ENV_FILE") || fail 'unable to inspect production environment keys'
+[ "$event_clips_enabled_count" -eq 0 ] || {
+  fail 'EVENT_CLIPS_ENABLED must not appear in the production environment'
 }
 
-event_clips_enabled=$(env_value EVENT_CLIPS_ENABLED)
 retention_days=$(env_value MEDIA_RETENTION_DAYS)
 minimum_free_bytes=$(env_value MEDIA_MIN_FREE_BYTES)
 maximum_clip_bytes=$(env_value MEDIA_CLIP_MAX_BYTES)
 
-boolean_value EVENT_CLIPS_ENABLED "$event_clips_enabled"
 positive_integer MEDIA_RETENTION_DAYS "$retention_days"
 [ "$retention_days" -ge 60 ] || fail 'MEDIA_RETENTION_DAYS must be an integer of at least 60'
 positive_integer MEDIA_MIN_FREE_BYTES "$minimum_free_bytes"

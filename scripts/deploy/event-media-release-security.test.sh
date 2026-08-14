@@ -23,7 +23,6 @@ chmod +x "$TMP/bin/curl"
 cat > "$TMP/host.env" <<'EOF'
 FRONT_ORIGIN=https://care.example.invalid
 AUTH_COOKIE_SECURE=true
-EVENT_CLIPS_ENABLED=true
 EOF
 chmod 600 "$TMP/host.env"
 

@@ -29,13 +29,12 @@ MEDIA_CLIP_MAX_BYTES=268435456
 
 class VerificationError extends Error {}
 
-function composeConfig(envFile) {
+function composeConfig(envFiles) {
   const result = spawnSync(
     'docker',
     [
       'compose',
-      '--env-file',
-      envFile,
+      ...envFiles.flatMap((envFile) => ['--env-file', envFile]),
       '--profile',
       'full',
       '-f',
@@ -70,7 +69,7 @@ function positiveInteger(name, value) {
   return Number(text);
 }
 
-function assertContract(config) {
+function assertContract(config, expectedEnabled) {
   const backend = config.services?.backend;
   if (backend === null || typeof backend !== 'object') {
     throw new VerificationError('backend service is required');
@@ -79,8 +78,10 @@ function assertContract(config) {
   if (environment === null || typeof environment !== 'object') {
     throw new VerificationError('backend environment is required');
   }
-  if (String(environment.EVENT_CLIPS_ENABLED) !== 'false') {
-    throw new VerificationError('EVENT_CLIPS_ENABLED must default to false');
+  if (String(environment.EVENT_CLIPS_ENABLED) !== expectedEnabled) {
+    throw new VerificationError(
+      `EVENT_CLIPS_ENABLED must render as ${expectedEnabled}`,
+    );
   }
   if (environment.MEDIA_CLIP_DIR !== '/app/backend/clips') {
     throw new VerificationError('MEDIA_CLIP_DIR must use the fixed backend clip path');
@@ -149,7 +150,7 @@ function assertContract(config) {
 
 function expectInvalidRetention(config) {
   try {
-    assertContract(config);
+    assertContract(config, 'true');
   } catch (error) {
     if (
       error instanceof VerificationError &&
@@ -166,7 +167,6 @@ function assertStaticDefaults() {
   const hostExample = readFileSync('.env.host.prod.example', 'utf8');
   const jenkinsfile = readFileSync('Jenkinsfile', 'utf8');
   const expectedHostLines = [
-    'EVENT_CLIPS_ENABLED=false',
     'MEDIA_RETENTION_DAYS=60',
     'MEDIA_MIN_FREE_BYTES=1073741824',
     'MEDIA_CLIP_MAX_BYTES=268435456',
@@ -175,6 +175,11 @@ function assertStaticDefaults() {
     if (!hostExample.includes(line)) {
       throw new VerificationError(`host env example is missing ${line}`);
     }
+  }
+  if (/^EVENT_CLIPS_ENABLED=/m.test(hostExample)) {
+    throw new VerificationError(
+      'host env example must not manage EVENT_CLIPS_ENABLED',
+    );
   }
   if (/front\/Dockerfile|eldercare-front|VITE_EVENT_CLIPS_ENABLED/.test(jenkinsfile)) {
     throw new VerificationError('Jenkins must not build an embedded frontend image');
@@ -186,13 +191,19 @@ function verify() {
   try {
     const validPath = join(dir, 'valid.env');
     const shortRetentionPath = join(dir, 'short-retention.env');
+    const emergencyOverridePath = join(dir, 'event-clips-runtime.env');
     writeFileSync(validPath, validHostEnv);
     writeFileSync(
       shortRetentionPath,
       validHostEnv.replace('MEDIA_RETENTION_DAYS=60', 'MEDIA_RETENTION_DAYS=59'),
     );
-    assertContract(composeConfig(validPath));
-    expectInvalidRetention(composeConfig(shortRetentionPath));
+    writeFileSync(emergencyOverridePath, 'EVENT_CLIPS_ENABLED=false\n');
+    assertContract(composeConfig([validPath]), 'true');
+    assertContract(
+      composeConfig([validPath, emergencyOverridePath]),
+      'false',
+    );
+    expectInvalidRetention(composeConfig([shortRetentionPath]));
     assertStaticDefaults();
   } finally {
     rmSync(dir, { recursive: true, force: true });

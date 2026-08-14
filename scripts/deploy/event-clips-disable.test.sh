@@ -13,7 +13,6 @@ SHA=0123456789abcdef0123456789abcdef01234567
 BACKEND_IMAGE=eldercare-backend:$SHA
 API_INGRESS_IMAGE=eldercare-api-ingress:$SHA
 cat > "$TMP/app/shared/.env" <<'EOF'
-EVENT_CLIPS_ENABLED=true
 AUTH_COOKIE_SECURE=true
 EOF
 cat > "$TMP/app/shared/release-images.env" <<EOF
