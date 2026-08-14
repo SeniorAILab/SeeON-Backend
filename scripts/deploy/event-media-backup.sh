@@ -26,6 +26,11 @@ fail() {
   exit 1
 }
 
+CONTROLLED_COMPOSE_HELPER=$SCRIPT_DIR/controlled-compose.sh
+[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail 'controlled Compose helper is required'
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$CONTROLLED_COMPOSE_HELPER"
+
 usage() {
   printf '%s\n' 'Usage: event-media-backup.sh [--check-inputs-only]' >&2
   exit 2
@@ -105,18 +110,18 @@ validate_inputs() {
 compose() {
   if [ -n "$COMPOSE_PROJECT_NAME" ]; then
     if [ -f "$RELEASE_ENV" ]; then
-      docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
+      controlled_compose docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
     else
-      BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
+      BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only controlled_compose docker compose \
         --project-name "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" \
         -f compose.yaml -f compose.prod.yaml "$@"
     fi
   elif [ -f "$RELEASE_ENV" ]; then
-    docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" \
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" \
       -f compose.yaml -f compose.prod.yaml "$@"
   else
-    BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only docker compose \
+    BACKEND_IMAGE=backup-only API_INGRESS_IMAGE=backup-only controlled_compose docker compose \
       --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
   fi
 }

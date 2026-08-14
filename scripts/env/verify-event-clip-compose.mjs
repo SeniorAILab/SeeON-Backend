@@ -163,8 +163,23 @@ function expectInvalidRetention(config) {
   throw new VerificationError('59-day retention unexpectedly passed');
 }
 
+function assertNoNormalFeatureDeclaration(path, label) {
+  const result = spawnSync(
+    'sh',
+    ['scripts/deploy/check-event-clip-host-env.sh', path],
+    { cwd: process.cwd(), encoding: 'utf8' },
+  );
+  if (result.status === 3) {
+    throw new VerificationError(`${label} must not manage EVENT_CLIPS_ENABLED`);
+  }
+  if (result.status !== 0) {
+    throw new VerificationError(`${label} feature declaration scan failed`);
+  }
+}
+
 function assertStaticDefaults() {
-  const hostExample = readFileSync('.env.host.prod.example', 'utf8');
+  const hostExamplePath = '.env.host.prod.example';
+  const hostExample = readFileSync(hostExamplePath, 'utf8');
   const jenkinsfile = readFileSync('Jenkinsfile', 'utf8');
   const expectedHostLines = [
     'MEDIA_RETENTION_DAYS=60',
@@ -176,11 +191,7 @@ function assertStaticDefaults() {
       throw new VerificationError(`host env example is missing ${line}`);
     }
   }
-  if (/^EVENT_CLIPS_ENABLED=/m.test(hostExample)) {
-    throw new VerificationError(
-      'host env example must not manage EVENT_CLIPS_ENABLED',
-    );
-  }
+  assertNoNormalFeatureDeclaration(hostExamplePath, 'host env example');
   if (/front\/Dockerfile|eldercare-front|VITE_EVENT_CLIPS_ENABLED/.test(jenkinsfile)) {
     throw new VerificationError('Jenkins must not build an embedded frontend image');
   }

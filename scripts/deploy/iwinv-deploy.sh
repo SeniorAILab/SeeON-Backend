@@ -88,6 +88,10 @@ need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need he
 [ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
 [ -f "$APP_DIR/compose.prod.yaml" ] || fail "Missing compose.prod.yaml in $APP_DIR"
 [ -f "$ENV_FILE" ] || fail "Missing production environment file: $ENV_FILE"
+CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
+[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail "Missing controlled Compose helper: $CONTROLLED_COMPOSE_HELPER"
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$CONTROLLED_COMPOSE_HELPER"
 if [ -e "$FEATURE_ENV" ] || [ -L "$FEATURE_ENV" ]; then
   [ ! -L "$FEATURE_ENV" ] && [ -f "$FEATURE_ENV" ] || fail "Invalid event clip feature override: $FEATURE_ENV"
   printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
@@ -100,15 +104,15 @@ compose() {
   # shellcheck disable=SC2086 # Fixed pair of Compose file arguments.
   if [ -f "$RELEASE_ENV" ]; then
     if [ -f "$FEATURE_ENV" ]; then
-      docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+      controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
     else
-      docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
+      controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
     fi
   else
     if [ -f "$FEATURE_ENV" ]; then
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
     else
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
+      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only controlled_compose docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
     fi
   fi
 }

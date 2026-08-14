@@ -18,6 +18,7 @@ case "$1 $2" in
     printf '%s\n' repo_clips
     ;;
   'compose --env-file')
+    [ "${EVENT_CLIPS_ENABLED+x}" != x ] || exit 91
     case " $* " in
       *' ps -q --status running backend '*)
         [ "${MOCK_BACKEND_STATE:-ok}" != missing ] || exit 0
@@ -56,7 +57,7 @@ assert_failure() { [ "$1" -ne 0 ] || { printf '%s\n' 'live volume check unexpect
 assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: %s\n%s\n' "$2" "$1" >&2; exit 1;; esac; }
 
 : > "$TMP/docker.log"
-output=$(run_check)
+output=$(EVENT_CLIPS_ENABLED=true run_check)
 assert_contains "$output" 'live event-media volume verified: repo_clips'
 grep -F 'volume inspect --format {{.Name}} repo_clips' "$TMP/docker.log" >/dev/null
 grep -F 'exec backend-container sh -c test -d /app/backend/clips && test -r /app/backend/clips' "$TMP/docker.log" >/dev/null

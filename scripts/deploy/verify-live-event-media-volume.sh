@@ -13,12 +13,16 @@ fail() { printf '%s\n' "$1" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || fail 'docker is required for live event-media volume verification'
 [ -d "$APP_DIR" ] || fail "application directory is required: $APP_DIR"
 [ -f "$ENV_FILE" ] || fail "production environment file is required: $ENV_FILE"
+CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
+[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail 'controlled Compose helper is required'
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$CONTROLLED_COMPOSE_HELPER"
 
 actual_volume=$(docker volume inspect --format '{{.Name}}' "$VOLUME_NAME" 2>/dev/null) || fail 'exact named volume repo_clips is required'
 [ "$actual_volume" = "$VOLUME_NAME" ] || fail 'exact named volume repo_clips is required'
 
 # shellcheck disable=SC2086 # Fixed pair of Compose file arguments.
-backend_ids=$(cd "$APP_DIR" && docker compose --env-file "$ENV_FILE" $COMPOSE_FILES ps -q --status running backend) || fail 'unable to identify the running backend'
+backend_ids=$(cd "$APP_DIR" && controlled_compose docker compose --env-file "$ENV_FILE" $COMPOSE_FILES ps -q --status running backend) || fail 'unable to identify the running backend'
 backend_count=$(printf '%s\n' "$backend_ids" | grep -c . || :)
 [ "$backend_count" -eq 1 ] || fail 'exactly one running backend is required for live media verification'
 backend_id=$(printf '%s\n' "$backend_ids" | sed -n '1p')

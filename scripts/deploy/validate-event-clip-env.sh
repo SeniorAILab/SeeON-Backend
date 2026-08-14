@@ -45,13 +45,24 @@ positive_integer() {
   [ "$value" -gt 0 ] 2>/dev/null || fail "$name must be a positive integer"
 }
 
-event_clips_enabled_count=$(awk '
-  index($0, "EVENT_CLIPS_ENABLED=") == 1 { count += 1 }
-  END { print count + 0 }
-' "$ENV_FILE") || fail 'unable to inspect production environment keys'
-[ "$event_clips_enabled_count" -eq 0 ] || {
-  fail 'EVENT_CLIPS_ENABLED must not appear in the production environment'
+case $0 in
+  */*) SCRIPT_DIR=${0%/*} ;;
+  *) SCRIPT_DIR=. ;;
+esac
+HOST_ENV_CHECK=$SCRIPT_DIR/check-event-clip-host-env.sh
+[ -f "$HOST_ENV_CHECK" ] && [ ! -L "$HOST_ENV_CHECK" ] || {
+  fail 'event clip host environment checker is required'
 }
+if sh "$HOST_ENV_CHECK" "$ENV_FILE"; then
+  host_env_status=0
+else
+  host_env_status=$?
+fi
+case "$host_env_status" in
+  0) ;;
+  3) fail 'EVENT_CLIPS_ENABLED must not appear in the production environment' ;;
+  *) fail 'unable to inspect production environment keys' ;;
+esac
 
 retention_days=$(env_value MEDIA_RETENTION_DAYS)
 minimum_free_bytes=$(env_value MEDIA_MIN_FREE_BYTES)

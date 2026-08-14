@@ -65,6 +65,9 @@ imaged, or started here.
   `/opt/eldercare-fall-ai/releases/` (legacy host paths retained on the
   server). The API ingress binds only host loopback (`127.0.0.1:3001`); backend
   and database remain internal. Caddy owns public exposure of the API.
+- Every controlled production Compose invocation uses `controlled-compose.sh`,
+  which removes inherited `EVENT_CLIPS_ENABLED` before Compose interpolation so
+  only ordered, validated env files can select the normal or emergency state.
 - Event-media bundle backup is not an iwinv deployment prerequisite. Jenkins,
   readiness, and deploy must not call `event-media-backup.sh`, require an
   off-host destination, or consume its receipt. The script remains optional,

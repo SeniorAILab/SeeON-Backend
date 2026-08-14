@@ -30,6 +30,10 @@ cat > "$TMP/bin/docker" <<'EOF'
 log=${MOCK_LOG:?}
 printf '%s\n' "docker $*" >> "$log"
 if [ "${1:-}" = compose ]; then
+  [ "${EVENT_CLIPS_ENABLED+x}" != x ] || {
+    printf '%s\n' 'inherited EVENT_CLIPS_ENABLED reached controlled Compose' >&2
+    exit 91
+  }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -114,7 +118,7 @@ release_before=$(sha256sum "$TMP/app/shared/release-images.env")
 manifest_before=$(sha256sum "$TMP/app/releases/current.json")
 compose_before=$(sha256sum "$REPO_ROOT/compose.yaml" "$REPO_ROOT/compose.prod.yaml")
 : > "$TMP/docker.log"
-output=$(run_disable)
+output=$(EVENT_CLIPS_ENABLED=true run_disable)
 assert_contains "$output" 'event clip feature disabled on current compatible images'
 assert_not_contains "$output" "$SHA"
 [ "$(cat "$TMP/app/shared/event-clips-runtime.env")" = 'EVENT_CLIPS_ENABLED=false' ]

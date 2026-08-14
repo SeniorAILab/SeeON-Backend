@@ -68,6 +68,10 @@ if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
   exit 0
 fi
 if [ "${1:-}" = compose ]; then
+  [ "${EVENT_CLIPS_ENABLED+x}" != x ] || {
+    printf '%s\n' 'inherited EVENT_CLIPS_ENABLED reached controlled Compose' >&2
+    exit 91
+  }
   case " $* " in
     *' config '*) exit "${COMPOSE_CONFIG_EXIT:-0}" ;;
     *' ps -q --status running backend '*) printf '%s\n' backend-container; exit 0 ;;
@@ -91,7 +95,7 @@ assert_contains() { case "$1" in *"$2"*) ;; *) printf 'missing expected output: 
 assert_pointer_unchanged() { [ "$(cat "$TMP/root/releases/current.json")" = sentinel ] || { printf '%s\n' 'readiness gate changed release pointer' >&2; exit 1; }; }
 
 : > "$TMP/docker.log"
-output=$(run_readiness --pre-build "$SHA")
+output=$(EVENT_CLIPS_ENABLED=false run_readiness --pre-build "$SHA")
 assert_contains "$output" 'overlap pre-build readiness verified'
 assert_pointer_unchanged
 

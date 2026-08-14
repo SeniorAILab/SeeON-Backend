@@ -48,7 +48,7 @@ require_fresh_epoch() {
 compose() {
   BACKEND_IMAGE="eldercare-backend:$SHA" \
   API_INGRESS_IMAGE="eldercare-api-ingress:$SHA" \
-    docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
+    controlled_compose docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.prod.yaml "$@"
 }
 validate_tooling() {
   # The release-manifest grammar is dependency-free, but its complete POSIX
@@ -64,6 +64,10 @@ validate_pre_build() {
   [ -f "$APP_DIR/compose.yaml" ] && [ -f "$APP_DIR/compose.prod.yaml" ] || fail 'both Compose files are required'
   [ -f "$INGRESS_CONFIG" ] && [ ! -L "$INGRESS_CONFIG" ] || fail 'standalone API ingress config is required'
   [ -f "$APP_DIR/infra/api-ingress/Dockerfile" ] || fail 'standalone API ingress Dockerfile is required'
+  controlled_compose_helper=$APP_DIR/scripts/deploy/controlled-compose.sh
+  [ -f "$controlled_compose_helper" ] && [ ! -L "$controlled_compose_helper" ] || fail 'controlled Compose helper is required'
+  # shellcheck source=scripts/deploy/controlled-compose.sh
+  . "$controlled_compose_helper"
   same_site=$(env_value AUTH_COOKIE_SAME_SITE)
   case "$same_site" in
     strict)
