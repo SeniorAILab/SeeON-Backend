@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/readme-hero.webp" alt="Abstract 3D artwork of connected service layers." width="100%" />
+  <img src="./docs/readme-hero.webp" alt="SeeON Backend concept artwork: three brushed-metal server tiers for ingress, application, and storage." width="100%" />
 </p>
 
 <p align="center"><sub>SENIOR AI LAB · SEEON</sub></p>
@@ -100,3 +100,5 @@ Keep real `.env.local` and `.env.host.prod` files out of git. Do not create pack
 - [SeeON Front](https://github.com/SeniorAILab/SeeON-Front): the dashboard client
 
 The hero is conceptual artwork, not a deployment or product-readiness result.
+
+[Artwork provenance](./docs/ARTWORK.md) · Original procedural Blender/Cycles reconstruction.
