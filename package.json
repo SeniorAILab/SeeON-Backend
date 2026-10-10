@@ -1,6 +1,6 @@
 {
   "name": "seeon-backend",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "private": true,
   "description": "SeeON backend API, database, ingress, and deployment tooling.",
   "packageManager": "pnpm@10.32.1",
