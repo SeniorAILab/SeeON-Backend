@@ -9,7 +9,7 @@ import { SESSION_COOKIE_NAME } from '../src/auth/auth.constants';
 import { sign } from 'jsonwebtoken';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { AlertWriterService } from '../src/alerts/alert-writer.service';
+import { AlertWriterService } from '../src/alerts/services/alert-writer.service';
 
 import * as fs from 'fs';
 import * as os from 'os';

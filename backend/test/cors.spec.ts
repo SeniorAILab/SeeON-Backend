@@ -2,7 +2,7 @@ import { Controller, Get, Header, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { configureFrontendCors } from '../src/config/frontend-cors.js';
+import { configureFrontendCors } from '../src/config/adapters/frontend-cors.adapter.js';
 
 const PRODUCT_ORIGIN = 'https://seeon.seniorsailab.com';
 const VERCEL_ORIGIN = 'https://seeon-front.vercel.app';

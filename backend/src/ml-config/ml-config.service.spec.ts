@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
-import { MlConfigService } from './ml-config.service.js';
-import { bumpMlConfigVersion } from './ml-config.version.js';
+import { MlConfigService } from './services/ml-config.service.js';
+import { bumpMlConfigVersion } from './repositories/ml-config-version.repository.js';
 
 type CameraDelegate = { findMany: jest.Mock };
 type MlFacilityConfigDelegate = {

@@ -8,8 +8,8 @@ import { Role, type EdgeInstallation, type Facility } from '@prisma/client';
 import type {
   EdgeConnectionState,
   FacilityEdgeStatusResponseDto,
-  UpdateFacilityRequestDto,
-} from '../dto/facility.dto.js';
+} from '../dto/facility-edge-status-response.dto.js';
+import type { UpdateFacilityRequestDto } from '../dto/update-facility-request.dto.js';
 import { FacilitiesRepository } from '../repositories/facilities.repository.js';
 
 // 5 minutes = 10 missed relay ticks (Edge pushes per-camera heartbeats every

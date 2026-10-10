@@ -1,10 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
-import { EventsController } from './events.controller.js';
-import { EdgeIngestTokenGuard } from './edge-ingest-token.guard.js';
-import type { EventAlarmService } from './event-alarm.service.js';
-import type { EventRecorderService } from './event-recorder.service.js';
-import type { CamerasService } from '../cameras/cameras.service.js';
+import { EventsController } from './controllers/events.controller.js';
+import { EdgeIngestTokenGuard } from './guards/edge-ingest-token.guard.js';
+import type { EventAlarmService } from './services/event-alarm.service.js';
+import { EventRecorderService } from './services/event-recorder.service.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import type { CamerasService } from '../cameras/services/cameras.service.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -371,23 +372,19 @@ describe('EventsController uploadSnapshot', () => {
     );
     process.env.SNAPSHOT_DIR = snapshotDir;
     const eventAlarm = {} as EventAlarmService;
-    const resolveForSnapshot = jest.fn<
-      Promise<{ readonly id: string; readonly facilityId: string }>,
-      [string, string | null | undefined]
-    >();
-    resolveForSnapshot.mockResolvedValue({
+    const cameras = {} as CamerasService;
+    const recorder = new EventRecorderService({} as PrismaService, cameras);
+    const resolvedEvent = {
       id: 'event-created-id',
       facilityId: 'facility-1',
-    });
-    const persistSnapshotKey = jest.fn<
-      Promise<void>,
-      [string, string, string]
-    >();
-    const recorder = {
-      resolveForSnapshot,
-      persistSnapshotKey,
-    } as unknown as jest.Mocked<EventRecorderService>;
-    const cameras = {} as CamerasService;
+    };
+    const resolveForSnapshot = jest
+      .spyOn(recorder, 'resolveForSnapshot')
+      .mockResolvedValue(resolvedEvent);
+    const persistSnapshotKey = jest
+      .spyOn(recorder, 'persistSnapshotKey')
+      .mockResolvedValue(undefined);
+    const saveSnapshot = jest.spyOn(recorder, 'saveSnapshot');
     const controller = new EventsController(eventAlarm, recorder, cameras);
     const req = makeRawRequest(Buffer.from('jpeg-bytes'));
 
@@ -396,6 +393,7 @@ describe('EventsController uploadSnapshot', () => {
     ).resolves.toEqual({ snapshotKey: 'facility-1/event-created-id.jpg' });
 
     expect(resolveForSnapshot).toHaveBeenCalledWith('client-route-id');
+    expect(saveSnapshot.mock.calls.at(0)?.at(0)).toBe(resolvedEvent);
     expect(persistSnapshotKey).toHaveBeenCalledWith(
       'facility-1',
       'event-created-id',

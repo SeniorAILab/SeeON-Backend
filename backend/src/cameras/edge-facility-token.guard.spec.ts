@@ -7,9 +7,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { EdgeFacilityTokenGuard } from './edge-facility-token.guard';
-import type { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
-import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
+import { EdgeFacilityTokenGuard } from './guards/edge-facility-token.guard';
+import type { EdgeCredentialAuthenticatorService } from '../edge-credentials/services/edge-credential-authenticator.service.js';
+import { LegacyEdgeMetricsService } from '../edge-credentials/services/legacy-edge-metrics.service.js';
 
 function contextFor(headers: Record<string, string | undefined>) {
   const request = { headers };
@@ -30,8 +30,8 @@ describe('EdgeFacilityTokenGuard', () => {
     const authenticator = {
       authenticate: jest.fn().mockResolvedValue(principal),
       bindRequest: jest.fn().mockResolvedValue(principal),
-    } as unknown as EdgeCredentialAuthenticator;
-    const metrics = new LegacyEdgeMetrics();
+    } as unknown as EdgeCredentialAuthenticatorService;
+    const metrics = new LegacyEdgeMetricsService();
     const guard = new EdgeFacilityTokenGuard(
       new ConfigService({ EDGE_FACILITY_TOKEN: 'legacy' }),
       authenticator,
@@ -53,7 +53,7 @@ describe('EdgeFacilityTokenGuard', () => {
       .mockRejectedValue(new UnauthorizedException());
     const authenticator = {
       authenticate,
-    } as unknown as EdgeCredentialAuthenticator;
+    } as unknown as EdgeCredentialAuthenticatorService;
     const guard = new EdgeFacilityTokenGuard(
       new ConfigService({ EDGE_FACILITY_TOKEN: 'eft_v1.invalid' }),
       authenticator,
@@ -70,7 +70,7 @@ describe('EdgeFacilityTokenGuard', () => {
   });
 
   it('counts only successful enumerated legacy camera acceptance', () => {
-    const metrics = new LegacyEdgeMetrics();
+    const metrics = new LegacyEdgeMetricsService();
     const guard = new EdgeFacilityTokenGuard(
       new ConfigService({
         EDGE_FACILITY_TOKEN: 'legacy',

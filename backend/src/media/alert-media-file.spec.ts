@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AlertMediaFileError, openAlertMediaFile } from './alert-media-file.js';
+import { openAlertMediaFile } from './repositories/alert-media-file.repository.js';
+import { AlertMediaFileError } from './errors/alert-media-file.error.js';
 
 const FACILITY_ID = 'facility-a';
 const CLIP_ID = 'clip-a';

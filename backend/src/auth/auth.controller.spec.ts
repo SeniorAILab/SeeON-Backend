@@ -1,8 +1,8 @@
 import type { User } from '@prisma/client';
 import type { Request, Response } from 'express';
-import { AuthController } from './auth.controller';
-import type { AuthService } from './auth.service';
-import type { RequestWithAuth } from './jwt-auth.guard';
+import { AuthController } from './controllers/auth.controller';
+import type { AuthService } from './services/auth.service';
+import type { RequestWithAuth } from './guards/jwt-auth.guard';
 
 describe('AuthController', () => {
   const makeResponse = () =>

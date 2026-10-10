@@ -6,9 +6,9 @@ import type {
 import { PrismaClient } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { JwtAuthGuard } from '../src/auth/jwt-auth.guard.js';
-import { DashboardReceiptController } from '../src/dashboard/dashboard-receipt.controller.js';
-import { DashboardReceiptService } from '../src/dashboard/dashboard-receipt.service.js';
+import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard.js';
+import { DashboardReceiptController } from '../src/dashboard/controllers/dashboard-receipt.controller.js';
+import { DashboardReceiptService } from '../src/dashboard/services/dashboard-receipt.service.js';
 import { PrismaModule } from '../src/prisma/prisma.module.js';
 import { configureVersionedTestApp } from './helpers/versioned-app.js';
 

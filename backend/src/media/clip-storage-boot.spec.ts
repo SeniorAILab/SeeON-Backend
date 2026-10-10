@@ -1,7 +1,5 @@
-import {
-  ClipStorageBootReconciler,
-  ClipStorageReconciliationError,
-} from './clip-storage-boot.js';
+import { ClipStorageBootReconcilerService } from './services/clip-storage-boot-reconciler.service.js';
+import { ClipStorageReconciliationError } from './errors/clip-storage-reconciliation.error.js';
 import type { ClipReconciliationReport } from './clip-storage.types.js';
 
 const cleanReport: ClipReconciliationReport = {
@@ -12,12 +10,12 @@ const cleanReport: ClipReconciliationReport = {
   corruptReferences: [],
 };
 
-describe('ClipStorageBootReconciler', () => {
+describe('ClipStorageBootReconcilerService', () => {
   it('does not inspect storage while the feature is disabled', async () => {
     // Given: boot uses disabled event clips.
     const listAll = jest.fn();
     const reconcile = jest.fn();
-    const reconciler = new ClipStorageBootReconciler({
+    const reconciler = new ClipStorageBootReconcilerService({
       eventClipsEnabled: false,
       references: { listAll },
       storage: { reconcile },
@@ -42,7 +40,7 @@ describe('ClipStorageBootReconciler', () => {
     ];
     const listAll = jest.fn().mockResolvedValue(references);
     const reconcile = jest.fn().mockResolvedValue(cleanReport);
-    const reconciler = new ClipStorageBootReconciler({
+    const reconciler = new ClipStorageBootReconcilerService({
       eventClipsEnabled: true,
       references: { listAll },
       storage: { reconcile },
@@ -55,31 +53,38 @@ describe('ClipStorageBootReconciler', () => {
     expect(reconcile).toHaveBeenCalledWith(references);
   });
 
-  it('fails enabled startup when referenced media is missing', async () => {
-    // Given: reconciliation reports a missing durable file.
-    const missingKey = `facility-1/clip-1/${'b'.repeat(64)}.mp4`;
-    const listAll = jest.fn().mockResolvedValue([]);
-    const reconcile = jest.fn().mockResolvedValue({
-      ...cleanReport,
-      missingReferences: [missingKey],
-    });
-    const reconciler = new ClipStorageBootReconciler({
-      eventClipsEnabled: true,
-      references: { listAll },
-      storage: { reconcile },
-    });
+  it.each(['missingReferences', 'corruptReferences'] as const)(
+    'fails enabled startup and preserves the report for %s',
+    async (failureKind) => {
+      const missingKey = `facility-1/clip-1/${'b'.repeat(64)}.mp4`;
+      const listAll = jest.fn().mockResolvedValue([]);
+      const report: ClipReconciliationReport = {
+        ...cleanReport,
+        [failureKind]: [missingKey],
+      };
+      const reconcile = jest.fn().mockResolvedValue(report);
+      const reconciler = new ClipStorageBootReconcilerService({
+        eventClipsEnabled: true,
+        references: { listAll },
+        storage: { reconcile },
+      });
 
-    // When: application bootstrap runs.
-    const action = reconciler.onApplicationBootstrap();
+      // When: application bootstrap runs.
+      const action = reconciler.onApplicationBootstrap();
 
-    // Then: readiness fails closed with the reconciliation report.
-    try {
-      await action;
-      throw new Error('expected startup reconciliation to fail');
-    } catch (error) {
-      expect(error).toBeInstanceOf(ClipStorageReconciliationError);
-      if (!(error instanceof ClipStorageReconciliationError)) throw error;
-      expect(error.report.missingReferences).toEqual([missingKey]);
-    }
-  });
+      // Then: readiness fails closed with the reconciliation report.
+      try {
+        await action;
+        throw new Error('expected startup reconciliation to fail');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ClipStorageReconciliationError);
+        if (!(error instanceof ClipStorageReconciliationError)) throw error;
+        expect(error.report).toBe(report);
+        expect(error.report[failureKind]).toEqual([missingKey]);
+        expect(error.message).toBe(
+          'clip storage reconciliation found missing or corrupt media',
+        );
+      }
+    },
+  );
 });

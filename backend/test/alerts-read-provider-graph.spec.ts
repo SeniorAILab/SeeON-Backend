@@ -2,8 +2,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
 import { AlertsModule } from '../src/alerts/alerts.module';
-import { AlertsController } from '../src/alerts/alerts.controller';
-import { AlertsService } from '../src/alerts/alerts.service';
+import { AlertsController } from '../src/alerts/controllers/alerts.controller';
+import { AlertsService } from '../src/alerts/services/alerts.service';
 import { AlertEventsService } from '../src/alerts/services/alert-events.service';
 
 /**

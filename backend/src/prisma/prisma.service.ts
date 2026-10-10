@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
-import { MissingTenantContextError } from '../common/errors.js';
-import { TenantContext } from '../common/tenant-context.js';
+import { MissingTenantContextError } from '../common/errors/missing-tenant-context.error.js';
+import { TenantContext } from '../common/services/tenant-context.service.js';
 
 // ─── Tenant model set ─────────────────────────────────────────────────────────
 // These tables carry RLS ENABLE + FORCE. All access must go through

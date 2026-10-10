@@ -7,9 +7,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { EdgeIngestTokenGuard } from './edge-ingest-token.guard';
-import type { EdgeCredentialAuthenticator } from '../edge-credentials/edge-credential-authenticator.js';
-import { LegacyEdgeMetrics } from '../edge-credentials/legacy-edge-metrics.js';
+import { EdgeIngestTokenGuard } from './guards/edge-ingest-token.guard';
+import type { EdgeCredentialAuthenticatorService } from '../edge-credentials/services/edge-credential-authenticator.service.js';
+import { LegacyEdgeMetricsService } from '../edge-credentials/services/legacy-edge-metrics.service.js';
 
 function contextFor(
   headers: Record<string, string | undefined>,
@@ -33,8 +33,8 @@ describe('EdgeIngestTokenGuard', () => {
     const authenticator = {
       authenticate: jest.fn().mockResolvedValue(principal),
       bindRequest: jest.fn().mockResolvedValue(principal),
-    } as unknown as EdgeCredentialAuthenticator;
-    const metrics = new LegacyEdgeMetrics();
+    } as unknown as EdgeCredentialAuthenticatorService;
+    const metrics = new LegacyEdgeMetricsService();
     const guard = new EdgeIngestTokenGuard(
       new ConfigService({ EDGE_FACILITY_TOKEN: 'legacy' }),
       authenticator,

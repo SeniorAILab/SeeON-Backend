@@ -1,10 +1,10 @@
 import type { MediaClip } from '@prisma/client';
 import {
   EVENT_MEDIA_ERROR_CODES,
-  EventMediaError,
   type PersistedReadyClip,
   type ReadyClipManifest,
 } from './event-media.types.js';
+import { EventMediaError } from './errors/event-media.error.js';
 
 export function matchesReadyManifest(
   clip: MediaClip,

@@ -1,15 +1,13 @@
 import request from 'supertest';
 import type { Response } from 'supertest';
-import { MediaDownloadAuditService } from '../src/media/media-download-audit.service';
-import {
-  MediaDownloadAuditConsistencyError,
-  MediaDownloadAuditRepository,
-} from '../src/media/media-download-audit.repository';
-import { MediaDownloadProcessRepository } from '../src/media/media-download-process.repository';
+import { MediaDownloadAuditService } from '../src/media/services/media-download-audit.service';
+import { MediaDownloadAuditRepository } from '../src/media/repositories/media-download-audit.repository';
+import { MediaDownloadAuditConsistencyError } from '../src/media/errors/media-download-audit-consistency.error';
+import { MediaDownloadProcessRepository } from '../src/media/repositories/media-download-process.repository';
 import {
   type MediaDownloadInterval,
   MediaDownloadRuntime,
-} from '../src/media/media-download-runtime';
+} from '../src/media/ports/media-download-runtime.port';
 import {
   type AlertMediaFixture,
   createAlertMediaFixture,

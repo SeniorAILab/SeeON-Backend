@@ -1,7 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
-import { DashboardReceiptController } from './dashboard-receipt.controller.js';
-import type { DashboardReceiptService } from './dashboard-receipt.service.js';
+import type { RequestWithAuth } from '../auth/guards/jwt-auth.guard.js';
+import { DashboardReceiptController } from './controllers/dashboard-receipt.controller.js';
+import type { DashboardReceiptService } from './services/dashboard-receipt.service.js';
 
 function requestWithFacility(facilityId: string | undefined): RequestWithAuth {
   return {

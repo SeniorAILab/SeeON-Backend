@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
-import { FfprobeClipInspector } from './clip-inspector.js';
+import { FfprobeClipInspector } from './adapters/ffprobe-clip-inspector.adapter.js';
 import { CLIP_STORAGE_ERROR_CODES } from './clip-storage.types.js';
 
 const execFileAsync = promisify(execFile);

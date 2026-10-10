@@ -1,4 +1,4 @@
-import { AlertEventTypes } from '../dto/alert-events.dto.js';
+import { AlertEventTypes } from '../alert-event.types.js';
 import { AlertPolicyService } from './alert-policy.service.js';
 
 const fallIngress = {

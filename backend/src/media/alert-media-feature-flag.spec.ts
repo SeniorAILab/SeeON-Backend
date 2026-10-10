@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MEDIA_FEATURE_DISABLED_CODE } from './alert-media.service';
+import { MEDIA_FEATURE_DISABLED_CODE } from './services/alert-media.service';
 
 /**
  * 근거 영상 기능이 꺼져 있을 때(`EVENT_CLIPS_ENABLED !== 'true'`)와
@@ -12,7 +12,7 @@ import { MEDIA_FEATURE_DISABLED_CODE } from './alert-media.service';
  */
 describe('alert media feature flag', () => {
   const source = readFileSync(
-    join(__dirname, 'alert-media.service.ts'),
+    join(__dirname, 'services/alert-media.service.ts'),
     'utf8',
   );
 

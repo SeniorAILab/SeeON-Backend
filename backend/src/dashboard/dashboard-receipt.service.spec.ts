@@ -1,7 +1,7 @@
 import { DashboardReceiptKind, Prisma } from '@prisma/client';
 import { FacilityScopedNotFoundException } from '../common/domain-errors.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
-import { DashboardReceiptService } from './dashboard-receipt.service.js';
+import { DashboardReceiptService } from './services/dashboard-receipt.service.js';
 
 const baseInput = {
   facilityId: 'facility-1',

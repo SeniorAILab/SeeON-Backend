@@ -13,17 +13,18 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiCookieAuth } from '@nestjs/swagger';
-import { FacilityContextInterceptor } from '../../auth/facility-context.interceptor.js';
+import { FacilityContextInterceptor } from '../../auth/interceptors/facility-context.interceptor.js';
 import {
   RequireFacilityGuard,
   JwtAuthGuard,
-} from '../../auth/jwt-auth.guard.js';
-import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
-import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
+} from '../../auth/guards/jwt-auth.guard.js';
 import {
-  CreateFloorRequestDto,
-  UpdateFloorRequestDto,
-} from '../dto/floor.dto.js';
+  RequireCapability,
+  RolesGuard,
+} from '../../auth/guards/roles.guard.js';
+import type { RequestWithAuth } from '../../auth/guards/jwt-auth.guard.js';
+import { CreateFloorRequestDto } from '../dto/create-floor-request.dto.js';
+import { UpdateFloorRequestDto } from '../dto/update-floor-request.dto.js';
 import { FloorsService } from '../services/floors.service.js';
 
 @Controller({ path: 'floors', version: '1' })

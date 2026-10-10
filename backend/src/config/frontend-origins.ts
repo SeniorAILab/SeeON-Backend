@@ -1,13 +1,8 @@
+import { FrontendOriginsValidationError } from './errors/frontend-origins-validation.error.js';
+
 const FRONT_ORIGINS_KEY = 'FRONT_ORIGINS';
 const FRONT_ORIGIN_KEY = 'FRONT_ORIGIN';
 const ABSOLUTE_URL_SYNTAX = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/]*)(.*)$/u;
-
-export class FrontendOriginsValidationError extends Error {
-  constructor(readonly errors: readonly string[]) {
-    super(errors.join('\n'));
-    this.name = 'FrontendOriginsValidationError';
-  }
-}
 
 export function parseFrontendOrigins(
   config: Record<string, unknown>,

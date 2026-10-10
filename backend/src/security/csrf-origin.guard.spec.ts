@@ -1,7 +1,7 @@
 import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { CsrfOriginGuard } from './csrf-origin.guard.js';
+import { CsrfOriginGuard } from './guards/csrf-origin.guard.js';
 
 function context(
   method: string,

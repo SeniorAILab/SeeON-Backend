@@ -3,13 +3,13 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { ClipStorageService } from './clip-storage.service.js';
+import { ClipStorageService } from './services/clip-storage.service.js';
 import {
   CLIP_STORAGE_ERROR_CODES,
-  ClipStorageError,
   type ClipInspector,
   type ClipStorageConfig,
 } from './clip-storage.types.js';
+import { ClipStorageError } from './errors/clip-storage.error.js';
 
 const FACILITY_ID = 'facility-1';
 const CLIP_ID = 'clip-1';

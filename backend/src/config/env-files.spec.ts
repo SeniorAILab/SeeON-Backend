@@ -1,4 +1,4 @@
-import { backendEnvFilePaths } from './env-files.js';
+import { backendEnvFilePaths } from './adapters/backend-env-files.adapter.js';
 import { resolve } from 'node:path';
 
 describe('backendEnvFilePaths', () => {

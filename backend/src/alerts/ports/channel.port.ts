@@ -1,4 +1,4 @@
-import type { AlertEventRequestDto } from '../dto/alert-events.dto.js';
+import type { AlertEventRequestDto } from '../dto/alert-event-request.dto.js';
 
 export const ALERT_CHANNEL_PORT = Symbol('ALERT_CHANNEL_PORT');
 

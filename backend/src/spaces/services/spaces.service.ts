@@ -5,13 +5,11 @@ import {
 } from '@nestjs/common';
 import { SpaceType } from '@prisma/client';
 import type { Space } from '@prisma/client';
-import { assertProductOwned } from '../../common/edge-ownership-guard.js';
-import type {
-  CreateSpaceRequestDto,
-  SpaceResponseDto,
-  SpaceTypeValue,
-  UpdateSpaceRequestDto,
-} from '../dto/space.dto.js';
+import { assertProductOwned } from '../../common/services/edge-ownership.service.js';
+import type { CreateSpaceRequestDto } from '../dto/create-space-request.dto.js';
+import type { SpaceResponseDto } from '../dto/space-response.dto.js';
+import type { UpdateSpaceRequestDto } from '../dto/update-space-request.dto.js';
+import type { SpaceTypeValue } from '../space.types.js';
 import { SpacesRepository } from '../repositories/spaces.repository.js';
 
 @Injectable()

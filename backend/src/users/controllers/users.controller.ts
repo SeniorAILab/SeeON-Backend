@@ -14,12 +14,13 @@ import {
   JwtAuthGuard,
   RequireFacilityGuard,
   type RequestWithAuth,
-} from '../../auth/jwt-auth.guard.js';
-import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
+} from '../../auth/guards/jwt-auth.guard.js';
 import {
-  CreateUserRequestDto,
-  UpdateUserRoleRequestDto,
-} from '../dto/user.dto.js';
+  RequireCapability,
+  RolesGuard,
+} from '../../auth/guards/roles.guard.js';
+import { CreateUserRequestDto } from '../dto/create-user-request.dto.js';
+import { UpdateUserRoleRequestDto } from '../dto/update-user-role-request.dto.js';
 import { UsersService } from '../services/users.service.js';
 
 @Controller({ path: 'users', version: '1' })

@@ -1,0 +1,70 @@
+import {
+  type CanActivate,
+  type ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildAuthCookieOptions,
+  MEDIA_FACILITY_COOKIE_NAME,
+  readCookie,
+} from '../../auth/services/cookie.service.js';
+import {
+  readFacilityScopeHeader,
+  type RequestWithAuth,
+} from '../../auth/guards/jwt-auth.guard.js';
+
+export { MEDIA_FACILITY_COOKIE_NAME } from '../../auth/services/cookie.service.js';
+const MEDIA_FACILITY_COOKIE_MAX_AGE_MS = 5 * 60 * 1_000;
+const FACILITY_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
+
+@Injectable()
+export class AlertMediaFacilityGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const http = context.switchToHttp();
+    const request = http.getRequest<RequestWithAuth>();
+    const response = http.getResponse<Response>();
+    const user = request.user;
+    if (!user) throw new UnauthorizedException('Missing session');
+
+    if (user.facilityId !== null) {
+      request.effectiveFacilityId = user.facilityId;
+      return true;
+    }
+    if (user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Facility onboarding required');
+    }
+
+    const selectedFromHeader =
+      request.method === 'POST' ? readFacilityScopeHeader(request) : null;
+    if (selectedFromHeader !== null) {
+      requireSafeFacilityId(selectedFromHeader);
+      request.effectiveFacilityId = selectedFromHeader;
+      response.cookie(
+        MEDIA_FACILITY_COOKIE_NAME,
+        selectedFromHeader,
+        buildAuthCookieOptions(request, MEDIA_FACILITY_COOKIE_MAX_AGE_MS),
+      );
+      return true;
+    }
+
+    const selectedFromCookie = readCookie(
+      request.headers.cookie,
+      MEDIA_FACILITY_COOKIE_NAME,
+    );
+    if (selectedFromCookie !== undefined) {
+      requireSafeFacilityId(selectedFromCookie);
+      request.effectiveFacilityId = selectedFromCookie;
+      return true;
+    }
+    throw new ForbiddenException('Selected facility required');
+  }
+}
+
+function requireSafeFacilityId(facilityId: string): void {
+  if (!FACILITY_ID_PATTERN.test(facilityId)) {
+    throw new ForbiddenException('Selected facility is invalid');
+  }
+}

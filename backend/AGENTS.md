@@ -37,7 +37,8 @@ for the alert write/read split, `src/media/AGENTS.md` for clips, and
 ## Data model (v1 is room-centric)
 - v1 monitors at **room (space) granularity only**. There is no resident/guardian domain: `residents`, `resident_assignments`, `resident_statuses`, and `guardians` (tables + CRUD API) were dropped and return in v2. Alerts key off `spaceId`/`cameraId`, never a resident.
 - Table roles (keep these boundaries when adding columns/tables):
-  - **Append-only history / event log** — insert-and-keep, never repurposed as mutable state: `events` (immutable ML event SSOT), `alerts` (alert log; `alertSeq` is the SSE Last-Event-ID), `alert_events` + `delivery_attempts` (email delivery outbox). New audit/history goes here as append rows.
+  - **Event facts / alert read model** — preserve event identity and replay/deduplication semantics. Existing writers update Event snapshot metadata and Alert lifecycle state; these rows are not universally append-only. `alertSeq` remains the alert SSE cursor.
+  - **Email delivery outbox** — `alert_events` and `delivery_attempts` have distinct delivery responsibilities; attempts update status, counts, retry and result fields. Do not describe the outbox as immutable audit history. New audit/history records remain append-oriented.
   - **Facility topology / config** — mutable domain rows: `facilities`, `floors`, `spaces`, `cameras`.
   - **Identity / auth** — `users`; app-layer gated, NOT RLS tenant models (see `TENANT_MODELS` in `src/prisma/prisma.service.ts`).
 - Re-adding resident/guardian in v2 is a schema+API addition, not a revival of the removed columns on `alerts`.

@@ -4,9 +4,9 @@ import { AuthModule } from '../auth/auth.module.js';
 import {
   CamerasController,
   EdgeCamerasController,
-} from './cameras.controller.js';
-import { CamerasService } from './cameras.service.js';
-import { EdgeFacilityTokenGuard } from './edge-facility-token.guard.js';
+} from './controllers/cameras.controller.js';
+import { CamerasService } from './services/cameras.service.js';
+import { EdgeFacilityTokenGuard } from './guards/edge-facility-token.guard.js';
 
 @Module({
   imports: [PrismaModule, AuthModule],

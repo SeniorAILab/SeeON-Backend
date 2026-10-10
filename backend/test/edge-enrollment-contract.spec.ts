@@ -14,7 +14,7 @@ import { AuthModule } from '../src/auth/auth.module.js';
 import {
   JwtAuthGuard,
   type RequestWithAuth,
-} from '../src/auth/jwt-auth.guard.js';
+} from '../src/auth/guards/jwt-auth.guard.js';
 import {
   EDGE_CLOCK,
   type EdgeClock,

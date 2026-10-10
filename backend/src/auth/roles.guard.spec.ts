@@ -1,8 +1,8 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
-import { RequireCapability, RolesGuard } from './roles.guard';
-import type { RequestWithAuth } from './jwt-auth.guard';
+import { RequireCapability, RolesGuard } from './guards/roles.guard';
+import type { RequestWithAuth } from './guards/jwt-auth.guard';
 
 describe('RolesGuard', () => {
   const guardedHandler = () => undefined;

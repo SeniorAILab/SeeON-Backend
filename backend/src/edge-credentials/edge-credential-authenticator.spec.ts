@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { EdgeCredentialAuthenticator } from './edge-credential-authenticator.js';
+import { EdgeCredentialAuthenticatorService } from './services/edge-credential-authenticator.service.js';
 
 const principal = {
   tokenId: '7H2K9M4QXP3R',
@@ -8,7 +8,7 @@ const principal = {
   enrollmentGeneration: 1,
 };
 
-describe('EdgeCredentialAuthenticator request binding', () => {
+describe('EdgeCredentialAuthenticatorService request binding', () => {
   it.each(['validationRunId', 'validation_run_id'])(
     'does not parse or resolve retired auth field %s',
     async (field) => {
@@ -17,7 +17,7 @@ describe('EdgeCredentialAuthenticator request binding', () => {
         requestResourcesBelongTo: jest.fn().mockResolvedValue(true),
         activeValidationGrant,
       };
-      const authenticator = new EdgeCredentialAuthenticator(
+      const authenticator = new EdgeCredentialAuthenticatorService(
         new ConfigService(),
         repository as never,
         { now: () => new Date('2026-08-13T00:00:00.000Z') },

@@ -17,10 +17,10 @@ jest.mock('nodemailer', () => ({
 
 import {
   EmailChannelAdapter,
-  SmtpConfigError,
   classifyEmailDeliveryFailure,
   notConfiguredEmailDelivery,
 } from './email-channel.adapter.js';
+import { SmtpConfigError } from '../errors/smtp-config.error.js';
 
 const alertMessage = {
   event_id: 'event-1',

@@ -1,20 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import {
-  type AlertEventRequestDto,
-  type AlertPolicyDecision,
-  type PredictionAlertRequestDto,
-} from '../dto/alert-events.dto.js';
-
-export abstract class AlertPolicyClock {
-  abstract nowMs(): number;
-}
-
-@Injectable()
-export class SystemAlertPolicyClock extends AlertPolicyClock {
-  nowMs(): number {
-    return Date.now();
-  }
-}
+import type {
+  AlertEventRequestDto,
+  PredictionAlertRequestDto,
+} from '../dto/alert-event-request.dto.js';
+import type { AlertPolicyDecision } from '../alert-event.types.js';
 
 @Injectable()
 export class AlertPolicyService {

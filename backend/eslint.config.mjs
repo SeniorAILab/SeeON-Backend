@@ -3,22 +3,16 @@ import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import architecture, { productionFiles } from './eslint/architecture.mjs';
 
-// 백엔드 계층/DTO 경계를 blocking error로 기계 강제 (신규 의존성 0).
-// 규약 SoT: ADR · docs/rules/backend-architecture-lint-and-guard.md.
 export default tseslint.config(
-  {
-    ignores: ['eslint.config.mjs'],
-  },
+  { ignores: ['eslint.config.mjs'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
   {
     languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
+      globals: { ...globals.node, ...globals.jest },
       sourceType: 'commonjs',
       parserOptions: {
         projectService: true,
@@ -27,19 +21,13 @@ export default tseslint.config(
     },
   },
   {
-    // Stability deny-list (docs/rules/code-stability.md, ADR).
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/only-throw-error': 'error',
       '@typescript-eslint/prefer-promise-reject-errors': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
-    },
-  },
-  {
-    // recommendedTypeChecked에서 빠진 typed 규칙도 blocking error로 추가한다.
-    rules: {
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
@@ -48,102 +36,12 @@ export default tseslint.config(
     },
   },
   {
-    // NodeNext '.js' import까지 잡으려 basename + globstar 패턴을 병기한다.
-    files: ['src/**/*.controller.ts', 'src/**/controllers/**/*.ts'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['*.repository.js', '**/*.repository.js', '**/repositories/**'],
-              message:
-                '컨트롤러는 Repository를 직접 import하지 않습니다. Service를 통해 접근하세요.',
-            },
-            {
-              group: ['*.prisma.service.js', '**/prisma.service.js', '@prisma/client'],
-              message:
-                '컨트롤러는 Prisma(서비스/모델 타입)에 직접 의존하지 않습니다. Service를 통해 접근하세요.',
-            },
-            {
-              group: ['**/adapters/**'],
-              message: '컨트롤러는 구체 어댑터를 import하지 않습니다.',
-            },
-          ],
-        },
-      ],
-    },
+    files: productionFiles,
+    plugins: { architecture },
+    rules: { 'architecture/boundaries': 'error' },
   },
   {
-    // PrismaService 의존은 정상 → '!**/prisma.service.js'로 제외(전 레포지토리 오탐 방지).
-    files: ['src/**/*.repository.ts', 'src/**/repositories/**/*.ts'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@nestjs/common',
-              importNames: [
-                'HttpException',
-                'BadRequestException',
-                'UnauthorizedException',
-                'ForbiddenException',
-                'NotFoundException',
-                'ConflictException',
-                'GoneException',
-                'PayloadTooLargeException',
-                'UnsupportedMediaTypeException',
-                'UnprocessableEntityException',
-                'InternalServerErrorException',
-              ],
-              message:
-                '레포지토리는 HTTP 예외를 던지지 않습니다. null/도메인 결과를 반환하고 Service에서 매핑하세요.',
-            },
-          ],
-          patterns: [
-            {
-              group: [
-                '*.service.js',
-                '**/*.service.js',
-                '**/services/**',
-                '!*.prisma.service.js',
-                '!**/prisma.service.js',
-                '!**/prisma/**',
-              ],
-              message: '레포지토리는 Service를 import하지 않습니다(PrismaService는 예외).',
-            },
-            {
-              group: ['*.controller.js', '**/*.controller.js', '**/controllers/**'],
-              message: '레포지토리는 Controller를 import하지 않습니다.',
-            },
-            {
-              group: ['**/adapters/**'],
-              message: '레포지토리는 외부 어댑터를 import하지 않습니다.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/**/*.service.ts', 'src/**/services/**/*.ts'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['**/adapters/**'],
-              message:
-                '서비스는 구체 어댑터가 아닌 Port/토큰에 의존합니다. 어댑터는 Module에서 바인딩하세요.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
+    // Retained lexical declaration convention, separate from semantic boundaries.
     files: [
       'src/**/*.controller.ts',
       'src/**/controllers/**/*.ts',
@@ -156,13 +54,11 @@ export default tseslint.config(
         'error',
         {
           selector: 'ExportNamedDeclaration > TSInterfaceDeclaration[id.name=/Dto$/]',
-          message:
-            'DTO interface는 도메인 dto/*.dto.ts 에 정의하세요 (controller/service 인라인 선언 금지).',
+          message: 'DTO interfaces belong in domain dto/*.dto.ts files.',
         },
         {
           selector: 'ExportNamedDeclaration > TSTypeAliasDeclaration[id.name=/Dto$/]',
-          message:
-            'DTO type은 도메인 dto/*.dto.ts 에 정의하세요 (controller/service 인라인 선언 금지).',
+          message: 'DTO aliases belong in domain dto/*.dto.ts files.',
         },
       ],
     },

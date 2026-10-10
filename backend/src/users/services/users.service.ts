@@ -10,11 +10,11 @@ import { hashPassword } from '../../auth/password.js';
 import {
   assertValidPassword,
   requiredPassword,
-} from '../../auth/password-policy.js';
+} from '../../auth/services/password-policy.service.js';
 import type {
   CreateUserResponseDto,
   UserResponseDto,
-} from '../dto/user.dto.js';
+} from '../dto/user-response.dto.js';
 import {
   UsersRepository,
   type UserSummary,

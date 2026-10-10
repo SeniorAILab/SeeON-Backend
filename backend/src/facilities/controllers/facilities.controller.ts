@@ -13,10 +13,13 @@ import { ApiBody, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import {
   RequireFacilityGuard,
   JwtAuthGuard,
-} from '../../auth/jwt-auth.guard.js';
-import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
-import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
-import { UpdateFacilityRequestDto } from '../dto/facility.dto.js';
+} from '../../auth/guards/jwt-auth.guard.js';
+import type { RequestWithAuth } from '../../auth/guards/jwt-auth.guard.js';
+import {
+  RequireCapability,
+  RolesGuard,
+} from '../../auth/guards/roles.guard.js';
+import { UpdateFacilityRequestDto } from '../dto/update-facility-request.dto.js';
 import { FacilitiesService } from '../services/facilities.service.js';
 
 @Controller({ path: 'facilities', version: '1' })

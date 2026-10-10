@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { MissingTenantContextError } from '../common/errors';
-import { TenantContext } from '../common/tenant-context';
+import { MissingTenantContextError } from '../common/errors/missing-tenant-context.error';
+import { TenantContext } from '../common/services/tenant-context.service';
 import { cleanupFacilityFixtures } from '../../test/helpers/facility-fixture-cleanup.js';
 import { PrismaService } from './prisma.service';
 

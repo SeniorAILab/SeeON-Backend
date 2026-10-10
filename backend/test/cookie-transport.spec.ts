@@ -12,7 +12,7 @@ import type { App } from 'supertest/types';
 import {
   clearSessionCookie,
   setSessionCookie,
-} from '../src/auth/cookie.util.js';
+} from '../src/auth/services/cookie.service.js';
 import { configureTrustedIngressProxy } from '../src/config/trusted-ingress-proxy.js';
 
 @Controller()
@@ -30,7 +30,7 @@ class CookieProbeController {
   }
 }
 
-describe('request-aware cookie transport (e2e)', () => {
+describe('request-aware cookie transport (isolated HTTP)', () => {
   const originalMode = process.env.AUTH_COOKIE_SECURE;
 
   afterEach(() => {

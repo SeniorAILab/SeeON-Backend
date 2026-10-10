@@ -2,8 +2,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
 import { CamerasModule } from '../src/cameras/cameras.module';
-import { CamerasController } from '../src/cameras/cameras.controller';
-import { CamerasService } from '../src/cameras/cameras.service';
+import { CamerasController } from '../src/cameras/controllers/cameras.controller';
+import { CamerasService } from '../src/cameras/services/cameras.service';
 
 /**
  * Provider-graph closure gate (Standing Build-Closure Rule). Compiling the new

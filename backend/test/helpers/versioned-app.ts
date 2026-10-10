@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
-import { createOpenApiDocument } from '../../src/openapi/openapi-document';
+import { createOpenApiDocument } from '../../src/openapi/adapters/openapi-document.adapter';
 
 export function configureVersionedTestApp(app: INestApplication): void {
   app.setGlobalPrefix('api', {

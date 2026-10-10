@@ -10,18 +10,18 @@ import request from 'supertest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FacilityContextInterceptor } from '../src/auth/facility-context.interceptor.js';
+import { FacilityContextInterceptor } from '../src/auth/interceptors/facility-context.interceptor.js';
 import {
   JwtAuthGuard,
   RequireFacilityGuard,
-} from '../src/auth/jwt-auth.guard.js';
-import { CamerasService } from '../src/cameras/cameras.service.js';
-import { EdgeIngestTokenGuard } from '../src/events/edge-ingest-token.guard.js';
-import { EventAlarmService } from '../src/events/event-alarm.service.js';
-import { EventRecorderService } from '../src/events/event-recorder.service.js';
-import { EventsController } from '../src/events/events.controller.js';
+} from '../src/auth/guards/jwt-auth.guard.js';
+import { CamerasService } from '../src/cameras/services/cameras.service.js';
+import { EdgeIngestTokenGuard } from '../src/events/guards/edge-ingest-token.guard.js';
+import { EventAlarmService } from '../src/events/services/event-alarm.service.js';
+import { EventRecorderService } from '../src/events/services/event-recorder.service.js';
+import { EventsController } from '../src/events/controllers/events.controller.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { writeImmutableFile } from '../src/common/snapshot-storage.js';
+import { writeImmutableFile } from '../src/common/repositories/immutable-snapshot.repository.js';
 
 const EDGE_TOKEN = 'event-snapshot-immutability-token';
 const ROUTE_EVENT_ID = 'route-event-id';
@@ -32,6 +32,7 @@ const SNAPSHOT_KEY = `${FACILITY_ID}/${STORED_EVENT_ID}.jpg`;
 describe('Event snapshot immutable HTTP contract', () => {
   let app: INestApplication<App>;
   let snapshotDir: string;
+  const originalSnapshotDir = process.env.SNAPSHOT_DIR;
   const persistSnapshotKey = jest.fn<Promise<void>, [string, string, string]>();
 
   beforeEach(async () => {
@@ -41,6 +42,19 @@ describe('Event snapshot immutable HTTP contract', () => {
     );
     process.env.SNAPSHOT_DIR = snapshotDir;
     persistSnapshotKey.mockReset().mockResolvedValue(undefined);
+
+    // Exercise the real snapshot workflow without constructing a database client.
+    const recorder = Object.assign(
+      new EventRecorderService({} as PrismaService, {} as CamerasService),
+      {
+        resolveForSnapshot: jest.fn().mockResolvedValue({
+          id: STORED_EVENT_ID,
+          facilityId: FACILITY_ID,
+        }),
+        persistSnapshotKey,
+        list: jest.fn(),
+      },
+    );
 
     const moduleFixture = await Test.createTestingModule({
       controllers: [EventsController],
@@ -81,14 +95,7 @@ describe('Event snapshot immutable HTTP contract', () => {
         },
         {
           provide: EventRecorderService,
-          useValue: {
-            resolveForSnapshot: jest.fn().mockResolvedValue({
-              id: STORED_EVENT_ID,
-              facilityId: FACILITY_ID,
-            }),
-            persistSnapshotKey,
-            list: jest.fn(),
-          },
+          useValue: recorder,
         },
         {
           provide: EventAlarmService,
@@ -117,7 +124,8 @@ describe('Event snapshot immutable HTTP contract', () => {
 
   afterEach(async () => {
     await app.close();
-    delete process.env.SNAPSHOT_DIR;
+    if (originalSnapshotDir === undefined) delete process.env.SNAPSHOT_DIR;
+    else process.env.SNAPSHOT_DIR = originalSnapshotDir;
     await fs.promises.rm(snapshotDir, { recursive: true, force: true });
   });
 
@@ -139,6 +147,45 @@ describe('Event snapshot immutable HTTP contract', () => {
       STORED_EVENT_ID,
       SNAPSHOT_KEY,
     );
+  });
+
+  it('keeps the published file when metadata persistence fails and permits an identical retry', async () => {
+    const original = Buffer.from('published-before-metadata');
+    persistSnapshotKey.mockRejectedValueOnce(
+      new Error('forced snapshot metadata failure'),
+    );
+
+    expect((await upload(original)).status).toBe(500);
+    await expect(fs.promises.readFile(snapshotPath())).resolves.toEqual(
+      original,
+    );
+    expect((await upload(original)).status).toBe(200);
+    expect(persistSnapshotKey).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes bytes before persistence and waits for persistence before responding', async () => {
+    const entered = barrier();
+    const persisted = barrier();
+    persistSnapshotKey.mockImplementationOnce(() => {
+      entered.release();
+      return persisted.promise;
+    });
+    const original = Buffer.from('persistence-order');
+    let responded = false;
+    const response = upload(original).then((result) => {
+      responded = true;
+      return result;
+    });
+    try {
+      await entered.promise;
+      expect(responded).toBe(false);
+      await expect(fs.promises.readFile(snapshotPath())).resolves.toEqual(
+        original,
+      );
+    } finally {
+      persisted.release();
+    }
+    expect((await response).status).toBe(201);
   });
 
   it('returns 200 for a byte-identical sequential replay', async () => {
@@ -173,6 +220,7 @@ describe('Event snapshot immutable HTTP contract', () => {
     await expect(fs.promises.readFile(snapshotPath())).resolves.toEqual(
       original,
     );
+    expect(persistSnapshotKey).toHaveBeenCalledTimes(1);
   });
 
   it('returns one 201 and one 200 for concurrent byte-identical uploads', async () => {
@@ -249,3 +297,13 @@ describe('Event snapshot immutable HTTP contract', () => {
     return path.join(snapshotDir, FACILITY_ID, `${STORED_EVENT_ID}.jpg`);
   }
 });
+
+function barrier() {
+  let release: () => void = () => {
+    throw new Error('Barrier was not initialized');
+  };
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}

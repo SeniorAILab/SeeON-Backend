@@ -3,8 +3,8 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { AppController } from '../src/app.controller';
-import { AppService } from '../src/app.service';
+import { AppController } from '../src/controllers/app.controller';
+import { AppService } from '../src/services/app.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 

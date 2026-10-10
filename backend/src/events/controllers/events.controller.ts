@@ -1,0 +1,277 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { FacilityContextInterceptor } from '../../auth/interceptors/facility-context.interceptor.js';
+import {
+  RequireFacilityGuard,
+  JwtAuthGuard,
+} from '../../auth/guards/jwt-auth.guard.js';
+import type { RequestWithAuth } from '../../auth/guards/jwt-auth.guard.js';
+import { SkipCsrf } from '../../security/decorators/skip-csrf.decorator.js';
+import { EdgeIngestTokenGuard } from '../guards/edge-ingest-token.guard.js';
+import type { EdgeIngestRequest } from '../guards/edge-ingest-token.guard.js';
+import {
+  RecordEventRequestDto,
+  RecordHeartbeatRequestDto,
+} from '../dto/event-request.dto.js';
+import { ListEventsQueryDto } from '../dto/event-query.dto.js';
+import {
+  type EventResponseDto,
+  type PaginatedEventsResponseDto,
+  type RecordHeartbeatResponseDto,
+  type RecordEventResponseDto,
+} from '../dto/event-response.dto.js';
+import { CamerasService } from '../../cameras/services/cameras.service.js';
+import { EventAlarmService } from '../services/event-alarm.service.js';
+import {
+  EventRecorderService,
+  type ListedEventsResult,
+} from '../services/event-recorder.service.js';
+import {
+  IMMUTABLE_FILE_RESULT,
+  MAX_SNAPSHOT_BYTES,
+  SNAPSHOT_EXTENSIONS,
+} from '../../common/snapshot-storage.js';
+import { readRequestBody } from '../../common/services/snapshot-request-body.service.js';
+
+@Controller({ path: 'events', version: '1' })
+export class EventsController {
+  constructor(
+    private readonly eventAlarm: EventAlarmService,
+    private readonly recorder: EventRecorderService,
+    private readonly cameras: CamerasService,
+  ) {}
+
+  @ApiOperation({
+    summary: 'Record an ML event',
+    description:
+      'Accepts camera-keyed ML events, resolves the facility and space from camera ownership, persists the event, and creates alerts for alert-worthy types.',
+  })
+  @Post()
+  @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
+  async record(
+    @Req() request: EdgeIngestRequest,
+    @Body() body: RecordEventRequestDto,
+  ): Promise<RecordEventResponseDto> {
+    rejectRetiredValidationFields(body, request.query);
+    // camera_id trim/blank checks, type canonicalization + enum membership,
+    // and detected_at timestamp validity are all independently re-validated
+    // by EventRecorderService.record(); the DTO's decorators only guarantee
+    // these arrive as the right JS types.
+    const result = await this.eventAlarm.record({
+      cameraId: body.camera_id,
+      type: body.type,
+      detectedAt: new Date(body.detected_at),
+      confidence: body.confidence,
+      configVersion: body.config_version,
+      modelVersion: body.model_version,
+      detectorVersion: body.detector_version,
+      operatingThreshold: body.operating_threshold,
+      snapshotKey: body.snapshot_key,
+      clockSource: body.clock_source,
+      clipId: optionalTrimmedString(body.clip_id),
+      edgeEventId: body.edge_event_id,
+      facilityId: request.edgePrincipal?.facilityId,
+    });
+    if (result.event.edgeEventId) {
+      return {
+        id: result.event.id,
+        event_id: result.event.id,
+        edge_event_id: result.event.edgeEventId,
+        status: 'accepted',
+      };
+    }
+    return {
+      id: result.event.id,
+      status: result.duplicate ? 'duplicate' : 'created',
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Record camera heartbeat',
+    description:
+      'Marks the resolved camera online from an ML heartbeat without creating an alert.',
+  })
+  @Post('heartbeat')
+  @HttpCode(200)
+  @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
+  async heartbeat(
+    @Body() body: RecordHeartbeatRequestDto,
+  ): Promise<RecordHeartbeatResponseDto> {
+    const cameraId = requireString(body.camera_id, 'camera_id');
+    const camera = await this.cameras.resolveForEventIngest(cameraId);
+    await this.cameras.recordHeartbeat(camera.facilityId, camera.id);
+    return { ok: true };
+  }
+
+  @ApiOperation({
+    summary: 'Upload an event snapshot',
+    description:
+      'Stores raw event snapshot bytes under a server-derived key after resolving event ownership.',
+  })
+  @Put(':eventId/snapshot')
+  @HttpCode(201)
+  @UseGuards(EdgeIngestTokenGuard)
+  @SkipCsrf()
+  async uploadSnapshot(
+    @Req() req: RequestWithAuth & EdgeIngestRequest,
+    @Param('eventId') eventId: string,
+    @Res({ passthrough: true }) response?: Response,
+  ) {
+    rejectClientSuppliedSnapshotKey(req);
+
+    const contentType = String(req.headers['content-type'] ?? '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    const extension = SNAPSHOT_EXTENSIONS.get(contentType);
+    if (!extension) {
+      throw new BadRequestException('Unsupported snapshot content type');
+    }
+
+    const event = await this.recorder.resolveForSnapshot(eventId);
+    const body = await readRequestBody(req, MAX_SNAPSHOT_BYTES);
+    if (body.length === 0) throw new BadRequestException('Snapshot is empty');
+
+    const { snapshotKey, writeResult } = await this.recorder.saveSnapshot(
+      event,
+      extension,
+      body,
+    );
+    response?.status(
+      writeResult === IMMUTABLE_FILE_RESULT.CREATED
+        ? HttpStatus.CREATED
+        : HttpStatus.OK,
+    );
+
+    return { snapshotKey };
+  }
+
+  @ApiOperation({
+    summary: 'List recorded events',
+    description: `Returns the authenticated facility's recorded ML event history for operational review.`,
+  })
+  @Get()
+  @ApiCookieAuth()
+  @UseGuards(JwtAuthGuard, RequireFacilityGuard)
+  @UseInterceptors(FacilityContextInterceptor)
+  async list(
+    @Req() req: RequestWithAuth,
+    @Query() query: ListEventsQueryDto,
+  ): Promise<PaginatedEventsResponseDto> {
+    const facilityId = requireFacilityId(req);
+    const { items, nextCursor } = await this.recorder.list(facilityId, query);
+    return { items: items.map(toEventResponseDto), nextCursor };
+  }
+}
+
+// Kept for heartbeat(): cameras.service.ts's resolveForEventIngest() 404s
+// (unknown_camera) rather than 400s on a blank camera_id, so this blank
+// check cannot be replaced by the DTO's @IsString() alone without changing
+// the status code for that edge case.
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new BadRequestException(`${field} is required`);
+  }
+  return value;
+}
+
+function rejectRetiredValidationFields(
+  body: RecordEventRequestDto,
+  query: Record<string, unknown> | undefined,
+): void {
+  for (const field of ['validationRunId', 'validation_run_id']) {
+    if (
+      Object.prototype.hasOwnProperty.call(body, field) ||
+      (query !== undefined &&
+        Object.prototype.hasOwnProperty.call(query, field))
+    ) {
+      throw new BadRequestException(`${field} is not allowed`);
+    }
+  }
+}
+
+function optionalTrimmedString(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+function rejectClientSuppliedSnapshotKey(req: RequestWithAuth): void {
+  const query = req.query as Record<string, unknown> | undefined;
+  if (
+    query &&
+    (Object.prototype.hasOwnProperty.call(query, 'snapshotKey') ||
+      Object.prototype.hasOwnProperty.call(query, 'snapshot_key'))
+  ) {
+    throw new BadRequestException('snapshot key is server-derived');
+  }
+
+  const headers = req.headers as Record<string, unknown>;
+  if (
+    Object.prototype.hasOwnProperty.call(headers, 'snapshotkey') ||
+    Object.prototype.hasOwnProperty.call(headers, 'snapshot_key') ||
+    Object.prototype.hasOwnProperty.call(headers, 'snapshot-key') ||
+    Object.prototype.hasOwnProperty.call(headers, 'x-snapshot-key')
+  ) {
+    throw new BadRequestException('snapshot key is server-derived');
+  }
+
+  const body = (req as { body?: unknown }).body;
+  if (body && typeof body === 'object') {
+    const bodyRecord = body as Record<string, unknown>;
+    if (
+      Object.prototype.hasOwnProperty.call(bodyRecord, 'snapshotKey') ||
+      Object.prototype.hasOwnProperty.call(bodyRecord, 'snapshot_key') ||
+      Object.prototype.hasOwnProperty.call(bodyRecord, 'key')
+    ) {
+      throw new BadRequestException('snapshot key is server-derived');
+    }
+  }
+}
+
+function requireFacilityId(req: RequestWithAuth): string {
+  const facilityId = req.effectiveFacilityId ?? req.user?.facilityId;
+  if (!facilityId) throw new ForbiddenException('Facility context required');
+  return facilityId;
+}
+
+function toEventResponseDto(
+  event: ListedEventsResult['items'][number],
+): EventResponseDto {
+  return {
+    id: event.id,
+    facilityId: event.facilityId,
+    cameraId: event.cameraId,
+    spaceId: event.spaceId,
+    type: event.type,
+    confidence: event.confidence,
+    detectedAt: event.detectedAt,
+    createdAt: event.createdAt,
+    modifiedAt: event.modifiedAt,
+    configVersion: event.configVersion,
+    modelVersion: event.modelVersion,
+    detectorVersion: event.detectorVersion,
+    operatingThreshold: event.operatingThreshold,
+    snapshotKey: event.snapshotKey,
+    clockSource: event.clockSource,
+  };
+}

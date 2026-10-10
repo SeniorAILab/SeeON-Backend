@@ -1,0 +1,362 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, type Event } from '@prisma/client';
+import * as crypto from 'crypto';
+import * as path from 'path';
+import {
+  IMMUTABLE_FILE_RESULT,
+  type ImmutableFileResult,
+} from '../../common/snapshot-storage.js';
+import { writeImmutableFile } from '../../common/repositories/immutable-snapshot.repository.js';
+import { snapshotRoot } from '../../common/config/snapshot-storage.config.js';
+import { resolveSnapshotPath } from '../../common/services/snapshot-path.service.js';
+import { CamerasService } from '../../cameras/services/cameras.service.js';
+import { AlertEventTypes } from '../../alerts/alert-event.types.js';
+import { PrismaService } from '../../prisma/prisma.service.js';
+import type { ListEventsQueryDto } from '../dto/event-query.dto.js';
+
+const ALLOWED_EVENT_TYPES = Object.values(AlertEventTypes);
+const ALLOWED_EVENT_TYPE_SET = new Set<string>(ALLOWED_EVENT_TYPES);
+export interface RecordEventInput {
+  cameraId: string;
+  type: string;
+  detectedAt: Date;
+  confidence?: number;
+  configVersion?: number;
+  modelVersion?: string;
+  detectorVersion?: string;
+  operatingThreshold?: number;
+  snapshotKey?: string | null;
+  clockSource?: string;
+  clipId?: string;
+  edgeEventId?: string;
+  facilityId?: string;
+}
+
+export interface RecordedEventResult {
+  event: Event;
+  duplicate: boolean;
+}
+export interface ListedEventsResult {
+  items: Event[];
+  nextCursor: string | null;
+}
+
+@Injectable()
+export class EventRecorderService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cameras: CamerasService,
+  ) {}
+
+  async record(input: RecordEventInput): Promise<RecordedEventResult> {
+    const edgeEventId = normalizeEdgeEventId(input.edgeEventId);
+    const cameraId = input.cameraId.trim();
+    const type = normalizeEventType(input.type);
+    if (!cameraId) throw new BadRequestException('camera_id is required');
+    if (Number.isNaN(input.detectedAt.getTime())) {
+      throw new BadRequestException('detected_at must be a valid timestamp');
+    }
+    if (input.confidence !== undefined && !Number.isFinite(input.confidence)) {
+      throw new BadRequestException('confidence must be a finite number');
+    }
+
+    const camera = await this.cameras.resolveForEventIngest(cameraId);
+    if (
+      input.facilityId !== undefined &&
+      input.facilityId !== camera.facilityId
+    ) {
+      throw new NotFoundException('unknown_camera');
+    }
+    const detectedAt = input.detectedAt;
+    const dedupKey = edgeEventId
+      ? buildEdgeEventDedupKey(edgeEventId)
+      : buildEventDedupKey(cameraId, detectedAt, type);
+
+    try {
+      const event = await this.prisma.withFacilityContext(
+        camera.facilityId,
+        (tx) =>
+          tx.event.create({
+            data: {
+              facilityId: camera.facilityId,
+              cameraId: camera.id,
+              spaceId: camera.spaceId,
+              type,
+              confidence: input.confidence,
+              detectedAt,
+              dedupKey,
+              clipId: input.clipId ?? null,
+              configVersion: input.configVersion ?? null,
+              modelVersion: input.modelVersion ?? null,
+              detectorVersion: input.detectorVersion ?? null,
+              operatingThreshold: input.operatingThreshold ?? null,
+              // PR-B0(f): snapshot key is ALWAYS server-derived via
+              // PUT /events/:eventId/snapshot. Any client-supplied snapshot_key
+              // is ignored at create; that upload route is the sole non-null setter.
+              snapshotKey: null,
+              clockSource: input.clockSource ?? null,
+              edgeEventId,
+            },
+          }),
+      );
+      return { event, duplicate: false };
+    } catch (err: unknown) {
+      if (edgeEventId && isUniqueConflict(err)) {
+        const existing = await this.prisma.withFacilityContext(
+          camera.facilityId,
+          (tx) =>
+            tx.event.findUniqueOrThrow({
+              where: {
+                facilityId_edgeEventId: {
+                  facilityId: camera.facilityId,
+                  edgeEventId,
+                },
+              },
+            }),
+        );
+        if (!sameEdgeEvent(existing, input, camera.id, type, detectedAt)) {
+          throw new ConflictException('edge_event_id payload conflict');
+        }
+        return { event: existing, duplicate: true };
+      }
+      if (!isDedupConflict(err)) throw err;
+      const existing = await this.prisma.withFacilityContext(
+        camera.facilityId,
+        (tx) =>
+          tx.event.findUniqueOrThrow({
+            where: {
+              facilityId_dedupKey: { facilityId: camera.facilityId, dedupKey },
+            },
+          }),
+      );
+      return { event: existing, duplicate: true };
+    }
+  }
+
+  async resolveForSnapshot(
+    eventId: string,
+  ): Promise<{ id: string; facilityId: string }> {
+    const rows = await this.prisma.$queryRaw<
+      { id: string; facilityId: string }[]
+    >`SELECT id, facility_id AS "facilityId" FROM get_event_for_snapshot(${eventId})`;
+
+    const candidate = rows.at(0);
+    if (!candidate) throw new NotFoundException('unknown_event');
+    const event = await this.prisma.withFacilityContext(
+      candidate.facilityId,
+      (tx) =>
+        tx.event.findFirst({
+          where: { id: candidate.id },
+          select: { id: true, facilityId: true },
+        }),
+    );
+    if (!event) throw new NotFoundException('unknown_event');
+
+    return event;
+  }
+
+  async saveSnapshot(
+    event: { id: string; facilityId: string },
+    extension: string,
+    body: Buffer,
+  ): Promise<{ snapshotKey: string; writeResult: ImmutableFileResult }> {
+    const snapshotKey = path.posix.join(
+      event.facilityId,
+      `${event.id}.${extension}`,
+    );
+    const filePath = resolveSnapshotPath(snapshotRoot(), snapshotKey);
+    const writeResult = await writeImmutableFile(filePath, body);
+    if (writeResult === IMMUTABLE_FILE_RESULT.CONFLICT) {
+      throw new ConflictException(
+        'Snapshot already exists with different bytes',
+      );
+    }
+
+    await this.persistSnapshotKey(event.facilityId, event.id, snapshotKey);
+    return { snapshotKey, writeResult };
+  }
+
+  async persistSnapshotKey(
+    facilityId: string,
+    eventId: string,
+    snapshotKey: string,
+  ): Promise<void> {
+    // Existing rows with events.snapshot_key set but alerts.snapshot_key null
+    // require a one-time ops backfill script; this request path stays atomic.
+    await this.prisma.withFacilityContext(facilityId, async (tx) => {
+      await tx.$queryRaw`SELECT set_event_snapshot_key(${eventId}, ${facilityId}, ${snapshotKey})`;
+      await tx.alert.updateMany({
+        where: { originEventId: eventId },
+        data: { snapshotKey },
+      });
+    });
+  }
+
+  async list(
+    facilityId: string,
+    query: ListEventsQueryDto = {},
+  ): Promise<ListedEventsResult> {
+    const limit = Math.min(query.limit ?? 50, 200);
+    let cursor: { detectedAt: Date; id: string } | null = null;
+    if (query.cursor !== undefined && query.cursor !== '') {
+      cursor = decodeListCursor(query.cursor);
+      if (!cursor) throw new BadRequestException('invalid cursor');
+    }
+
+    const where: Prisma.EventWhereInput = {
+      ...(cursor
+        ? {
+            OR: [
+              { detectedAt: { lt: cursor.detectedAt } },
+              { detectedAt: cursor.detectedAt, id: { lt: cursor.id } },
+            ],
+          }
+        : {}),
+    };
+    const rows = await this.prisma.withFacilityContext(
+      facilityId,
+      (tx: Prisma.TransactionClient) =>
+        tx.event.findMany({
+          where,
+          orderBy: [{ detectedAt: 'desc' }, { id: 'desc' }],
+          take: limit + 1,
+        }),
+    );
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items.at(-1);
+
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeListCursor(last) : null,
+    };
+  }
+}
+
+const CANONICAL_UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function normalizeEdgeEventId(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!CANONICAL_UUID_V4.test(value)) {
+    throw new BadRequestException(
+      'edge_event_id must be a canonical lowercase UUIDv4',
+    );
+  }
+  return value;
+}
+
+function buildEdgeEventDedupKey(edgeEventId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`edge:${edgeEventId}`)
+    .digest('hex');
+}
+
+function sameEdgeEvent(
+  event: Event,
+  input: RecordEventInput,
+  cameraId: string,
+  type: string,
+  detectedAt: Date,
+): boolean {
+  return (
+    event.cameraId === cameraId &&
+    event.type === type &&
+    event.detectedAt.getTime() === detectedAt.getTime() &&
+    event.confidence === (input.confidence ?? null) &&
+    event.configVersion === (input.configVersion ?? null) &&
+    event.modelVersion === (input.modelVersion ?? null) &&
+    event.detectorVersion === (input.detectorVersion ?? null) &&
+    event.operatingThreshold === (input.operatingThreshold ?? null) &&
+    event.clockSource === (input.clockSource ?? null) &&
+    event.clipId === (input.clipId ?? null)
+  );
+}
+
+export function buildEventDedupKey(
+  cameraId: string,
+  detectedAt: Date,
+  type: string,
+): string {
+  return crypto
+    .createHash('sha256')
+    .update(
+      `${cameraId.trim()}|${detectedAt.toISOString()}|${type.trim().toLowerCase()}`,
+    )
+    .digest('hex');
+}
+
+function normalizeEventType(rawType: string): string {
+  const type = rawType.trim().toLowerCase();
+  if (!ALLOWED_EVENT_TYPE_SET.has(type)) {
+    throw new BadRequestException(
+      `type must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
+    );
+  }
+  return type;
+}
+function encodeListCursor(event: Pick<Event, 'detectedAt' | 'id'>): string {
+  return Buffer.from(`${event.detectedAt.toISOString()}|${event.id}`).toString(
+    'base64',
+  );
+}
+
+function decodeListCursor(
+  cursor: string | undefined,
+): { detectedAt: Date; id: string } | null {
+  if (!cursor) return null;
+
+  try {
+    const decoded = Buffer.from(cursor, 'base64');
+    if (decoded.toString('base64') !== cursor) return null;
+
+    const value = decoded.toString('utf8');
+    const separator = value.indexOf('|');
+    if (
+      separator <= 0 ||
+      separator !== value.lastIndexOf('|') ||
+      separator === value.length - 1
+    ) {
+      return null;
+    }
+
+    const detectedAtIso = value.slice(0, separator);
+    const id = value.slice(separator + 1);
+    const detectedAt = new Date(detectedAtIso);
+    if (
+      Number.isNaN(detectedAt.getTime()) ||
+      detectedAt.toISOString() !== detectedAtIso
+    ) {
+      return null;
+    }
+
+    return { detectedAt, id };
+  } catch {
+    return null;
+  }
+}
+
+function isDedupConflict(err: unknown): boolean {
+  if (!isUniqueConflict(err)) return false;
+  const target = err.meta?.target;
+  return (
+    target === null ||
+    (Array.isArray(target) &&
+      target.includes('facility_id') &&
+      target.includes('dedup_key'))
+  );
+}
+
+function isUniqueConflict(
+  err: unknown,
+): err is Prisma.PrismaClientKnownRequestError {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
+}

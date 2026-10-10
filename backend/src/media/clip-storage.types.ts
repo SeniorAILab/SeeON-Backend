@@ -1,4 +1,5 @@
 import type { Readable } from 'node:stream';
+import type { ContainedFile } from './repositories/clip-storage-containment.repository.js';
 
 export const CLIP_STORAGE_ERROR_CODES = {
   CHECKSUM_MISMATCH: 'CHECKSUM_MISMATCH',
@@ -15,18 +16,6 @@ export const CLIP_STORAGE_ERROR_CODES = {
 
 export type ClipStorageErrorCode =
   (typeof CLIP_STORAGE_ERROR_CODES)[keyof typeof CLIP_STORAGE_ERROR_CODES];
-
-export class ClipStorageError extends Error {
-  readonly name = 'ClipStorageError';
-
-  constructor(
-    readonly code: ClipStorageErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
 
 export type ClipStorageConfig = {
   readonly rootDir: string;
@@ -48,6 +37,12 @@ export type ClipPersistRequest = {
 export type ClipInspection = {
   readonly codec: 'h264';
   readonly durationMs: number;
+};
+
+export type StagedClip = ClipInspection & {
+  readonly temporaryFile: ContainedFile;
+  readonly sha256: string;
+  readonly sizeBytes: number;
 };
 
 export type PersistedClip = ClipInspection & {

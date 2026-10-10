@@ -2,10 +2,10 @@ import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { configureHttpBodyParsing } from './common/json/strict-json-parser.js';
-import { configureFrontendCors } from './config/frontend-cors.js';
+import { configureHttpBodyParsing } from './common/adapters/http-body-parsing.adapter.js';
+import { configureFrontendCors } from './config/adapters/frontend-cors.adapter.js';
 import { configureTrustedIngressProxy } from './config/trusted-ingress-proxy.js';
-import { createOpenApiDocument } from './openapi/openapi-document.js';
+import { createOpenApiDocument } from './openapi/adapters/openapi-document.adapter.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });

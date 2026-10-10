@@ -4,8 +4,8 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module.js';
-import { configureHttpBodyParsing } from '../../src/common/json/strict-json-parser.js';
-import { EdgeAdminService } from '../../src/edge-credentials/edge-admin.service.js';
+import { configureHttpBodyParsing } from '../../src/common/adapters/http-body-parsing.adapter.js';
+import { EdgeAdminService } from '../../src/edge-credentials/services/edge-admin.service.js';
 import { readObject } from './json-response.js';
 import {
   cleanupTopologyDb,

@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import { FacilityContextInterceptor } from './facility-context.interceptor';
-import { RequireFacilityGuard, JwtAuthGuard } from './jwt-auth.guard';
-import { RolesGuard } from './roles.guard';
-import { JwtStrategy, jwtSecret } from './jwt.strategy';
+import { AuthController } from './controllers/auth.controller';
+import { AuthService } from './services/auth.service';
+import { AuthRepository } from './repositories/auth.repository';
+import { FacilityContextInterceptor } from './interceptors/facility-context.interceptor';
+import { RequireFacilityGuard, JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { JwtStrategyAdapter, jwtSecret } from './adapters/jwt-strategy.adapter';
 import { DEFAULT_JWT_TTL } from './auth.constants';
 
 @Module({
@@ -27,8 +28,9 @@ import { DEFAULT_JWT_TTL } from './auth.constants';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthRepository,
     JwtAuthGuard,
-    JwtStrategy,
+    JwtStrategyAdapter,
     RequireFacilityGuard,
     RolesGuard,
     FacilityContextInterceptor,
