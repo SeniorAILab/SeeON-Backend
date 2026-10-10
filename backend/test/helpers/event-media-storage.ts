@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ClipStorageService } from '../../src/media/clip-storage.service.js';
+import { ClipStorageService } from '../../src/media/services/clip-storage.service.js';
 import type {
   ClipInspector,
   ClipStorageDependencies,

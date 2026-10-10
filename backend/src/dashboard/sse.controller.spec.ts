@@ -2,16 +2,16 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
-import { AlertWriterService } from '../alerts/alert-writer.service';
-import { AlertsService } from '../alerts/alerts.service';
-import { AuthService } from '../auth/auth.service';
+import { AlertWriterService } from '../alerts/services/alert-writer.service';
+import { AlertsService } from '../alerts/services/alerts.service';
+import { AuthService } from '../auth/services/auth.service';
 import { configureVersionedTestApp } from '../../test/helpers/versioned-app';
 import {
   DashboardStreamController,
   formatAlertEvent,
   formatAlertUpdateEvent,
   SSE_REAUTH_INTERVAL_MS,
-} from './sse.controller';
+} from './controllers/dashboard-stream.controller';
 
 describe('formatAlertEvent', () => {
   it('serializes exactly the pinned alert payload fields', () => {

@@ -4,7 +4,7 @@ import {
   buildAuthCookieOptions,
   clearSessionCookie,
   setSessionCookie,
-} from './cookie.util';
+} from './services/cookie.service';
 
 type CookieCall = readonly [
   name: string,

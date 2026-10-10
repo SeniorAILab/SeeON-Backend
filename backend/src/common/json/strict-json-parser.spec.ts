@@ -1,4 +1,5 @@
-import { parseStrictJson, StrictJsonError } from './strict-json-parser.js';
+import { parseStrictJson } from '../helpers/strict-json-reader.helper.js';
+import { StrictJsonError } from '../errors/strict-json.error.js';
 
 describe('strict JSON parser', () => {
   it.each([

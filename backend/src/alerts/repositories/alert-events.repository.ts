@@ -14,10 +14,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   AlertEventTypes,
-  type AlertEventRequestDto,
   type AlertPolicyDecision,
   type AlertSuppressedReason,
-} from '../dto/alert-events.dto.js';
+} from '../alert-event.types.js';
+import type { AlertEventRequestDto } from '../dto/alert-event-request.dto.js';
 import type { DeliveryResult } from '../ports/channel.port.js';
 
 const DEFAULT_RETRY_AFTER_MS = 60_000;

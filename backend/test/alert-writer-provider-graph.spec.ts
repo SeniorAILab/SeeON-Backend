@@ -2,8 +2,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
 import { AlertsModule } from '../src/alerts/alerts.module';
-import { AlertWriterService } from '../src/alerts/alert-writer.service';
-import { AlertsService } from '../src/alerts/alerts.service';
+import { AlertWriterService } from '../src/alerts/services/alert-writer.service';
+import { AlertsService } from '../src/alerts/services/alerts.service';
 
 /**
  * Provider-graph closure gate (Standing Build-Closure Rule). A successful

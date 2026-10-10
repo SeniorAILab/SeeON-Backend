@@ -4,11 +4,11 @@ import { PrismaClient } from '@prisma/client';
 import type { App } from 'supertest/types';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module.js';
-import { ClipStorageService } from '../../src/media/clip-storage.service.js';
+import { ClipStorageService } from '../../src/media/services/clip-storage.service.js';
 import {
   EVENT_MEDIA_CONFIG,
   EventMediaService,
-} from '../../src/media/event-media.service.js';
+} from '../../src/media/services/event-media.service.js';
 import { PrismaService } from '../../src/prisma/prisma.service.js';
 import { configureVersionedTestApp } from './versioned-app.js';
 

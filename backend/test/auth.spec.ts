@@ -6,7 +6,7 @@ import type { Request } from 'express';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
-import { setSessionCookie } from '../src/auth/cookie.util';
+import { setSessionCookie } from '../src/auth/services/cookie.service';
 import { configureVersionedTestApp } from './helpers/versioned-app';
 
 const TEST_SECRET = 'test-session-secret-minimum-32-characters';

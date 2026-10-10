@@ -1,10 +1,10 @@
-import { EventAlarmService } from './event-alarm.service.js';
+import { EventAlarmService } from './services/event-alarm.service.js';
 import type {
   EventRecorderService,
   RecordedEventResult,
-} from './event-recorder.service.js';
-import type { AlertWriterService } from '../alerts/alert-writer.service.js';
-import type { CamerasService } from '../cameras/cameras.service.js';
+} from './services/event-recorder.service.js';
+import type { AlertWriterService } from '../alerts/services/alert-writer.service.js';
+import type { CamerasService } from '../cameras/services/cameras.service.js';
 
 const event: RecordedEventResult['event'] = {
   id: 'event-1',

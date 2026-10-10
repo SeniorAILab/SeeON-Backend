@@ -8,7 +8,7 @@ import {
 } from '@prisma/client';
 
 import type { PrismaService } from '../../prisma/prisma.service.js';
-import { AlertEventTypes } from '../dto/alert-events.dto.js';
+import { AlertEventTypes } from '../alert-event.types.js';
 import {
   AlertEventsRepository,
   toPrismaEventType,

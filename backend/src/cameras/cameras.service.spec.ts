@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma, ProvisioningSource } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
-import { CamerasService } from './cameras.service';
+import { CamerasService } from './services/cameras.service';
 
 type CameraCreateArg = {
   data: {

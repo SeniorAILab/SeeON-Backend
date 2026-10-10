@@ -1,8 +1,8 @@
 import {
   EVENT_MEDIA_ERROR_CODES,
-  EventMediaError,
   type EventMediaConfig,
 } from './event-media.types.js';
+import { EventMediaError } from './errors/event-media.error.js';
 
 const MINIMUM_RETENTION_DAYS = 60;
 

@@ -7,14 +7,12 @@ import { EmailChannelAdapter } from './adapters/email-channel.adapter.js';
 import { ALERT_CHANNEL_PORT } from './ports/channel.port.js';
 import { AlertEventsRepository } from './repositories/alert-events.repository.js';
 import { AlertEventsService } from './services/alert-events.service.js';
-import {
-  AlertPolicyClock,
-  AlertPolicyService,
-  SystemAlertPolicyClock,
-} from './services/alert-policy.service.js';
-import { AlertsController } from './alerts.controller.js';
-import { AlertsService } from './alerts.service.js';
-import { AlertWriterService } from './alert-writer.service.js';
+import { AlertPolicyClock } from './ports/alert-policy-clock.port.js';
+import { SystemAlertPolicyClock } from './adapters/system-alert-policy-clock.adapter.js';
+import { AlertPolicyService } from './services/alert-policy.service.js';
+import { AlertsController } from './controllers/alerts.controller.js';
+import { AlertsService } from './services/alerts.service.js';
+import { AlertWriterService } from './services/alert-writer.service.js';
 
 /**
  * AlertsModule bounds the live alert domain:

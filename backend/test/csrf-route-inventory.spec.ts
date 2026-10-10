@@ -3,17 +3,17 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module.js';
-import { EdgeFacilityTokenGuard } from '../src/cameras/edge-facility-token.guard.js';
-import { EdgeCamerasController } from '../src/cameras/cameras.controller.js';
-import { EdgeEnrollmentController } from '../src/edge-credentials/edge-credential.controller.js';
-import { EdgeEnrollmentGuard } from '../src/edge-credentials/edge-enrollment.guard.js';
-import { EdgeTopologyController } from '../src/edge-topology/edge-topology.controller.js';
-import { EventsController } from '../src/events/events.controller.js';
-import { EdgeIngestTokenGuard } from '../src/events/edge-ingest-token.guard.js';
-import { EdgeMediaController } from '../src/media/edge-media.controller.js';
+import { EdgeFacilityTokenGuard } from '../src/cameras/guards/edge-facility-token.guard.js';
+import { EdgeCamerasController } from '../src/cameras/controllers/cameras.controller.js';
+import { EdgeEnrollmentController } from '../src/edge-credentials/controllers/edge-credential.controller.js';
+import { EdgeEnrollmentGuard } from '../src/edge-credentials/guards/edge-enrollment.guard.js';
+import { EdgeTopologyController } from '../src/edge-topology/controllers/edge-topology.controller.js';
+import { EventsController } from '../src/events/controllers/events.controller.js';
+import { EdgeIngestTokenGuard } from '../src/events/guards/edge-ingest-token.guard.js';
+import { EdgeMediaController } from '../src/media/controllers/edge-media.controller.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { CSRF_ROUTE_INVENTORY } from '../src/security/csrf-route-inventory.js';
-import { SKIP_CSRF_METADATA_KEY } from '../src/security/skip-csrf.decorator.js';
+import { SKIP_CSRF_METADATA_KEY } from '../src/security/decorators/skip-csrf.decorator.js';
 import { configureVersionedTestApp } from './helpers/versioned-app.js';
 
 const prismaDouble = {

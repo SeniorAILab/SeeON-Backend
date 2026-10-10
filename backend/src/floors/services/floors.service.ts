@@ -4,12 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Floor } from '@prisma/client';
-import { assertProductOwned } from '../../common/edge-ownership-guard.js';
-import type {
-  CreateFloorRequestDto,
-  FloorResponseDto,
-  UpdateFloorRequestDto,
-} from '../dto/floor.dto.js';
+import { assertProductOwned } from '../../common/services/edge-ownership.service.js';
+import type { CreateFloorRequestDto } from '../dto/create-floor-request.dto.js';
+import type { FloorResponseDto } from '../dto/floor-response.dto.js';
+import type { UpdateFloorRequestDto } from '../dto/update-floor-request.dto.js';
 import { FloorsRepository } from '../repositories/floors.repository.js';
 
 @Injectable()

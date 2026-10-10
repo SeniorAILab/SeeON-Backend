@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import request from 'supertest';
 import type { ClipInspector } from '../src/media/clip-storage.types.js';
-import { EventMediaRepository } from '../src/media/event-media.repository.js';
+import { EventMediaRepository } from '../src/media/repositories/event-media.repository.js';
 import {
   EVENT_MEDIA_EDGE_TOKEN,
   EventMediaHarness,

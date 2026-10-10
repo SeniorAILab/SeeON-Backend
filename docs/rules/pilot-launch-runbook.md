@@ -195,8 +195,9 @@ from environment values.
 - Omissions are previewed and soft-deactivated only after an exact, unexpired
   confirmation. No wrapper issues hard deletes.
 - Historical events and media remain readable.
-- Validation traffic uses a temporary installation and validation grant and is
-  excluded from ordinary lists, alerts, SSE, email, and outbox delivery.
+- Validation grants and SYSTEM_TEST runtime support have been removed; do not
+  assume validation traffic is isolated from ordinary lists, alerts, SSE, email,
+  or outbox delivery.
 - Clip download is a derivative MP4 through the authorized attachment API. No
   edge URL or private frame enters evidence.
 

@@ -1,7 +1,7 @@
 import type { ExecutionContext } from '@nestjs/common';
-import type { EdgeCredentialAuthenticator } from './edge-credential-authenticator.js';
-import { EdgeEnrollmentGuard } from './edge-enrollment.guard.js';
-import type { EnrollmentRateLimiter } from './enrollment-rate-limiter.js';
+import type { EdgeCredentialAuthenticatorService } from './services/edge-credential-authenticator.service.js';
+import { EdgeEnrollmentGuard } from './guards/edge-enrollment.guard.js';
+import type { EnrollmentRateLimiterService } from './services/enrollment-rate-limiter.service.js';
 
 function context(request: Record<string, unknown>): ExecutionContext {
   return {
@@ -35,8 +35,8 @@ describe('EdgeEnrollmentGuard', () => {
       socket: {},
     };
     const guard = new EdgeEnrollmentGuard(
-      limiter as unknown as EnrollmentRateLimiter,
-      authenticator as unknown as EdgeCredentialAuthenticator,
+      limiter as unknown as EnrollmentRateLimiterService,
+      authenticator as unknown as EdgeCredentialAuthenticatorService,
     );
 
     await expect(guard.canActivate(context(request))).resolves.toBe(true);
@@ -54,8 +54,8 @@ describe('EdgeEnrollmentGuard', () => {
     const limiter = { consume: jest.fn().mockReturnValue(false) };
     const authenticator = { authenticateForEnrollment: jest.fn() };
     const guard = new EdgeEnrollmentGuard(
-      limiter as unknown as EnrollmentRateLimiter,
-      authenticator as unknown as EdgeCredentialAuthenticator,
+      limiter as unknown as EnrollmentRateLimiterService,
+      authenticator as unknown as EdgeCredentialAuthenticatorService,
     );
 
     await expect(

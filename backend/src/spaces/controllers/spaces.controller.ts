@@ -13,18 +13,19 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiCookieAuth } from '@nestjs/swagger';
-import { FacilityContextInterceptor } from '../../auth/facility-context.interceptor.js';
+import { FacilityContextInterceptor } from '../../auth/interceptors/facility-context.interceptor.js';
 import {
   RequireFacilityGuard,
   JwtAuthGuard,
-} from '../../auth/jwt-auth.guard.js';
-import { RequireCapability, RolesGuard } from '../../auth/roles.guard.js';
-import type { RequestWithAuth } from '../../auth/jwt-auth.guard.js';
+} from '../../auth/guards/jwt-auth.guard.js';
 import {
-  CreateSpaceRequestDto,
-  type SpaceTypeValue,
-  UpdateSpaceRequestDto,
-} from '../dto/space.dto.js';
+  RequireCapability,
+  RolesGuard,
+} from '../../auth/guards/roles.guard.js';
+import type { RequestWithAuth } from '../../auth/guards/jwt-auth.guard.js';
+import { CreateSpaceRequestDto } from '../dto/create-space-request.dto.js';
+import { UpdateSpaceRequestDto } from '../dto/update-space-request.dto.js';
+import type { SpaceTypeValue } from '../space.types.js';
 import { SpacesService } from '../services/spaces.service.js';
 
 @Controller({ path: 'spaces', version: '1' })

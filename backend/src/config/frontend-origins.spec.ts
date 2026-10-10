@@ -1,9 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  FrontendOriginsValidationError,
-  parseFrontendOrigins,
-} from './frontend-origins.js';
+import { FrontendOriginsValidationError } from './errors/frontend-origins-validation.error.js';
+import { parseFrontendOrigins } from './frontend-origins.js';
 
 type OriginConformanceVectors = {
   readonly validProduction: readonly {

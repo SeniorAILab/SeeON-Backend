@@ -4,7 +4,7 @@ import {
   buildEmailAlertText,
   formatDetectedAtKST,
   toEmailAlertMessageDto,
-} from './email-alert-message.dto.js';
+} from './email-alert-message-request.dto.js';
 
 function message(
   overrides: Partial<AlertDeliveryMessage> = {},

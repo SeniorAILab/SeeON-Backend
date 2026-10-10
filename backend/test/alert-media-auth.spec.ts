@@ -1,6 +1,6 @@
 import request from 'supertest';
 import type { Response } from 'supertest';
-import { AlertMediaService } from '../src/media/alert-media.service';
+import { AlertMediaService } from '../src/media/services/alert-media.service';
 import {
   type AlertMediaFixture,
   createAlertMediaFixture,

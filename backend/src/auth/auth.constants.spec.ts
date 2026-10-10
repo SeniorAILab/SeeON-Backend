@@ -51,13 +51,19 @@ describe('auth session TTL', () => {
     // 30일 TTL은 그 자체로 위험하지 않다 — sessionVersion이 매 요청 검증되고
     // 로그아웃이 증가시키기 때문이다. 그 연결이 끊기면 30일짜리 토큰을
     // 회수할 방법이 사라진다.
-    const strategy = readFileSync(join(__dirname, 'jwt.strategy.ts'), 'utf8');
+    const strategy = readFileSync(
+      join(__dirname, 'adapters', 'jwt-strategy.adapter.ts'),
+      'utf8',
+    );
     expect(strategy).toContain(
       'user.sessionVersion !== payload.sessionVersion',
     );
 
-    const service = readFileSync(join(__dirname, 'auth.service.ts'), 'utf8');
-    expect(service).toContain('sessionVersion: { increment: 1 }');
+    const repository = readFileSync(
+      join(__dirname, 'repositories', 'auth.repository.ts'),
+      'utf8',
+    );
+    expect(repository).toContain('sessionVersion: { increment: 1 }');
   });
 
   it('프로덕션 compose가 코드 기본값과 같은 TTL을 넘긴다', () => {

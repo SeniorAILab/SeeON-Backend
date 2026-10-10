@@ -1,8 +1,14 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RequireFacilityGuard, type RequestWithAuth } from './jwt-auth.guard';
-import { JwtStrategy, jwtCookieExtractor } from './jwt.strategy';
+import {
+  RequireFacilityGuard,
+  type RequestWithAuth,
+} from './guards/jwt-auth.guard';
+import {
+  JwtStrategyAdapter,
+  jwtCookieExtractor,
+} from './adapters/jwt-strategy.adapter';
 const SCOPED_FACILITY_ID = 'fac_happy_nokyang';
 
 function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
@@ -13,7 +19,7 @@ function contextFor(request: Partial<RequestWithAuth>): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-describe('JwtStrategy', () => {
+describe('JwtStrategyAdapter', () => {
   it('extracts JWT from the httpOnly auth cookie', () => {
     expect(
       jwtCookieExtractor({
@@ -37,7 +43,7 @@ describe('JwtStrategy', () => {
         },
       },
     };
-    const strategy = new JwtStrategy(
+    const strategy = new JwtStrategyAdapter(
       new ConfigService({ SESSION_JWT_SECRET: 'x'.repeat(32) }),
       prisma as never,
     );

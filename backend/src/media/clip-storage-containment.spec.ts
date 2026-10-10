@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { ClipStorageService } from './clip-storage.service.js';
+import { ClipStorageService } from './services/clip-storage.service.js';
 import {
   CLIP_STORAGE_ERROR_CODES,
   type ClipInspector,
@@ -18,7 +18,7 @@ const MEDIA = Buffer.from('contained-media');
 // operations, which require Linux /proc descriptor traversal. The macOS dev-only
 // devino fallback re-derives paths from expectedPath and cannot atomically anchor
 // a link/create to an already-opened directory inode, so these specs are the
-// Linux security gate (CI). See clip-storage-containment.ts strategy docs.
+// Linux security gate (CI). See repositories/clip-storage-containment.repository.ts strategy docs.
 const raceIt = process.platform === 'linux' ? it : it.skip;
 
 describe('ClipStorageService write containment', () => {

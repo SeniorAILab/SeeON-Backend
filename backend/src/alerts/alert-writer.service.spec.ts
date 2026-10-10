@@ -1,13 +1,13 @@
 import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { AlertStatus } from '@prisma/client';
-import { AlertEventTypes } from './dto/alert-events.dto';
+import { AlertEventTypes } from './alert-event.types';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import {
   AlertWriterService,
   type AlertEvent,
   type AlertUpdateEvent,
-} from './alert-writer.service';
+} from './services/alert-writer.service';
 import { FacilityScopedNotFoundException } from '../common/domain-errors';
 
 function setup() {

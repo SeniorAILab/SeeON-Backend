@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
 
 import { readPositiveIntegerConfig } from './config.js';
+import { SmtpConfigError } from '../errors/smtp-config.error.js';
 import type {
   AlertDeliveryMessage,
   ChannelPort,
@@ -13,7 +14,7 @@ import {
   buildEmailAlertHtml,
   buildEmailAlertText,
   toEmailAlertMessageDto,
-} from '../dto/email-alert-message.dto.js';
+} from '../dto/email-alert-message-request.dto.js';
 
 const DEFAULT_SMTP_PORT = 587;
 const DEFAULT_LINK_URL = 'http://localhost:3000';
@@ -113,12 +114,6 @@ export class EmailChannelAdapter implements ChannelPort {
     if (value === 'true') return true;
     if (value === 'false') return false;
     return defaultValue;
-  }
-}
-
-export class SmtpConfigError extends Error {
-  constructor(readonly configName: string) {
-    super(`SMTP config is missing: ${configName}`);
   }
 }
 

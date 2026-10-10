@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import {
   EventRecorderService,
   buildEventDedupKey,
-} from './event-recorder.service.js';
+} from './services/event-recorder.service.js';
 
 type EventCreateInput = {
   readonly data: Readonly<Record<string, unknown>>;

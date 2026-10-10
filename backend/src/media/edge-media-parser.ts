@@ -1,9 +1,9 @@
 import type { Readable } from 'node:stream';
 import {
   EVENT_MEDIA_ERROR_CODES,
-  EventMediaError,
   type ReadyClipUpload,
 } from './event-media.types.js';
+import { EventMediaError } from './errors/event-media.error.js';
 
 type Headers = Readonly<Record<string, string | readonly string[] | undefined>>;
 

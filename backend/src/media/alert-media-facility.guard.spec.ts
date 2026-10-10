@@ -1,10 +1,10 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
-import type { RequestWithAuth } from '../auth/jwt-auth.guard.js';
+import type { RequestWithAuth } from '../auth/guards/jwt-auth.guard.js';
 import {
   AlertMediaFacilityGuard,
   MEDIA_FACILITY_COOKIE_NAME,
-} from './alert-media-facility.guard.js';
+} from './guards/alert-media-facility.guard.js';
 
 describe('AlertMediaFacilityGuard cookie policy', () => {
   const originalMode = process.env.AUTH_COOKIE_SECURE;

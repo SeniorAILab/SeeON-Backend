@@ -1,8 +1,8 @@
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from './prisma/prisma.service';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { AppController } from './controllers/app.controller';
+import { AppService } from './services/app.service';
 
 const DEPLOY_SHA = '0123456789abcdef0123456789abcdef01234567';
 

@@ -14,18 +14,6 @@ export const EVENT_MEDIA_ERROR_CODES = {
 export type EventMediaErrorCode =
   (typeof EVENT_MEDIA_ERROR_CODES)[keyof typeof EVENT_MEDIA_ERROR_CODES];
 
-export class EventMediaError extends Error {
-  readonly name = 'EventMediaError';
-
-  constructor(
-    readonly code: EventMediaErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
-
 export type EventMediaConfig = {
   readonly enabled: boolean;
   readonly retentionDays: number;

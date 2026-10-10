@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { AppController } from './controllers/app.controller';
+import { AppService } from './services/app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -14,14 +14,14 @@ import { FloorsModule } from './floors/floors.module.js';
 import { SpacesModule } from './spaces/spaces.module.js';
 import { EventsModule } from './events/events.module.js';
 import { UsersModule } from './users/users.module.js';
-import { backendEnvFilePaths } from './config/env-files.js';
+import { backendEnvFilePaths } from './config/adapters/backend-env-files.adapter.js';
 import { MlConfigModule } from './ml-config/ml-config.module.js';
-import { validateBackendEnv } from './config/env-validation.js';
+import { validateBackendEnv } from './config/adapters/backend-env-validation.adapter.js';
 import { EventMediaModule } from './media/event-media.module.js';
 import { AlertMediaModule } from './media/alert-media.module.js';
 import { EdgeCredentialsModule } from './edge-credentials/edge-credentials.module.js';
 import { EdgeTopologyModule } from './edge-topology/edge-topology.module.js';
-import { CsrfOriginGuard } from './security/csrf-origin.guard.js';
+import { CsrfOriginGuard } from './security/guards/csrf-origin.guard.js';
 
 // Ensure BigInt fields (e.g. Alert.alertSeq, exposed by the alerts read API
 // and the SSE stream) serialize in JSON responses. Nest uses JSON.stringify,

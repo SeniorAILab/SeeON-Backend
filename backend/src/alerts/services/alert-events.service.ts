@@ -8,10 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../../prisma/prisma.service.js';
-import {
-  AlertEventTypes,
-  type AlertEventRequestDto,
-} from '../dto/alert-events.dto.js';
+import { AlertEventTypes } from '../alert-event.types.js';
+import type { AlertEventRequestDto } from '../dto/alert-event-request.dto.js';
 import {
   ALERT_CHANNEL_PORT,
   type ChannelPort,

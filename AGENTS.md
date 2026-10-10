@@ -11,6 +11,7 @@ backend-only Jenkins deploy tooling. Extracted from `SeniorAILab/SeeON`
 (see `docs/provenance/README.md`).
 
 External repositories, not owned here:
+
 - `SeniorAILab/SeeON-Front`, the web dashboard. It consumes this API as an
   external client over CORS (`FRONT_ORIGINS`) and deploys on Vercel. No
   frontend package, build, image, or service exists in this repo; the
@@ -25,7 +26,7 @@ External repositories, not owned here:
 .
 ├── backend/        # NestJS API, auth/RBAC, Event API, alert policy, media clips, Prisma DB
 ├── infra/          # API ingress plus the pinned Jenkins controller image/service contract
-├── docs/           # decisions (2 ADRs), rules, provenance, openapi
+├── docs/           # decisions (current ADR), rules, provenance, openapi
 ├── scripts/        # git/backend/env/release/deploy guards and automation
 ├── .github/        # CI, PR gates, release→Jenkins signal
 ├── .githooks/      # pre-commit / pre-push entry points into scripts/git-guard
@@ -39,31 +40,31 @@ on by routing or CI.
 
 ## Where To Look
 
-| Task | Location | Notes |
-| --- | --- | --- |
-| CD decisions | `docs/decisions/ADR-001-iwinv-jenkins-cd.md`, `ADR-002-release-based-cd.md` | Only committed ADRs; new ones are explicit-request only. |
-| Standing rules | `docs/rules/` | Pilot launch runbook. |
-| Extraction provenance | `docs/provenance/README.md` | Source repo, commit map, source PRs #675 through #678. |
-| Backend API / DB | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Modules, Prisma schema, migrations. |
-| Alert domain | `backend/src/alerts/AGENTS.md` | Policy, write path, outbox, email channel port. |
-| Media clips | `backend/src/media/AGENTS.md` | Largest backend module; clip lifecycle + access audit. |
-| Backend tests | `backend/test/AGENTS.md` | Integration/e2e placement, real-Postgres harnesses. |
-| API ingress | `infra/api-ingress/` | nginx config + `nginx-config.test.sh`. |
-| Jenkins controller | `infra/jenkins/`, `docs/rules/jenkins-controller-replacement.md` | Pinned image/plugins, host service contract, replacement and rollback. |
-| Scripts / guards | `scripts/AGENTS.md`, `scripts/deploy/AGENTS.md` | Hard gates and deploy/release automation. |
-| CI / PR policy | `.github/AGENTS.md`, `.github/workflows/` | CI gates, PR policy, release signal. |
+| Task                  | Location                                                                 | Notes                                                                  |
+| --------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| CD decisions          | `docs/decisions/ADR-002-release-based-cd.md`                             | Current release-based CD; new ADRs are explicit-request only.          |
+| Standing rules        | `docs/rules/`                                                            | Pilot launch runbook.                                                  |
+| Extraction provenance | `docs/provenance/README.md`                                              | Source repo, commit map, source PRs #675 through #678.                 |
+| Backend API / DB      | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Modules, Prisma schema, migrations.                                    |
+| Alert domain          | `backend/src/alerts/AGENTS.md`                                           | Policy, write path, outbox, email channel port.                        |
+| Media clips           | `backend/src/media/AGENTS.md`                                            | Largest backend module; clip lifecycle + access audit.                 |
+| Backend tests         | `backend/test/AGENTS.md`                                                 | Integration/e2e placement, real-Postgres harnesses.                    |
+| API ingress           | `infra/api-ingress/`                                                     | nginx config + `nginx-config.test.sh`.                                 |
+| Jenkins controller    | `infra/jenkins/`, `docs/rules/jenkins-controller-replacement.md`         | Pinned image/plugins, host service contract, replacement and rollback. |
+| Scripts / guards      | `scripts/AGENTS.md`, `scripts/deploy/AGENTS.md`                          | Hard gates and deploy/release automation.                              |
+| CI / PR policy        | `.github/AGENTS.md`, `.github/workflows/`                                | CI gates, PR policy, release signal.                                   |
 
 ## Code Map
 
-| Surface | Entry / Owner | Role |
-| --- | --- | --- |
-| Backend boot | `backend/src/main.ts`, `app.module.ts` | Registers Config, Prisma, Auth, Cameras, Alerts, Dashboard, Facilities, Floors, Spaces, Events, EdgeCredentials, EdgeTopology, MlConfig, Users, EventMedia, AlertMedia. |
-| DB boundary | `backend/src/prisma/prisma.service.ts` | Highest-centrality symbol; owns facility context + `TENANT_MODELS` RLS set. |
-| Event ingest | `backend/src/events/` | `EventsController` → `EventRecorderService` (persist/dedupe) + `EventAlarmService` (derive alert); `EdgeIngestTokenGuard` on all three edge routes. |
-| Alert write/read | `backend/src/alerts/` | `AlertWriterService` serializes inserts for `alertSeq` SSE order; `AlertsService` is the read model. |
-| Media clips | `backend/src/media/` | Edge clip upload → immutable READY clip → authenticated Range playback + access audit. |
-| Tenancy/auth | `backend/src/auth/`, `facilities/`, `floors/`, `spaces/`, `cameras/` | Cookie session, capability RBAC, room-centric topology. |
-| CORS/CSRF seam | `backend/src/config/env-validation.ts`, `backend/src/security/` | `FRONT_ORIGINS` allowlist for the external SeeON-Front client; origin CSRF guard; temporary cross-site cookie bridge mode is validated here. |
+| Surface          | Entry / Owner                                                                            | Role                                                                                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend boot     | `backend/src/main.ts`, `app.module.ts`                                                   | Registers Config, Prisma, Auth, Cameras, Alerts, Dashboard, Facilities, Floors, Spaces, Events, EdgeCredentials, EdgeTopology, MlConfig, Users, EventMedia, AlertMedia. |
+| DB boundary      | `backend/src/prisma/prisma.service.ts`                                                   | Highest-centrality symbol; owns facility context + `TENANT_MODELS` RLS set.                                                                                             |
+| Event ingest     | `backend/src/events/`                                                                    | `EventsController` → `EventRecorderService` (persist/dedupe) + `EventAlarmService` (derive alert); `EdgeIngestTokenGuard` on all three edge routes.                     |
+| Alert write/read | `backend/src/alerts/`                                                                    | `AlertWriterService` serializes inserts for `alertSeq` SSE order; `AlertsService` is the read model.                                                                    |
+| Media clips      | `backend/src/media/`                                                                     | Edge clip upload → immutable READY clip → authenticated Range playback + access audit.                                                                                  |
+| Tenancy/auth     | `backend/src/auth/`, `facilities/`, `floors/`, `spaces/`, `cameras/`                     | Cookie session, capability RBAC, room-centric topology.                                                                                                                 |
+| CORS/CSRF seam   | `backend/src/config/adapters/backend-env-validation.adapter.ts`, `backend/src/security/` | `FRONT_ORIGINS` allowlist for the external SeeON-Front client; origin CSRF guard; temporary cross-site cookie bridge mode is validated here.                            |
 
 ## Commands
 
@@ -113,5 +114,5 @@ pnpm release:prod -- vX.Y.Z
 - Read the nearest scoped `AGENTS.md` before editing under `backend/`, `scripts/`, or `.github/`. Deep subtrees with their own files: `backend/src/{alerts,auth,media}`, `backend/{prisma,test}`, `scripts/deploy`.
 - CI jobs: `changes`, `backend`, `env-contract`, `deploy-contract`, `repo-residue` (display name "Backend repository residue"), aggregate `ci-gate`. PR checks allow bases `main`/`release/*`/`hotfix/*`, reject same-repo `main` heads, and hard-fail logic churn over 1000 lines unless the PR carries `size/override`.
 - Publishing a release does not itself deploy: `deploy-iwinv.yml` sends Jenkins an empty signal, Jenkins resolves the tag→SHA once and may legitimately no-op when the SHA is already live.
-- `backend/eslint.config.mjs` cites `docs/rules/backend-architecture-lint-and-guard.md` and `docs/rules/code-stability.md` as convention SoT, but those docs do not exist in this tree (they were removed in a pre-extraction docs reset). The lint config itself is the live contract; recover a rule doc from source-repo history only if the user asks.
+- Backend convention SoT is the lint policy itself, not a rule doc: `backend/eslint.config.mjs` (and `backend/eslint.dto.config.mjs`, used by `pnpm --filter backend run dto:check`) enables `architecture/boundaries` from `backend/eslint/architecture.mjs`, whose accepted and rejected cases are pinned by `backend/eslint/architecture.test.mjs` (`pnpm --filter backend run architecture:check`). No `docs/rules/**` doc restates it; do not add one unless the user asks.
 - Release manifests are dual-read for READ compatibility only: schema 1 and transitional schema 2 manifests (which name an embedded frontend image) remain parseable so old pointers stay restorable, but writers publish backend-only schema 2. See `scripts/deploy/AGENTS.md`.

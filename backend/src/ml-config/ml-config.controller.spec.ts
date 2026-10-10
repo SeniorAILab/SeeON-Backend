@@ -4,11 +4,11 @@ import { hasRbacCapability } from '../auth/auth.constants.js';
 import {
   REQUIRED_CAPABILITY_METADATA_KEY,
   RolesGuard,
-} from '../auth/roles.guard.js';
-import { EdgeIngestTokenGuard } from '../events/edge-ingest-token.guard.js';
+} from '../auth/guards/roles.guard.js';
+import { EdgeIngestTokenGuard } from '../events/guards/edge-ingest-token.guard.js';
 import { readArray } from '../../test/helpers/json-response.js';
-import { MlConfigController } from './ml-config.controller.js';
-import type { MlConfigService } from './ml-config.service.js';
+import { MlConfigController } from './controllers/ml-config.controller.js';
+import type { MlConfigService } from './services/ml-config.service.js';
 
 const payload = {
   configVersion: 3,

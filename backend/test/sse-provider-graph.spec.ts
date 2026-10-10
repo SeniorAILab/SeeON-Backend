@@ -2,12 +2,12 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
 import { DashboardModule } from '../src/dashboard/dashboard.module';
-import { DashboardStreamController } from '../src/dashboard/sse.controller';
+import { DashboardStreamController } from '../src/dashboard/controllers/dashboard-stream.controller';
 
 /**
  * Provider-graph closure gate (Standing Build-Closure Rule). A successful
  * compile() proves DashboardStreamController resolves its cross-module deps —
- * AlertWriterService + AlertsService (AlertsModule), JwtStrategy/JwtAuthGuard
+ * AlertWriterService + AlertsService (AlertsModule), JwtStrategyAdapter/JwtAuthGuard
  * (AuthModule) and the SSE_REAUTH_INTERVAL_MS token — without the removed status read-model or dangling
  * providers and no DB connection opened.
  */

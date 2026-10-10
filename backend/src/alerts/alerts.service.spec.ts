@@ -1,7 +1,11 @@
+import fs from 'node:fs';
+import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
 import { FacilityScopedNotFoundException } from '../common/domain-errors';
 import type { PrismaService } from '../prisma/prisma.service';
-import type { AlertWriterService } from './alert-writer.service';
-import { AlertsService } from './alerts.service';
+import type { AlertWriterService } from './services/alert-writer.service';
+import { AlertsService } from './services/alerts.service';
+import * as snapshotRepository from './repositories/alert-snapshot.repository.js';
 
 type FindManyArg = {
   where: { alertSeq?: { gt?: bigint; lt?: bigint } };
@@ -258,5 +262,210 @@ describe('AlertsService — 확인/해결 2단계 분리 (I4)', () => {
       alertId: 'alert-1',
       actorUserId: 'user-1',
     });
+  });
+});
+
+describe('AlertsService snapshot persistence', () => {
+  const root = path.resolve('snapshot-service-unit-fixture');
+  const originalSnapshotDir = process.env.SNAPSHOT_DIR;
+
+  beforeEach(() => {
+    process.env.SNAPSHOT_DIR = root;
+    jest.spyOn(fs.promises, 'mkdir').mockResolvedValue(undefined);
+    jest.spyOn(fs.promises, 'writeFile').mockResolvedValue(undefined);
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    jest.spyOn(fs, 'createReadStream').mockImplementation(() => {
+      throw new Error('Unexpected real snapshot stream open');
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (originalSnapshotDir === undefined) delete process.env.SNAPSHOT_DIR;
+    else process.env.SNAPSHOT_DIR = originalSnapshotDir;
+  });
+
+  it('writes the identical buffer after mkdir and before the scoped database update', async () => {
+    const { service, alert } = setup();
+    const events: string[] = [];
+    const body = Buffer.from([0, 255, 1, 13, 10]);
+    let writtenBody: unknown;
+    jest.mocked(fs.promises.mkdir).mockImplementation(() => {
+      events.push('mkdir');
+      return Promise.resolve(undefined);
+    });
+    jest.mocked(fs.promises.writeFile).mockImplementation((_file, data) => {
+      writtenBody = data;
+      events.push('write');
+      return Promise.resolve();
+    });
+    alert.findUnique.mockImplementation(() => {
+      events.push('lookup');
+      return Promise.resolve({ id: 'resolved-alert' });
+    });
+    alert.update.mockImplementation(() => {
+      events.push('update');
+      return Promise.resolve({});
+    });
+
+    await expect(
+      service.saveSnapshot('facility-1', 'resolved-alert', 'png', body),
+    ).resolves.toEqual({
+      snapshotKey: 'facility-1/resolved-alert.png',
+    });
+    expect(events).toEqual(['mkdir', 'write', 'lookup', 'update']);
+    expect(fs.promises.mkdir).toHaveBeenCalledWith(
+      path.join(root, 'facility-1'),
+      { recursive: true },
+    );
+    expect(fs.promises.writeFile).toHaveBeenCalledWith(
+      path.join(root, 'facility-1', 'resolved-alert.png'),
+      body,
+    );
+    expect(writtenBody).toBe(body);
+    expect(alert.findUnique).toHaveBeenCalledWith({
+      where: { id: 'resolved-alert' },
+    });
+    expect(alert.update).toHaveBeenCalledWith({
+      where: { id: 'resolved-alert' },
+      data: { snapshotKey: 'facility-1/resolved-alert.png' },
+    });
+  });
+
+  it.each(['mkdir', 'write', 'lookup', 'update'])(
+    'preserves %s failure identity and does not execute later steps',
+    async (stage) => {
+      const { service, alert } = setup();
+      const failure = new Error(`${stage} failed`);
+      alert.findUnique.mockResolvedValue({ id: 'a1' });
+      alert.update.mockResolvedValue({});
+      if (stage === 'mkdir')
+        jest.mocked(fs.promises.mkdir).mockRejectedValue(failure);
+      if (stage === 'write')
+        jest.mocked(fs.promises.writeFile).mockRejectedValue(failure);
+      if (stage === 'lookup') alert.findUnique.mockRejectedValue(failure);
+      if (stage === 'update') alert.update.mockRejectedValue(failure);
+
+      await expect(
+        service.saveSnapshot('facility-1', 'a1', 'jpg', Buffer.from('bytes')),
+      ).rejects.toBe(failure);
+      if (stage === 'mkdir')
+        expect(fs.promises.writeFile).not.toHaveBeenCalled();
+      if (stage === 'mkdir' || stage === 'write')
+        expect(alert.findUnique).not.toHaveBeenCalled();
+      if (stage !== 'update') expect(alert.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps already-written bytes when the subsequent alert lookup misses', async () => {
+    const { service, alert } = setup();
+    alert.findUnique.mockResolvedValue(null);
+    await expect(
+      service.saveSnapshot('facility-1', 'a1', 'jpg', Buffer.from('bytes')),
+    ).rejects.toBeInstanceOf(FacilityScopedNotFoundException);
+    expect(fs.promises.writeFile).toHaveBeenCalledTimes(1);
+    expect(alert.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the current configured root on each save rather than freezing it', async () => {
+    const { service, alert } = setup();
+    alert.findUnique.mockResolvedValue({ id: 'a1' });
+    alert.update.mockResolvedValue({});
+    await service.saveSnapshot('facility-1', 'a1', 'bin', Buffer.from('one'));
+    const nextRoot = path.join(root, 'next');
+    process.env.SNAPSHOT_DIR = nextRoot;
+    await service.saveSnapshot('facility-1', 'a1', 'bin', Buffer.from('two'));
+    expect(fs.promises.writeFile).toHaveBeenNthCalledWith(
+      1,
+      path.join(root, 'facility-1', 'a1.bin'),
+      Buffer.from('one'),
+    );
+    expect(fs.promises.writeFile).toHaveBeenNthCalledWith(
+      2,
+      path.join(nextRoot, 'facility-1', 'a1.bin'),
+      Buffer.from('two'),
+    );
+  });
+
+  it('rejects an escaping upload key before filesystem or database work', async () => {
+    const { service, alert } = setup();
+    await expect(
+      service.saveSnapshot('../outside', 'a1', 'jpg', Buffer.from('bytes')),
+    ).rejects.toBeInstanceOf(FacilityScopedNotFoundException);
+    expect(fs.promises.mkdir).not.toHaveBeenCalled();
+    expect(fs.promises.writeFile).not.toHaveBeenCalled();
+    expect(alert.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '', '../../outside.jpg'])(
+    'rejects missing or escaping stored keys before existence/open checks: %p',
+    async (snapshotKey) => {
+      const { service, alert } = setup();
+      alert.findUnique.mockResolvedValue(alertRow({ snapshotKey }));
+      await expect(
+        service.getSnapshotPath('facility-1', 'a1'),
+      ).rejects.toBeInstanceOf(FacilityScopedNotFoundException);
+      expect(fs.existsSync).not.toHaveBeenCalled();
+      expect(fs.createReadStream).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves authorization failure before file access', async () => {
+    const { service, alert } = setup();
+    const failure = new Error('scoped lookup failed');
+    alert.findUnique.mockRejectedValue(failure);
+    await expect(service.getSnapshotPath('facility-1', 'a1')).rejects.toBe(
+      failure,
+    );
+    expect(fs.existsSync).not.toHaveBeenCalled();
+    expect(fs.createReadStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing file without opening it', async () => {
+    const { service, alert } = setup();
+    alert.findUnique.mockResolvedValue(
+      alertRow({ snapshotKey: 'facility-1/a1.jpg' }),
+    );
+    jest.mocked(fs.existsSync).mockReturnValue(false);
+    await expect(
+      service.getSnapshotPath('facility-1', 'a1'),
+    ).rejects.toBeInstanceOf(FacilityScopedNotFoundException);
+    expect(fs.existsSync).toHaveBeenCalledWith(
+      path.join(root, 'facility-1', 'a1.jpg'),
+    );
+    expect(fs.createReadStream).not.toHaveBeenCalled();
+  });
+
+  it('returns a validated path without opening, then returns the deferred stream unchanged', async () => {
+    const { service, alert } = setup();
+    alert.findUnique.mockResolvedValue(
+      alertRow({ snapshotKey: 'facility-1/a1.jpg' }),
+    );
+    const filePath = await service.getSnapshotPath('facility-1', 'a1');
+    expect(filePath).toBe(path.join(root, 'facility-1', 'a1.jpg'));
+    expect(fs.createReadStream).not.toHaveBeenCalled();
+    const stream = new PassThrough();
+    const open = jest
+      .spyOn(snapshotRepository, 'openAlertSnapshot')
+      .mockReturnValue(stream);
+    expect(service.openSnapshot(filePath)).toBe(stream);
+    expect(open).toHaveBeenCalledWith(filePath);
+  });
+
+  it('preserves a synchronous deferred-open failure', () => {
+    const { service } = setup();
+    const failure = new Error('open failed');
+    jest
+      .spyOn(snapshotRepository, 'openAlertSnapshot')
+      .mockImplementation(() => {
+        throw failure;
+      });
+    let caught: unknown;
+    try {
+      service.openSnapshot(path.join(root, 'facility-1', 'a1.jpg'));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(failure);
   });
 });

@@ -1,9 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  BackendEnvValidationError,
-  validateBackendEnv,
-} from './env-validation.js';
+import { BackendEnvValidationError } from './errors/backend-env-validation.error.js';
+import { validateBackendEnv } from './adapters/backend-env-validation.adapter.js';
 
 type OriginConformanceVectors = {
   readonly invalidProduction: readonly {

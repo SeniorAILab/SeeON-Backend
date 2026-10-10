@@ -1,9 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
-import { MissingTenantContextError } from '../common/errors';
+import { MissingTenantContextError } from '../common/errors/missing-tenant-context.error';
 import { PrismaService } from '../prisma/prisma.service';
-import { CamerasService } from './cameras.service';
+import { CamerasService } from './services/cameras.service';
 
 describe('CamerasService event ingest resolver', () => {
   let direct: PrismaClient;

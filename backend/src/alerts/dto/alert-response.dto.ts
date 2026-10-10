@@ -1,19 +1,27 @@
-import { ApiExtraModels, ApiProperty, getSchemaPath } from '@nestjs/swagger';
+import {
+  ApiExtraModels,
+  ApiProperty,
+  ApiSchema,
+  getSchemaPath,
+} from '@nestjs/swagger';
 
 const ALERT_STATUSES = ['NEW', 'ACKED', 'RESOLVED'] as const;
 
-export class AlertActor {
+@ApiSchema({ name: 'AlertActor' })
+export class AlertActorDto {
   @ApiProperty()
   nickname!: string;
 }
 
-export class AlertSpace {
+@ApiSchema({ name: 'AlertSpace' })
+export class AlertSpaceDto {
   @ApiProperty()
   name!: string;
 }
 
-@ApiExtraModels(AlertActor, AlertSpace)
-export class Alert {
+@ApiExtraModels(AlertActorDto, AlertSpaceDto)
+@ApiSchema({ name: 'Alert' })
+export class AlertResponseDto {
   @ApiProperty({ pattern: '^[0-9]+$' })
   alertSeq!: string;
 
@@ -59,9 +67,9 @@ export class Alert {
   ackedAt!: Date | null;
 
   @ApiProperty({
-    oneOf: [{ $ref: getSchemaPath(AlertActor) }, { type: 'null' }],
+    oneOf: [{ $ref: getSchemaPath(AlertActorDto) }, { type: 'null' }],
   })
-  ackedBy!: AlertActor | null;
+  ackedBy!: AlertActorDto | null;
 
   @ApiProperty({ oneOf: [{ type: 'string' }, { type: 'null' }] })
   resolvedById!: string | null;
@@ -72,18 +80,19 @@ export class Alert {
   resolvedAt!: Date | null;
 
   @ApiProperty({
-    oneOf: [{ $ref: getSchemaPath(AlertActor) }, { type: 'null' }],
+    oneOf: [{ $ref: getSchemaPath(AlertActorDto) }, { type: 'null' }],
   })
-  resolvedBy!: AlertActor | null;
+  resolvedBy!: AlertActorDto | null;
 
-  @ApiProperty({ type: AlertSpace })
-  space!: AlertSpace;
+  @ApiProperty({ type: AlertSpaceDto })
+  space!: AlertSpaceDto;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;
 }
 
-export class AlertNote {
+@ApiSchema({ name: 'AlertNote' })
+export class AlertNoteResponseDto {
   @ApiProperty()
   id!: string;
 
@@ -100,13 +109,15 @@ export class AlertNote {
   createdAt!: Date;
 }
 
-@ApiExtraModels(AlertNote)
-export class AlertDetail extends Alert {
-  @ApiProperty({ type: [AlertNote] })
-  notes!: AlertNote[];
+@ApiExtraModels(AlertNoteResponseDto)
+@ApiSchema({ name: 'AlertDetail' })
+export class AlertDetailResponseDto extends AlertResponseDto {
+  @ApiProperty({ type: [AlertNoteResponseDto] })
+  notes!: AlertNoteResponseDto[];
 }
 
-export class AlertSseData {
+@ApiSchema({ name: 'AlertSseData' })
+export class AlertSseDataDto {
   @ApiProperty()
   id!: string;
 
@@ -138,7 +149,8 @@ export class AlertSseData {
   detectedAt!: Date;
 }
 
-export class AlertUpdatedSseData {
+@ApiSchema({ name: 'AlertUpdatedSseData' })
+export class AlertUpdatedSseDataDto {
   @ApiProperty()
   id!: string;
 
