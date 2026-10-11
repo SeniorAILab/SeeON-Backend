@@ -92,8 +92,9 @@ imaged, or started here.
   120) every `EDGE_CONTINUITY_POLL_INTERVAL_SECONDS` (default 5). Heartbeats
   reach the DB only about every 30 s and the backend restart drops the in-flight
   relay, so a single read races the next batch. This is a bounded observation
-  window, not a deploy retry: an invalid read or non-canonical window setting
-  (leading zeros, zero timeout) fails immediately, a timeout or an advance
+  window, not a deploy retry: non-canonical window settings (leading zeros,
+  zero timeout) fail with the receipt prerequisites before the lock or any
+  mutation, an invalid read fails immediately, a timeout or an advance
   observed only after the window fails closed before activation, and the
   `seeon-edge-continuity-after-v1` receipt is unchanged.
 - Deployment and pruning may remove only individually classified stale images

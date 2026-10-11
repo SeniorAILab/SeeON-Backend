@@ -214,6 +214,9 @@ verify_deploy_receipts() {
   case "$EDGE_BEFORE_EPOCH" in ''|*[!0-9]*) fail 'Edge continuity receipt heartbeat is invalid.' ;; esac
   [ "$EDGE_BEFORE_EPOCH" -gt 0 ] || fail 'Edge continuity receipt heartbeat is invalid.'
   assert_fresh_receipt_epoch "$(receipt_value CAPTURED_EPOCH "$EDGE_RECEIPT")" 'Edge continuity receipt'
+  # Canonical decimals only: dash arithmetic reads leading-zero values as octal.
+  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a positive decimal integer without leading zeros.' ;; esac
+  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in 0) ;; ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative decimal integer without leading zeros.' ;; esac
 }
 
 json_value() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
@@ -572,10 +575,8 @@ edge_heartbeat_epoch() {
 # the in-flight relay, so a single read right after `compose up --wait` races the
 # next batch. Poll a bounded window; the gate still fails closed on timeout, and
 # an advance observed only after the window (slow read) does not activate.
-# Canonical decimals only: dash arithmetic reads leading-zero values as octal.
+# Window settings are validated in verify_deploy_receipts, before any mutation.
 verify_edge_continuity() {
-  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a positive decimal integer without leading zeros.' ;; esac
-  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in 0) ;; ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative decimal integer without leading zeros.' ;; esac
   log "poll Edge continuity for up to ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s every ${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS}s (before=$EDGE_BEFORE_EPOCH)"
   edge_started=$(date -u +%s)
   while :; do

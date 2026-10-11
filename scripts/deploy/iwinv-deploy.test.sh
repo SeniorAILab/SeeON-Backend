@@ -1250,7 +1250,8 @@ set -e
 assert_failure "$status"; assert_contains "$output" 'Edge continuity advanced only after the 1s window (before=100 after=137 elapsed='
 cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
 [ ! -e "$TMP/root/releases/$NEXT_SHA.json" ] || { printf '%s\n' 'late Edge advance published an immutable manifest' >&2; exit 1; }
-# Noncanonical window settings are rejected before any read: dash treats leading zeros as octal.
+# Noncanonical window settings are rejected with the receipt prerequisites, before
+# the lock, backup, migration, or Compose mutation (dash treats leading zeros as octal).
 for edge_window_case in timeout:5s timeout:08 timeout:010 timeout:0 interval:5s interval:08; do
   edge_window_value=${edge_window_case#*:}
   : > "$TMP/mock.log"
@@ -1263,7 +1264,12 @@ for edge_window_case in timeout:5s timeout:08 timeout:010 timeout:0 interval:5s 
   esac
   set -e
   assert_failure "$status"; assert_contains "$output" "$expected_window_error"
-  assert_not_contains "$(cat "$TMP/mock.log")" 'edge_observations'
+  edge_window_log=$(cat "$TMP/mock.log")
+  assert_not_contains "$edge_window_log" 'edge_observations'
+  assert_not_contains "$edge_window_log" 'pg_dump'
+  assert_not_contains "$edge_window_log" 'prisma migrate deploy'
+  assert_not_contains "$edge_window_log" 'up -d'
+  [ ! -d "$TMP/root/shared/deploy.lock" ] || { printf '%s\n' 'invalid Edge window setting left the deploy lock held' >&2; exit 1; }
   cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
 done
 # Heartbeats that land on a later poll (the post-restart relay gap) pass and record the advanced epoch.
