@@ -122,10 +122,15 @@ compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js
 compose up -d --wait --wait-timeout 120 backend api-ingress
 started=$(date -u +%s)
 while :; do
-  live=$(compose exec -T api-ingress wget -q -O - http://127.0.0.1:3000/health 2>/dev/null | sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p') || live=''
+  # Each probe is bounded (-T 5); a failed probe never counts, even with matching-looking output.
+  body=$(compose exec -T api-ingress wget -q -T 5 -O - http://127.0.0.1:3000/health 2>/dev/null) || body=''
+  live=$(printf '%s\n' "$body" | sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p')
+  elapsed=$(($(date -u +%s) - started))
+  [ "$elapsed" -le "$HEALTH_TIMEOUT_SECONDS" ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
   [ "$live" != "$SHA" ] || break
-  [ $(($(date -u +%s) - started)) -lt "$HEALTH_TIMEOUT_SECONDS" ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
-  sleep 5
+  wait_s=$((HEALTH_TIMEOUT_SECONDS - elapsed)); [ "$wait_s" -le 5 ] || wait_s=5
+  [ "$wait_s" -gt 0 ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
+  sleep "$wait_s"
 done
 
 # 4. Remove release images beyond the newest few; never broad prune.

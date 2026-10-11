@@ -33,7 +33,10 @@ case "$*" in
   'images --format '*) ;;
   *'pg_dump'*) printf 'PGDMP' ;;
   *'prisma migrate deploy'*) [ "${MOCK_MIGRATE_FAIL:-0}" != 1 ] || exit 1 ;;
-  *'wget -q -O - http://127.0.0.1:3000/health'*) printf '{"status":"ok","sha":"%s","database":"ok"}\n' "${MOCK_HEALTH_SHA:-$MOCK_SHA}" ;;
+  *'wget -q -T 5 -O - http://127.0.0.1:3000/health'*)
+    [ -z "${MOCK_HEALTH_DELAY:-}" ] || sleep "$MOCK_HEALTH_DELAY"
+    printf '{"status":"ok","sha":"%s","database":"ok"}\n' "${MOCK_HEALTH_SHA:-$MOCK_SHA}"
+    [ "${MOCK_HEALTH_FAIL:-0}" != 1 ] || exit 1 ;;
   *'SELECT CASE WHEN'*) printf '%s\n' "${MOCK_AUTHZ:-ok}" ;;
 esac
 EOF
@@ -73,7 +76,7 @@ assert_order "$log" 'compose' 'stop api-ingress backend'
 assert_order "$log" 'pg_dump' 'prisma migrate deploy'
 assert_order "$log" 'prisma migrate deploy' 'seed-super-admin.js'
 assert_order "$log" 'seed-super-admin.js' 'up -d --wait --wait-timeout 120 backend api-ingress'
-assert_order "$log" 'up -d --wait --wait-timeout 120 backend api-ingress' 'wget -q -O - http://127.0.0.1:3000/health'
+assert_order "$log" 'up -d --wait --wait-timeout 120 backend api-ingress' 'wget -q -T 5 -O - http://127.0.0.1:3000/health'
 assert_contains "$log" '--env-file '"$ROOT"'/shared/release-images.env -f compose.yaml -f compose.prod.yaml'
 assert_not_contains "$log" 'pg_restore --username'
 cmp -s "$TMP/pending.before" "$ROOT/releases/pending.json" || fail 'leftover pending.json was modified'
@@ -125,6 +128,16 @@ MOCK_HEALTH_SHA=e9ba287204ba8bb2dce0f55cceecc6661fd5f4b5 HEALTH_TIMEOUT_SECONDS=
 assert_contains "$output" "Health did not report $SHA within 1s (last sha=e9ba287204ba8bb2dce0f55cceecc6661fd5f4b5)."
 assert_contains "$output" '--restore-db'
 assert_not_contains "$(docker_log)" 'image rm'
+# A matching response that arrives after the window is not accepted.
+: > "$TMP/docker.log"
+MOCK_HEALTH_DELAY=2 HEALTH_TIMEOUT_SECONDS=1 run_failing --sha "$SHA"
+assert_contains "$output" "Health did not report $SHA within 1s (last sha=$SHA)."
+assert_not_contains "$(docker_log)" 'image rm'
+# A failed probe never counts, even if it printed the matching SHA.
+: > "$TMP/docker.log"
+MOCK_HEALTH_FAIL=1 HEALTH_TIMEOUT_SECONDS=1 run_failing --sha "$SHA"
+assert_contains "$output" "Health did not report $SHA within 1s (last sha=none)."
+[ ! -d "$ROOT/shared/deploy.lock" ] || fail 'lock not released after health timeout'
 
 # Explicit operator restore: restarts the images live when the dump was taken
 # (not the failed candidate), restores, re-applies the event ACL, verifies authorization.
