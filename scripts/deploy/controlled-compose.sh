@@ -1,9 +1,8 @@
 #!/usr/bin/env sh
 
 # Compose gives inherited process variables precedence over ordered --env-file
-# inputs. Remove every production-file value used as an exact deploy-smoke
-# authority, plus the two credentials consumed by that smoke, so only ordered
-# validated env files can supply them. EVENT_CLIPS_ENABLED retains its separate
+# inputs. Remove the CORS/cookie authorities and super-admin credentials so only
+# the ordered, validated owner-only env files can supply them. EVENT_CLIPS_ENABLED retains its separate
 # normal/default and emergency-override ownership contract.
 controlled_compose() (
   unset EVENT_CLIPS_ENABLED FRONT_ORIGINS AUTH_COOKIE_SAME_SITE AUTH_COOKIE_SECURE

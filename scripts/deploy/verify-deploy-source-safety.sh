@@ -8,7 +8,6 @@ fail() { printf '%s\n' "$1" >&2; exit 1; }
 if [ "$#" -eq 0 ]; then
   set -- \
     "$REPO_ROOT/Jenkinsfile" \
-    "$REPO_ROOT/scripts/deploy/iwinv-overlap-readiness.sh" \
     "$REPO_ROOT/scripts/deploy/iwinv-deploy.sh"
 fi
 

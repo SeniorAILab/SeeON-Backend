@@ -19,10 +19,7 @@ cat > "$TMP/app/shared/release-images.env" <<EOF
 BACKEND_IMAGE=$BACKEND_IMAGE
 API_INGRESS_IMAGE=$API_INGRESS_IMAGE
 EOF
-cat > "$TMP/app/releases/current.json" <<EOF
-{"schema":"2","sha":"$SHA","backend_image":"$BACKEND_IMAGE","backend_image_id":"sha256:backend-$SHA","api_ingress_image":"$API_INGRESS_IMAGE","api_ingress_image_id":"sha256:api-ingress-$SHA","compose_sha256":"compose","env_sha256":"env","pre_migration_dump":"normal-test.dump","timestamp":"2026-07-16T00:00:00Z"}
-EOF
-chmod 600 "$TMP/app/shared/.env" "$TMP/app/shared/release-images.env" "$TMP/app/releases/current.json"
+chmod 600 "$TMP/app/shared/.env" "$TMP/app/shared/release-images.env"
 printf '%s\n' running > "$TMP/backend.state"
 
 cat > "$TMP/bin/docker" <<'EOF'
@@ -63,6 +60,14 @@ if [ "${1:-}" = compose ]; then
   esac
   exit 0
 fi
+if [ "${1:-}" = image ] && [ "${2:-}" = inspect ] && [ "${3:-}" = --format ] && [ "${4:-}" = '{{.Id}}' ]; then
+  case "${5:-}" in
+    "eldercare-backend:$MOCK_SHA") printf '%s\n' "sha256:backend-$MOCK_SHA" ;;
+    "eldercare-api-ingress:$MOCK_SHA") printf '%s\n' "sha256:api-ingress-$MOCK_SHA" ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
 if [ "${1:-}" = inspect ]; then
   format=${3:-}
   container=${4:-}
@@ -94,7 +99,6 @@ run_disable() {
   ENV_FILE="$TMP/app/shared/.env" \
   RELEASE_ENV="$TMP/app/shared/release-images.env" \
   FEATURE_ENV="$TMP/app/shared/event-clips-runtime.env" \
-  RELEASE_DIR="$TMP/app/releases" \
   MOCK_LOG="$TMP/docker.log" \
   MOCK_BACKEND_STATE="$TMP/backend.state" \
   MOCK_SHA="$SHA" \
@@ -115,7 +119,6 @@ assert_order() {
 
 env_before=$(sha256sum "$TMP/app/shared/.env")
 release_before=$(sha256sum "$TMP/app/shared/release-images.env")
-manifest_before=$(sha256sum "$TMP/app/releases/current.json")
 compose_before=$(sha256sum "$REPO_ROOT/compose.yaml" "$REPO_ROOT/compose.prod.yaml")
 : > "$TMP/docker.log"
 output=$(EVENT_CLIPS_ENABLED=true run_disable)
@@ -125,7 +128,6 @@ assert_not_contains "$output" "$SHA"
 [ "$(stat -c '%a' "$TMP/app/shared/event-clips-runtime.env" 2>/dev/null || stat -f '%Lp' "$TMP/app/shared/event-clips-runtime.env")" = 600 ]
 [ "$env_before" = "$(sha256sum "$TMP/app/shared/.env")" ]
 [ "$release_before" = "$(sha256sum "$TMP/app/shared/release-images.env")" ]
-[ "$manifest_before" = "$(sha256sum "$TMP/app/releases/current.json")" ]
 [ "$compose_before" = "$(sha256sum "$REPO_ROOT/compose.yaml" "$REPO_ROOT/compose.prod.yaml")" ]
 log=$(cat "$TMP/docker.log")
 assert_order "$log" 'stop backend' 'ps -q --status running backend'
@@ -196,9 +198,46 @@ set +e
 output=$(run_disable); status=$?
 set -e
 assert_failure "$status"
-assert_contains "$output" 'release image environment does not match current manifest'
+assert_contains "$output" 'release image environment SHA is invalid'
 [ ! -s "$TMP/docker.log" ] || { printf '%s\n' 'image mismatch reached Docker' >&2; exit 1; }
 mv "$TMP/release.good" "$TMP/app/shared/release-images.env"
+
+# Wrong order, mismatched SHAs, and additional lines fail before Docker.
+cp "$TMP/app/shared/release-images.env" "$TMP/release.good"
+for malformed in wrong-order mismatched-shas extra-line; do
+  case "$malformed" in
+    wrong-order)
+      printf 'API_INGRESS_IMAGE=%s\nBACKEND_IMAGE=%s\n' "$API_INGRESS_IMAGE" "$BACKEND_IMAGE" > "$TMP/app/shared/release-images.env"
+      ;;
+    mismatched-shas)
+      printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' "$BACKEND_IMAGE" > "$TMP/app/shared/release-images.env"
+      ;;
+    extra-line)
+      cp "$TMP/release.good" "$TMP/app/shared/release-images.env"
+      printf '\n' >> "$TMP/app/shared/release-images.env"
+      ;;
+  esac
+  : > "$TMP/docker.log"
+  set +e
+  output=$(run_disable); status=$?
+  set -e
+  assert_failure "$status"
+  assert_contains "$output" 'release image environment'
+  [ ! -s "$TMP/docker.log" ] || { printf 'malformed release environment reached Docker: %s\n' "$malformed" >&2; exit 1; }
+done
+mv "$TMP/release.good" "$TMP/app/shared/release-images.env"
+
+# A stale manifest with a different SHA is ignored, including its permissions.
+printf '%s\n' '{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' > "$TMP/app/releases/current.json"
+chmod 644 "$TMP/app/releases/current.json"
+rm -f "$TMP/app/shared/event-clips-runtime.env"
+printf '%s\n' running > "$TMP/backend.state"
+: > "$TMP/docker.log"
+output=$(run_disable)
+assert_contains "$output" 'event clip feature disabled on current compatible images'
+log=$(cat "$TMP/docker.log")
+assert_contains "$log" 'stop backend'
+assert_contains "$log" 'up -d --no-deps --wait --wait-timeout 120 backend'
 
 # A symlinked runtime override is never replaced.
 rm -f "$TMP/app/shared/event-clips-runtime.env"
@@ -229,20 +268,15 @@ assert_contains "$output" 'another deployment or feature-disable operation is ru
 }
 rmdir "$TMP/app/shared/deploy.lock"
 
-# The normal deploy path must retain the disable override and must prove that
-# old backend work is stopped before any new backend can start.
+# The normal deploy path must retain the disable override and must stop the old
+# backend before any new backend starts (zero overlap).
 deploy_source=$(cat "$DEPLOY")
 assert_contains "$deploy_source" 'FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}'
-assert_contains "$deploy_source" '--env-file "$FEATURE_ENV"'
-assert_contains "$deploy_source" 'assert_backend_stopped'
-assert_contains "$deploy_source" 'run compose stop api-ingress backend'
-assert_contains "$deploy_source" 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES'
-stop_line=$(grep -n -F 'run compose stop api-ingress backend' "$DEPLOY" | sed -n '1s/:.*//p')
-assert_line=$(grep -n -F 'assert_backend_stopped' "$DEPLOY" | sed -n '2s/:.*//p')
-start_line=$(grep -n -F 'run compose up -d --wait --wait-timeout 120 $APP_SERVICES' "$DEPLOY" | sed -n '1s/:.*//p')
-[ -n "$stop_line" ] && [ -n "$assert_line" ] && [ -n "$start_line" ] && \
-  [ "$stop_line" -lt "$assert_line" ] && [ "$assert_line" -lt "$start_line" ] || {
-  printf '%s\n' 'deploy path does not prove zero-overlap backend replacement' >&2
+assert_contains "$deploy_source" 'set -- --env-file "$FEATURE_ENV" "$@"'
+stop_line=$(grep -n -F 'compose stop api-ingress backend' "$DEPLOY" | sed -n '2s/:.*//p')
+start_line=$(grep -n -F 'compose up -d --wait --wait-timeout 120 backend api-ingress' "$DEPLOY" | sed -n '2s/:.*//p')
+[ -n "$stop_line" ] && [ -n "$start_line" ] && [ "$stop_line" -lt "$start_line" ] || {
+  printf '%s\n' 'deploy path does not stop the old backend before starting the new one' >&2
   exit 1
 }
 

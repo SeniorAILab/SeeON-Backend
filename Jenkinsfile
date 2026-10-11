@@ -14,6 +14,11 @@ pipeline {
     )
   }
 
+  // Empty RELEASE_TAG deploys the highest stable tag. Rollback: re-run with the previous tag.
+  parameters {
+    string(name: 'RELEASE_TAG', defaultValue: '', trim: true, description: 'Optional vX.Y.Z to deploy (rollback); empty = latest stable release')
+  }
+
   options {
     disableConcurrentBuilds()
     skipDefaultCheckout(true)
@@ -30,6 +35,11 @@ pipeline {
     stage('Resolve release') {
       steps {
         script {
+          def requestedTag = params.RELEASE_TAG ?: ''
+          if (requestedTag && !(requestedTag ==~ /v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)/)) {
+            error("RELEASE_TAG must be a stable vX.Y.Z tag: ${requestedTag}")
+          }
+          env.REQUESTED_RELEASE_TAG = requestedTag
           def resolverOutput = sshagent(credentials: ['seeon-backend-github-deploy-key']) {
             sh(
               script: '''#!/usr/bin/env sh
@@ -45,7 +55,7 @@ pipeline {
                 git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
                 trap 'rm -f "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"' EXIT HUP INT TERM
                 git show refs/remotes/origin/main:scripts/deploy/iwinv-resolve-release.sh > "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
-                RELEASES_DIR="$DEPLOY_ROOT/releases" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
+                RELEASE_TAG="$REQUESTED_RELEASE_TAG" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
               ''',
               returnStdout: true
             ).trim()
@@ -55,7 +65,7 @@ pipeline {
             if (line.trim().isEmpty()) {
               return
             }
-            def match = line =~ /^(RELEASE_TAG|RELEASE_SHA|NO_OP)=(.*)$/
+            def match = line =~ /^(RELEASE_TAG|RELEASE_SHA)=(.*)$/
             if (!match.matches()) {
               error("Unexpected resolver output line: ${line}")
             }
@@ -65,7 +75,7 @@ pipeline {
             }
             releaseValues[key] = match[0][2]
           }
-          ['RELEASE_TAG', 'RELEASE_SHA', 'NO_OP'].each { key ->
+          ['RELEASE_TAG', 'RELEASE_SHA'].each { key ->
             if (!releaseValues.containsKey(key)) {
               error("Resolver output is missing ${key}")
             }
@@ -76,26 +86,17 @@ pipeline {
           if (!(releaseValues.RELEASE_SHA ==~ /[0-9a-f]{40}/)) {
             error("Resolver output has invalid RELEASE_SHA: ${releaseValues.RELEASE_SHA}")
           }
-          if (!['0', '1'].contains(releaseValues.NO_OP)) {
-            error("Resolver output has invalid NO_OP: ${releaseValues.NO_OP}")
-          }
           env.RELEASE_TAG = releaseValues.RELEASE_TAG
           env.RELEASE_SHA = releaseValues.RELEASE_SHA
-          env.NO_OP = releaseValues.NO_OP
-          if (env.NO_OP != '1') {
-            sh '''#!/usr/bin/env sh
-              set -eu
-              git checkout --detach --force "$RELEASE_SHA"
-              git clean -ffdqx
-            '''
-          }
+          sh '''#!/usr/bin/env sh
+            set -eu
+            git checkout --detach --force "$RELEASE_SHA"
+            git clean -ffdqx
+          '''
         }
       }
     }
     stage('Verify GitHub CI gate') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
       steps {
         withCredentials([string(credentialsId: 'eldercare-github-ci-token', variable: 'GITHUB_TOKEN')]) {
           sh '''#!/usr/bin/env sh
@@ -107,34 +108,7 @@ pipeline {
       }
     }
 
-    stage('Validate release inputs') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
-      steps {
-        sh '''#!/usr/bin/env sh
-          set -eu
-          sh scripts/deploy/iwinv-overlap-readiness.sh --pre-build "$RELEASE_SHA"
-        '''
-      }
-    }
-
-    stage('Preflight resources') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
-      steps {
-        sh '''#!/usr/bin/env sh
-          set -eu
-          sh scripts/deploy/iwinv-deploy.sh --preflight-only
-        '''
-      }
-    }
-
     stage('Configure Buildx') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
@@ -155,9 +129,6 @@ pipeline {
     }
 
     stage('Build backend') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
@@ -171,9 +142,6 @@ pipeline {
     }
 
     stage('Build API ingress') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
@@ -188,15 +156,10 @@ pipeline {
     }
 
     stage('Deploy') {
-      when {
-        expression { env.NO_OP != '1' }
-      }
       steps {
         lock(resource: 'eldercare-fall-ai-deploy') {
           sh '''#!/usr/bin/env sh
             set -eu
-            sh scripts/deploy/iwinv-overlap-readiness.sh --capture-edge "$RELEASE_SHA"
-            sh scripts/deploy/iwinv-overlap-readiness.sh --pre-deploy "$RELEASE_SHA"
             sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"
           '''
         }

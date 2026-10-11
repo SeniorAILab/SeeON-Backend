@@ -1,918 +1,127 @@
 #!/usr/bin/env sh
 # shellcheck disable=SC2016 # Quoted commands expand environment inside containers.
+# Production deploy of an already-built release SHA. CI gates quality; this
+# script only runs: pre-migration dump -> migrate deploy -> compose up ->
+# /health sha == release sha. Rollback = re-run Jenkins with RELEASE_TAG=<older tag>.
 set -eu
 
 APP_ROOT=${APP_ROOT:-/opt/eldercare-fall-ai}
 APP_DIR=${APP_DIR:-$APP_ROOT/repo}
 ENV_FILE=${ENV_FILE:-$APP_ROOT/shared/.env}
 BACKUP_DIR=${BACKUP_DIR:-$APP_ROOT/backups/db}
-RELEASE_DIR=${RELEASE_DIR:-$APP_ROOT/releases}
-LOCK_DIR=$APP_ROOT/shared/deploy.lock
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
-RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
-EDGE_RECEIPT=${EDGE_RECEIPT:-$RECEIPT_DIR/edge-continuity.receipt}
-EDGE_AFTER_RECEIPT=${EDGE_AFTER_RECEIPT:-$RECEIPT_DIR/edge-continuity-after.receipt}
-RECEIPT_MAX_AGE_SECONDS=${RECEIPT_MAX_AGE_SECONDS:-3600}
-EDGE_CONTINUITY_TIMEOUT_SECONDS=${EDGE_CONTINUITY_TIMEOUT_SECONDS:-120}
-EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS:-5}
-COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
-MEMORY_MIN_MB=${MEMORY_MIN_MB:-1024}
-DISK_MIN_MB=${DISK_MIN_MB:-2048}
+LOCK_DIR=$APP_ROOT/shared/deploy.lock
+HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-120}
+DUMPS_TO_KEEP=5
+IMAGES_TO_KEEP=3
 
-SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
-SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
-SMOKE_EXPECTED_FRONT_ORIGINS='' SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE='' SMOKE_EXPECTED_AUTH_COOKIE_SECURE=''
-
-usage() {
-  printf '%s\n' 'Usage: iwinv-deploy.sh --sha <sha> [--dry-run] | --rollback [sha] [--restore-db dump --ack-data-loss] [--dry-run] | --restore-db dump --ack-data-loss [--dry-run] | --preflight-only' >&2
-  exit 2
-}
 log() { printf '+ %s\n' "$*" >&2; }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"; }
+usage() { fail 'Usage: iwinv-deploy.sh --sha <40-hex sha> | --restore-db <dump> --ack-data-loss'; }
 valid_sha() { [ "${#1}" -eq 40 ] && printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
-run() { log "$*"; [ "$DRY_RUN" -eq 1 ] || "$@"; }
-preflight() {
-  memory_mb=$(free -m | awk '/^Mem:/ { mem=$7 } /^Swap:/ { swap=$4 } END { print mem + swap }')
-  disk_mb=$(df -Pm "$APP_ROOT" | awk 'NR == 2 { print $4 }')
-  case "$memory_mb:$disk_mb" in *[!0-9:]*|:*|*:) fail 'Unable to determine available memory plus swap or disk.';; esac
-  log "preflight available_memory_plus_swap_mb=$memory_mb available_disk_mb=$disk_mb"
-  [ "$memory_mb" -ge "$MEMORY_MIN_MB" ] || fail "Insufficient available memory plus swap: ${memory_mb}MiB (need ${MEMORY_MIN_MB}MiB)."
-  [ "$disk_mb" -ge "$DISK_MIN_MB" ] || fail "Insufficient available disk: ${disk_mb}MiB (need ${DISK_MIN_MB}MiB)."
-}
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --sha)
-      [ "$#" -ge 2 ] && [ "$SHA_COUNT" -eq 0 ] || usage
-      SHA=$2; SHA_COUNT=1; shift 2 ;;
-    --rollback)
-      [ "$ROLLBACK_COUNT" -eq 0 ] || usage
-      ROLLBACK=1; ROLLBACK_COUNT=1
-      if [ "$#" -ge 2 ] && valid_sha "$2"; then REQUESTED_ROLLBACK_SHA=$2; shift 2; else shift; fi ;;
-    --restore-db)
-      [ "$#" -ge 2 ] && [ "$RESTORE_COUNT" -eq 0 ] || usage
-      RESTORE_DUMP=$2; RESTORE_COUNT=1; shift 2 ;;
-    --ack-data-loss)
-      [ "$ACK_COUNT" -eq 0 ] || usage
-      ACK_DATA_LOSS=1; ACK_COUNT=1; shift ;;
-    --dry-run) [ "$DRY_RUN_COUNT" -eq 0 ] || usage; DRY_RUN=1; DRY_RUN_COUNT=1; shift ;;
-    --preflight-only) [ "$PREFLIGHT_COUNT" -eq 0 ] || usage; PREFLIGHT_ONLY=1; PREFLIGHT_COUNT=1; shift ;;
-    *) usage ;;
-  esac
-done
+SHA='' RESTORE_DUMP='' ACK=0 DUMP='' LOCK_HELD=0
+case "${1:-}" in
+  --sha) [ "$#" -eq 2 ] || usage; SHA=$2; valid_sha "$SHA" || fail 'SHA must be exactly 40 lowercase hexadecimal characters.' ;;
+  --restore-db) [ "$#" -eq 3 ] && [ "$3" = --ack-data-loss ] || fail '--restore-db requires <dump> --ack-data-loss.'; RESTORE_DUMP=$2; ACK=1 ;;
+  *) usage ;;
+esac
 
-if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
-  [ "$SHA_COUNT" -eq 0 ] && [ "$ROLLBACK_COUNT" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$ACK_COUNT" -eq 0 ] && [ "$DRY_RUN_COUNT" -eq 0 ] || usage
-elif [ "$ROLLBACK" -eq 1 ]; then
-  [ "$SHA_COUNT" -eq 0 ] || usage
-elif [ "$RESTORE_COUNT" -eq 1 ]; then
-  [ "$SHA_COUNT" -eq 0 ] || usage
-else
-  [ "$SHA_COUNT" -eq 1 ] || usage
-fi
-[ "$PREFLIGHT_ONLY" -eq 1 ] || {
-  [ "$RESTORE_COUNT" -eq 0 ] || [ "$ACK_DATA_LOSS" -eq 1 ] || fail '--restore-db requires --ack-data-loss.'
-  [ "$RESTORE_COUNT" -eq 1 ] || [ "$ACK_DATA_LOSS" -eq 0 ] || usage
-  [ "$SHA_COUNT" -eq 0 ] || valid_sha "$SHA" || fail 'SHA must be exactly 40 lowercase hexadecimal characters.'
-  [ -z "$REQUESTED_ROLLBACK_SHA" ] || valid_sha "$REQUESTED_ROLLBACK_SHA" || fail 'Rollback SHA must be exactly 40 lowercase hexadecimal characters.'
-}
-
-need free; need df; need awk
-if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
-  preflight
-  exit 0
-fi
-need docker; need curl; need grep; need sed; need cmp; need sha256sum; need wc; need tr; need cat; need tail
-need cp; need mv; need rm; need mkdir; need rmdir; need date; need sort; need head; need mktemp; need stat
-[ -d "$APP_DIR" ] || fail "Missing deployment directory: $APP_DIR"
-[ -f "$APP_DIR/compose.yaml" ] || fail "Missing compose.yaml in $APP_DIR"
-[ -f "$APP_DIR/compose.prod.yaml" ] || fail "Missing compose.prod.yaml in $APP_DIR"
 [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || fail "Production environment must be a regular non-symbolic file: $ENV_FILE"
-env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE") || fail 'Unable to inspect production environment permissions.'
-case "$env_mode" in 400|600) ;; *) fail 'Production environment permissions must be 400 or 600.' ;; esac
-CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
-[ -f "$CONTROLLED_COMPOSE_HELPER" ] && [ ! -L "$CONTROLLED_COMPOSE_HELPER" ] || fail "Missing controlled Compose helper: $CONTROLLED_COMPOSE_HELPER"
-# shellcheck source=scripts/deploy/controlled-compose.sh
-. "$CONTROLLED_COMPOSE_HELPER"
-EVENT_CLIP_RUNTIME_HELPER=$APP_DIR/scripts/deploy/event-clip-runtime-env.sh
-[ -f "$EVENT_CLIP_RUNTIME_HELPER" ] && [ ! -L "$EVENT_CLIP_RUNTIME_HELPER" ] || fail "Missing event clip runtime environment helper: $EVENT_CLIP_RUNTIME_HELPER"
-# shellcheck source=scripts/deploy/event-clip-runtime-env.sh
-. "$EVENT_CLIP_RUNTIME_HELPER"
-validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
+case "$(stat -c '%a' "$ENV_FILE")" in 400|600) ;; *) fail 'Production environment permissions must be 400 or 600.' ;; esac
 cd "$APP_DIR"
-
-production_env_value() {
-  env_key=$1
-  env_result=$(awk -v key="$env_key" '
-    index($0, key "=") == 1 {
-      count += 1
-      value = substr($0, length(key) + 2)
-    }
-    END { if (count != 1 || value == "") exit 2; print value }
-  ' "$ENV_FILE") || fail "$env_key must appear exactly once with a nonempty value in the production environment."
-  printf '%s\n' "$env_result"
-}
-load_smoke_authorities() {
-  SMOKE_EXPECTED_FRONT_ORIGINS=$(production_env_value FRONT_ORIGINS)
-  SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE=$(production_env_value AUTH_COOKIE_SAME_SITE)
-  SMOKE_EXPECTED_AUTH_COOKIE_SECURE=$(production_env_value AUTH_COOKIE_SECURE)
-}
-load_smoke_authorities
+# shellcheck source=scripts/deploy/controlled-compose.sh
+. "$APP_DIR/scripts/deploy/controlled-compose.sh"
+# shellcheck source=scripts/deploy/event-clip-runtime-env.sh
+. "$APP_DIR/scripts/deploy/event-clip-runtime-env.sh"
+validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 
 compose() {
-  # shellcheck disable=SC2086 # Fixed pair of Compose file arguments.
-  if [ -f "$RELEASE_ENV" ]; then
-    if [ -f "$FEATURE_ENV" ]; then
-      controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
-    else
-      controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" $COMPOSE_FILES "$@"
-    fi
-  else
-    if [ -f "$FEATURE_ENV" ]; then
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$FEATURE_ENV" $COMPOSE_FILES "$@"
-    else
-      BACKEND_IMAGE=restore-only API_INGRESS_IMAGE=restore-only controlled_compose docker compose --env-file "$ENV_FILE" $COMPOSE_FILES "$@"
-    fi
-  fi
+  set -- --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
+  if [ -f "$FEATURE_ENV" ]; then set -- --env-file "$FEATURE_ENV" "$@"; fi
+  controlled_compose docker compose "$@"
 }
-assert_backend_stopped() {
-  if [ "$DRY_RUN" -eq 1 ]; then log 'would assert old backend is stopped before replacement'; return; fi
-  running_backend=$(compose ps -q --status running backend)
-  [ -z "$running_backend" ] || fail 'Old backend is still running; zero-overlap replacement refused.'
-}
-cleanup_resources() {
-  [ "$DEPLOY_CLEANED_UP" -eq 0 ] || return 0
-  DEPLOY_CLEANED_UP=1
-  CLEANUP_STATUS=0
-  if [ "$LOCK_HELD" -eq 1 ] && ! rmdir "$LOCK_DIR"; then
-    log "Failed to release deployment lock: $LOCK_DIR"
-    CLEANUP_STATUS=1
-  fi
-  LOCK_HELD=0
-  for cleanup_file in "$TEMP_FILE" "$TEMP_FILE_SECOND"; do
-    if [ -n "$cleanup_file" ] && [ -e "$cleanup_file" ] && ! rm -f "$cleanup_file"; then
-      log "Failed to remove temporary file: $cleanup_file"
-      CLEANUP_STATUS=1
-    fi
-  done
-}
-cleanup() {
-  status=$?
-  cleanup_resources
-  trap - 0 HUP INT TERM
-  if [ "$status" -ne 0 ]; then exit "$status"; fi
-  exit "$CLEANUP_STATUS"
-}
-signal_cleanup() {
-  status=$1
-  cleanup_resources
-  trap - 0 HUP INT TERM
-  exit "$status"
-}
-acquire_lock() {
-  if [ "$DRY_RUN" -eq 1 ]; then log "would acquire deployment lock $LOCK_DIR"; return; fi
-  mkdir -p "$APP_ROOT/shared" "$BACKUP_DIR" "$RELEASE_DIR"
-  mkdir "$LOCK_DIR" 2>/dev/null || fail "Another deployment is already running: $LOCK_DIR"
-  LOCK_HELD=1
-  trap cleanup 0
-  trap 'signal_cleanup 129' HUP
-  trap 'signal_cleanup 130' INT
-  trap 'signal_cleanup 143' TERM
-}
-owner_only_receipt() {
-  receipt=$1
-  label=$2
-  [ ! -L "$receipt" ] && [ -f "$receipt" ] || fail "$label is required: $receipt"
-  mode=$(stat -c '%a' "$receipt" 2>/dev/null || stat -f '%Lp' "$receipt") || fail "Unable to inspect $label permissions."
-  case "$mode" in 400|600) ;; *) fail "$label permissions must be 400 or 600." ;; esac
-}
-receipt_value() {
-  key=$1
-  receipt=$2
-  value=$(awk -F= -v key="$key" '$1 == key { count += 1; value = substr($0, length(key) + 2) } END { if (count != 1) exit 2; print value }' "$receipt") || fail "Receipt field is missing or duplicated: $key"
-  printf '%s\n' "$value"
-}
-assert_fresh_receipt_epoch() {
-  epoch=$1
-  label=$2
-  case "$epoch" in ''|*[!0-9]*) fail "$label timestamp is invalid." ;; esac
-  now=$(date -u +%s)
-  age=$((now - epoch))
-  [ "$age" -ge 0 ] && [ "$age" -le "$RECEIPT_MAX_AGE_SECONDS" ] || fail "$label is stale."
-}
-verify_deploy_receipts() {
-  [ "$MANIFEST_SCHEMA" = 2 ] || fail 'A normal deploy must use the schema-2 backend service set.'
-
-  owner_only_receipt "$EDGE_RECEIPT" 'Edge continuity receipt'
-  [ "$(wc -l < "$EDGE_RECEIPT" | awk '{print $1}')" -eq 4 ] || fail 'Edge continuity receipt is malformed.'
-  [ "$(receipt_value FORMAT "$EDGE_RECEIPT")" = seeon-edge-continuity-seed-v1 ] || fail 'Edge continuity receipt format is invalid.'
-  [ "$(receipt_value RELEASE_SHA "$EDGE_RECEIPT")" = "$SHA" ] || fail 'Edge continuity receipt SHA does not match the release.'
-  EDGE_BEFORE_EPOCH=$(receipt_value LAST_HEARTBEAT_EPOCH "$EDGE_RECEIPT")
-  case "$EDGE_BEFORE_EPOCH" in ''|*[!0-9]*) fail 'Edge continuity receipt heartbeat is invalid.' ;; esac
-  [ "$EDGE_BEFORE_EPOCH" -gt 0 ] || fail 'Edge continuity receipt heartbeat is invalid.'
-  assert_fresh_receipt_epoch "$(receipt_value CAPTURED_EPOCH "$EDGE_RECEIPT")" 'Edge continuity receipt'
-  # Canonical decimals only: dash arithmetic reads leading-zero values as octal.
-  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a positive decimal integer without leading zeros.' ;; esac
-  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in 0) ;; ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative decimal integer without leading zeros.' ;; esac
-}
-
-json_value() { sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"; }
-json_line_value() { printf '%s\n' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"; }
-validate_manifest() {
-  manifest=$1
-  [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
-  TEMP_FILE=$(mktemp "${TMPDIR:-/tmp}/iwinv-manifest.XXXXXX") || fail "Unable to create release manifest snapshot: $manifest"
-  cat "$manifest" > "$TEMP_FILE" || fail "Unable to capture release manifest: $manifest"
-  manifest_size=$(wc -c < "$TEMP_FILE" | awk '{print $1}')
-  case "$manifest_size" in ''|*[!0-9]*) fail "Unable to determine release manifest size: $manifest" ;; esac
-  [ "$manifest_size" -le 4096 ] || fail "Release manifest exceeds 4096 bytes: $manifest"
-  [ "$manifest_size" -gt 0 ] || fail "Invalid release manifest canonical form: $manifest"
-  allowed_size=$(LC_ALL=C tr -cd '\40-\176\n' < "$TEMP_FILE" | wc -c | awk '{print $1}')
-  [ "$allowed_size" = "$manifest_size" ] || fail "Invalid release manifest byte alphabet: $manifest"
-  newline_count=$(LC_ALL=C tr -cd '\n' < "$TEMP_FILE" | wc -c | awk '{print $1}')
-  [ "$newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
-  final_newline_count=$(tail -c 1 "$TEMP_FILE" | LC_ALL=C tr -cd '\n' | wc -c | awk '{print $1}')
-  [ "$final_newline_count" = 1 ] || fail "Invalid release manifest newline contract: $manifest"
-
-  RELEASE_MANIFEST_LINE=$(cat "$TEMP_FILE")
-  [ "$((${#RELEASE_MANIFEST_LINE} + 1))" -eq "$manifest_size" ] || fail "Invalid release manifest captured bytes: $manifest"
-  rm -f "$TEMP_FILE"
-  TEMP_FILE=
-
-  hex40='[0-9a-f]{40}'
-  hex64='[0-9a-f]{64}'
-  timestamp='20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z'
-  dump='normal-[A-Za-z0-9._-]{1,200}\.dump'
-  schema_one="^\\{\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"front_image\":\"eldercare-front:$hex40\",\"front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
-  schema_two="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
-  schema_two_transitional="^\\{\"schema\":\"2\",\"sha\":\"$hex40\",\"backend_image\":\"eldercare-backend:$hex40\",\"backend_image_id\":\"sha256:$hex64\",\"api_ingress_image\":\"eldercare-api-ingress:$hex40\",\"api_ingress_image_id\":\"sha256:$hex64\",\"embedded_front_image\":\"eldercare-front:$hex40\",\"embedded_front_image_id\":\"sha256:$hex64\",\"compose_sha256\":\"$hex64\",\"env_sha256\":\"$hex64\",\"pre_migration_dump\":\"$dump\",\"timestamp\":\"$timestamp\"\\}$"
-
-  if printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_one"; then
-    MANIFEST_SCHEMA=1
-  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two"; then
-    MANIFEST_SCHEMA=2
-  elif printf '%s\n' "$RELEASE_MANIFEST_LINE" | LC_ALL=C grep -Eq "$schema_two_transitional"; then
-    MANIFEST_SCHEMA=2
-  else
-    fail "Invalid release manifest canonical form: $manifest"
-  fi
-  manifest_dump=$(json_line_value "$RELEASE_MANIFEST_LINE" pre_migration_dump)
-  case "$manifest_dump" in *..*|*/*|'') fail "Invalid release manifest dump field: $manifest" ;; esac
-}
-read_manifest() {
-  manifest=$1
-  [ -f "$manifest" ] || fail "Release manifest not found: $manifest"
-  validate_manifest "$manifest"
-  SHA=$(json_line_value "$RELEASE_MANIFEST_LINE" sha)
-  BACKEND_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image)
-  BACKEND_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" backend_image_id)
-  API_INGRESS_IMAGE=''; API_INGRESS_ID=''; FRONT_IMAGE=''; FRONT_ID=''; HAS_FRONT=0
-  valid_sha "$SHA" || fail "Invalid SHA in manifest: $manifest"
-  [ "$BACKEND_IMAGE" = "eldercare-backend:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
-  [ -n "$BACKEND_ID" ] || fail "Missing image IDs in manifest: $manifest"
-  if [ "$MANIFEST_SCHEMA" = 1 ]; then
-    FRONT_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image)
-    FRONT_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" front_image_id)
-    [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
-    [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
-    # Preserve legacy image metadata for pointer validation and pruning, but
-    # frontend lifecycle belongs to the standalone frontend repository.
-    HAS_FRONT=0
-    APP_SERVICES='backend'
-  else
-    API_INGRESS_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image)
-    API_INGRESS_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" api_ingress_image_id)
-    [ "$API_INGRESS_IMAGE" = "eldercare-api-ingress:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
-    [ -n "$API_INGRESS_ID" ] || fail "Missing image IDs in manifest: $manifest"
-    FRONT_IMAGE=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image)
-    FRONT_ID=$(json_line_value "$RELEASE_MANIFEST_LINE" embedded_front_image_id)
-    if [ -n "$FRONT_IMAGE" ] || [ -n "$FRONT_ID" ]; then
-      [ "$FRONT_IMAGE" = "eldercare-front:$SHA" ] || fail "Invalid image tags in manifest: $manifest"
-      [ -n "$FRONT_ID" ] || fail "Missing image IDs in manifest: $manifest"
-      # Transitional manifests remain readable; embedded frontend lifecycle
-      # is intentionally not activated by this backend repository.
-      HAS_FRONT=0
-      APP_SERVICES='backend api-ingress'
-    else
-      HAS_FRONT=0
-      APP_SERVICES='backend api-ingress'
-    fi
-  fi
-}
-select_manifest() {
-  if [ "$ROLLBACK" -eq 1 ]; then
-    current_manifest=$RELEASE_DIR/current.json
-    [ -f "$current_manifest" ] || fail "Current release manifest not found: $current_manifest"
-    read_manifest "$current_manifest"
-    current_sha=$SHA
-    if [ -n "$REQUESTED_ROLLBACK_SHA" ]; then
-      manifest=$RELEASE_DIR/$REQUESTED_ROLLBACK_SHA.json
-      read_manifest "$manifest"
-      [ "$SHA" = "$REQUESTED_ROLLBACK_SHA" ] || fail "Rollback manifest SHA does not match requested SHA: $manifest"
-    else
-      read_manifest "$RELEASE_DIR/previous.json"
-      selected_sha=$SHA
-      read_manifest "$RELEASE_DIR/$selected_sha.json"
-      [ "$SHA" = "$selected_sha" ] || fail "Previous pointer does not match immutable manifest: $selected_sha"
-    fi
-    [ "$SHA" != "$current_sha" ] || fail "Refusing rollback to already-current SHA: $SHA"
-  else
-    read_manifest "$RELEASE_DIR/current.json"
-  fi
-}
-write_release_env() {
-  if [ "$DRY_RUN" -eq 1 ]; then log "would atomically write $RELEASE_ENV with exact image tags"; return; fi
-  TEMP_FILE=$RELEASE_ENV.$$.tmp
-  umask 077
-  release_api_ingress_image=${API_INGRESS_IMAGE:-restore-only}
-  printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\n' "$BACKEND_IMAGE" "$release_api_ingress_image" > "$TEMP_FILE"
-  mv "$TEMP_FILE" "$RELEASE_ENV"
-  TEMP_FILE=
-}
-
 sync_app_role() { compose exec -T db sh < backend/prisma/init/02-sync-app-role.sh; }
-prisma_migration_rows() {
-  # A fresh database has no _prisma_migrations relation, and PostgreSQL rejects a
-  # single statement that references it even behind a CASE branch at parse time.
-  tracked=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public._prisma_migrations'\'') IS NOT NULL;"')
-  if [ "$tracked" = t ]; then
-    compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM public._prisma_migrations;"'
-  else
-    printf '%s\n' -1
-  fi
-}
-domain_table_rows() { compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_type = '\''BASE TABLE'\'' AND table_name <> '\''_prisma_migrations'\'';"'; }
-assert_prisma_managed() { rows=$(prisma_migration_rows); tables=$(domain_table_rows); [ "$rows" -gt 0 ] || [ "$tables" -eq 0 ] || fail 'Refusing migration: existing domain tables lack Prisma migration tracking.'; }
-audit_prisma_migrations() {
-  log 'audit Prisma migration history before migrate deploy'
-  tracked_rows=$(prisma_migration_rows)
-  [ "$tracked_rows" -ge 0 ] || { log 'Prisma migration history is absent on an empty bootstrap database'; return; }
-  failed=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL;"')
-  case "$failed" in ''|*[!0-9]*) fail 'Prisma migration audit returned an invalid failed-migration count.' ;; esac
-  [ "$failed" -eq 0 ] || fail "Prisma migration audit found $failed failed migration(s)."
-  applied=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT migration_name FROM public._prisma_migrations WHERE rolled_back_at IS NULL ORDER BY migration_name;"')
-  while IFS= read -r migration; do
-    [ -z "$migration" ] || [ -f "backend/prisma/migrations/$migration/migration.sql" ] || fail "Database migration is absent from the release image: $migration"
-  done <<EOF
-$applied
-EOF
-}
-run_migrations() { log 'docker compose run backend pnpm exec prisma migrate deploy'; compose run --rm --no-deps backend pnpm exec prisma migrate deploy --schema prisma/schema.prisma; }
-bootstrap_super_admin() { compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js; }
 
-pending_recovery_path() { printf '%s\n' "$RELEASE_DIR/pending.json"; }
-load_pending_recovery() {
-  PENDING_SHA=''
-  PENDING_DUMP=''
-  pending=$(pending_recovery_path)
-  [ ! -e "$pending" ] && return
-  [ -f "$pending" ] || fail "Pending recovery record is not a regular file: $pending"
-  pending_sha=$(json_value "$pending" sha)
-  pending_dump=$(json_value "$pending" pre_migration_dump)
-  valid_sha "$pending_sha" || fail "Invalid SHA in pending recovery record: $pending"
-  case "$pending_dump" in normal-*.dump) case "$pending_dump" in */*) fail "Invalid dump in pending recovery record: $pending";; esac;; *) fail "Invalid dump in pending recovery record: $pending";; esac
-  printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$pending_sha" "$pending_dump" | cmp -s - "$pending" || fail "Malformed pending recovery record: $pending"
-  [ -f "$BACKUP_DIR/$pending_dump" ] || fail "Pending recovery record references missing dump: $BACKUP_DIR/$pending_dump"
-  PENDING_SHA=$pending_sha
-  PENDING_DUMP=$pending_dump
-}
-publish_pending_recovery() {
-  [ -z "$PENDING_SHA" ] || fail "Pending recovery record already exists: $(pending_recovery_path)"
-  [ -n "$PRE_DUMP" ] || fail 'Cannot publish pending recovery record without a validated dump.'
-  pending=$(pending_recovery_path)
-  TEMP_FILE=$RELEASE_DIR/.pending.$$.tmp
-  umask 077
-  printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$SHA" "$PRE_DUMP" > "$TEMP_FILE"
-  mv "$TEMP_FILE" "$pending"
-  TEMP_FILE=
-  PENDING_SHA=$SHA
-  PENDING_DUMP=$PRE_DUMP
-}
-clear_pending_recovery() {
-  [ -z "$PENDING_SHA" ] && return
-  pending=$(pending_recovery_path)
-  load_pending_recovery
-  [ -n "$PENDING_SHA" ] || fail "Pending recovery record disappeared: $pending"
-  if [ "$DRY_RUN" -eq 1 ]; then
-    log "would clear pending recovery record $pending"
-    return
-  fi
-  rm -f "$pending" || fail "Unable to clear pending recovery record: $pending"
-  PENDING_SHA=''
-  PENDING_DUMP=''
-}
-restore_pending_recovery() {
-  pending=$(pending_recovery_path)
-  TEMP_FILE=$RELEASE_DIR/.pending-restore.$$.tmp
-  umask 077
-  printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$1" "$2" > "$TEMP_FILE"
-  mv "$TEMP_FILE" "$pending" || fail "Unable to restore pending recovery record: $pending"
-  TEMP_FILE=
-  PENDING_SHA=$1
-  PENDING_DUMP=$2
-}
-finalize_success() {
-  should_clear_pending=$1
-  if [ "$DRY_RUN" -eq 1 ]; then
-    [ "$should_clear_pending" -eq 0 ] || clear_pending_recovery
-    return
-  fi
-  final_pending_sha=$PENDING_SHA
-  final_pending_dump=$PENDING_DUMP
-  if [ "$should_clear_pending" -eq 1 ]; then
-    clear_pending_recovery
-  fi
-  if [ "$LOCK_HELD" -eq 1 ] && ! rmdir "$LOCK_DIR"; then
-    if [ -n "$final_pending_sha" ]; then
-      restore_pending_recovery "$final_pending_sha" "$final_pending_dump"
-    fi
-    fail "Failed to release deployment lock: $LOCK_DIR"
-  fi
-  LOCK_HELD=0
-}
-protected_dump_names() {
-  validate_existing_pointers
-  load_pending_recovery
-  [ -z "$PENDING_DUMP" ] || printf '%s\n' "$PENDING_DUMP"
-  for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
-    [ -f "$pointer_manifest" ] || continue
-    dump=$(json_value "$pointer_manifest" pre_migration_dump)
-    case "$dump" in normal-*.dump) case "$dump" in */*) fail "Invalid pre-migration dump in release manifest: $pointer_manifest";; esac;; *) fail "Invalid pre-migration dump in release manifest: $pointer_manifest";; esac
-    [ -f "$BACKUP_DIR/$dump" ] || fail "Release manifest references missing pre-migration dump: $BACKUP_DIR/$dump"
-    printf '%s\n' "$dump"
-  done
-}
-rotate_dumps() {
-  if [ -e "$BACKUP_DIR/baseline.marker" ]; then
-    [ -f "$BACKUP_DIR/baseline.marker" ] || fail "Baseline marker is not a regular file: $BACKUP_DIR/baseline.marker"
-    baseline=$(sed -n '1p' "$BACKUP_DIR/baseline.marker") || fail "Unable to read baseline marker: $BACKUP_DIR/baseline.marker"
-    case "$baseline" in baseline-*.dump) case "$baseline" in */*) fail "Invalid baseline marker: $BACKUP_DIR/baseline.marker";; esac;; *) fail "Invalid baseline marker: $BACKUP_DIR/baseline.marker";; esac
-    [ -f "$BACKUP_DIR/$baseline" ] || fail "Baseline marker references missing dump: $BACKUP_DIR/$baseline"
-  fi
-  protected=$(protected_dump_names)
-  log "dump retention: retain every manifest-referenced dump and newest five unreferenced normal dumps"
-  dumps=$(for dump in "$BACKUP_DIR"/normal-*.dump; do [ -f "$dump" ] && printf '%s\n' "$dump"; done | sort)
-  removable=''
-  for dump in $dumps; do
-    name=${dump##*/}
-    printf '%s\n' "$protected" | grep -Fx "$name" >/dev/null || removable="${removable}${removable:+
-}$dump"
-  done
-  count=$(printf '%s\n' "$removable" | grep -c . || :)
-  if [ "$count" -gt 5 ]; then
-    remove=$((count - 5))
-    if [ "$DRY_RUN" -eq 1 ]; then printf '%s\n' "$removable" | head -n "$remove" | while IFS= read -r dump; do log "would remove $dump"; done
-    else printf '%s\n' "$removable" | head -n "$remove" | while IFS= read -r dump; do rm -f "$dump"; done; fi
+on_exit() {
+  status=$?
+  [ "$LOCK_HELD" -eq 0 ] || rmdir "$LOCK_DIR" || printf 'Failed to release deployment lock: %s\n' "$LOCK_DIR" >&2
+  if [ "$status" -ne 0 ] && [ -n "$DUMP" ]; then
+    printf 'Deploy failed after the pre-migration dump. The database is NOT restored automatically.\n' >&2
+    printf 'Rollback code: re-run Jenkins eldercare-fall-ai-cd with RELEASE_TAG=<previous tag>.\n' >&2
+    printf 'Restore data only if needed: sh scripts/deploy/iwinv-deploy.sh --restore-db %s --ack-data-loss\n' "$DUMP" >&2
   fi
 }
-backup_and_validate() {
-  PRE_DUMP=normal-$(date -u +%Y%m%d-%H%M%S)-$SHA.dump
-  dump=$BACKUP_DIR/$PRE_DUMP
-  TEMP_FILE=$BACKUP_DIR/.$PRE_DUMP.$$.tmp
-  log "docker compose exec db pg_dump -Fc > $TEMP_FILE"
-  compose exec -T db sh -c 'pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Fc' > "$TEMP_FILE"
-  compose exec -T db pg_restore --list < "$TEMP_FILE" >/dev/null
-  mv "$TEMP_FILE" "$dump"
-  TEMP_FILE=
-  publish_pending_recovery
-  rotate_dumps
-}
-restore_database() {
-  if [ "$DRY_RUN" -eq 1 ]; then
-    log "would ensure app role, restore database ACLs from $RESTORE_DUMP with pg_restore --dbname \$POSTGRES_DB --clean --if-exists --no-owner --exit-on-error --single-transaction, reconcile the event-SSOT ACL contract, and verify authorization invariants"
-    return
-  fi
+trap on_exit 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mkdir -p "$BACKUP_DIR"
+mkdir "$LOCK_DIR" 2>/dev/null || fail "Another deployment is already running: $LOCK_DIR"
+LOCK_HELD=1
+
+if [ "$ACK" -eq 1 ]; then
+  [ -f "$RESTORE_DUMP" ] || fail "Database dump not found: $RESTORE_DUMP"
+  [ -f "$RELEASE_ENV" ] || fail "No deployed release images recorded: $RELEASE_ENV"
+  log "restore database from $RESTORE_DUMP"
+  compose stop api-ingress backend
+  compose up -d --wait --wait-timeout 120 db
+  compose exec -T db pg_restore --list < "$RESTORE_DUMP" >/dev/null
   sync_app_role
   compose exec -T db sh -c 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction' < "$RESTORE_DUMP"
   # pg_restore recreates events under the init migration's ALTER DEFAULT PRIVILEGES
   # (SELECT,INSERT,UPDATE,DELETE), and the archive carries only additive GRANTs, so
   # the one-time event-SSOT REVOKE (20260626120000_event_ssot) must be re-applied.
-  compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "REVOKE ALL ON public.events FROM PUBLIC; REVOKE UPDATE, DELETE ON public.events FROM fall_app; GRANT SELECT, INSERT ON public.events TO fall_app;"' >/dev/null
+  compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "REVOKE ALL ON public.events FROM PUBLIC; REVOKE UPDATE, DELETE ON public.events FROM fall_app; GRANT SELECT, INSERT ON public.events TO fall_app;"'
   authorization=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT CASE WHEN (SELECT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication FROM pg_roles WHERE rolname = '\''fall_app'\'') AND has_database_privilege('\''fall_app'\'', current_database(), '\''CONNECT'\'') AND has_schema_privilege('\''fall_app'\'', '\''public'\'', '\''USAGE'\'') AND has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''SELECT'\'') AND has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''INSERT'\'') AND NOT has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''UPDATE'\'') AND NOT has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''DELETE'\'') AND NOT has_function_privilege('\''public'\'', '\''public.get_event_for_snapshot(text)'\'', '\''EXECUTE'\'') AND has_function_privilege('\''fall_app'\'', '\''public.get_event_for_snapshot(text)'\'', '\''EXECUTE'\'') AND NOT has_function_privilege('\''public'\'', '\''public.set_event_snapshot_key(text,text,text)'\'', '\''EXECUTE'\'') AND has_function_privilege('\''fall_app'\'', '\''public.set_event_snapshot_key(text,text,text)'\'', '\''EXECUTE'\'') THEN '\''ok'\'' ELSE '\''invalid'\'' END;"') || fail 'Post-restore authorization invariant query failed.'
   [ "$authorization" = ok ] || fail "Post-restore authorization invariant failed: $authorization"
-}
-validate_restore_dump() {
-  [ -f "$RESTORE_DUMP" ] || fail "Database dump not found: $RESTORE_DUMP"
-  log "docker compose exec db pg_restore --list < $RESTORE_DUMP"
-  [ "$DRY_RUN" -eq 1 ] || compose exec -T db pg_restore --list < "$RESTORE_DUMP" >/dev/null
-}
-
-image_id() { docker image inspect --format '{{.Id}}' "$1"; }
-verify_image_ids() {
-  actual_backend_id=$(image_id "$BACKEND_IMAGE") || fail "Backend image is unavailable: $BACKEND_IMAGE"
-  [ -z "$BACKEND_ID" ] || [ "$actual_backend_id" = "$BACKEND_ID" ] || fail 'Backend image ID differs from manifest.'
-  BACKEND_ID=$actual_backend_id
-  if [ "$MANIFEST_SCHEMA" = 2 ]; then
-    actual_api_ingress_id=$(image_id "$API_INGRESS_IMAGE") || fail "API ingress image is unavailable: $API_INGRESS_IMAGE"
-    [ -z "$API_INGRESS_ID" ] || [ "$actual_api_ingress_id" = "$API_INGRESS_ID" ] || fail 'API ingress image ID differs from manifest.'
-    API_INGRESS_ID=$actual_api_ingress_id
-  fi
-  if [ "$HAS_FRONT" -eq 1 ]; then
-    actual_front_id=$(image_id "$FRONT_IMAGE") || fail "Frontend image is unavailable: $FRONT_IMAGE"
-    [ -z "$FRONT_ID" ] || [ "$actual_front_id" = "$FRONT_ID" ] || fail 'Frontend image ID differs from manifest.'
-    FRONT_ID=$actual_front_id
-  fi
-  IMAGE_IDS_VERIFIED=1
-}
-verify_candidate_migrations() {
-  current_sha=$1
-  candidate_sha=$2
-  migration_classifier=$APP_DIR/scripts/deploy/verify-additive-migrations.sh
-  if APP_DIR="$APP_DIR" sh "$migration_classifier" "$current_sha" "$candidate_sha"; then
-    return 0
-  else
-    normal_status=$?
-  fi
-
-  # The normal classifier remains the first and unchanged path. Only the one
-  # audited pre-extraction pointer may consult the out-of-band bridge after
-  # that normal path has failed.
-  [ "$current_sha" = 450ed6a20959ce3f48cc06fb03afc3da1c25799a ] || return "$normal_status"
-  transition_authorizer=$APP_DIR/scripts/deploy/history-transition-authorization.sh
-  transition_output=$(APP_DIR="$APP_DIR" RELEASE_DIR="$RELEASE_DIR" sh "$transition_authorizer" --verify "$current_sha" "$candidate_sha") || fail 'History transition authorization verification failed.'
-  [ "$transition_output" = 'TRANSITION_BASELINE_SHA=4e23f9ef20b4899a17802905d729a2c12295f8d1' ] || fail 'History transition authorization returned an invalid reviewed baseline.'
-  APP_DIR="$APP_DIR" sh "$migration_classifier" 4e23f9ef20b4899a17802905d729a2c12295f8d1 "$candidate_sha"
-  HISTORY_TRANSITION_AUTHORIZED=1
-}
-finalize_history_transition_consumption() {
-  candidate_sha=$1
-  transition_authorizer=$APP_DIR/scripts/deploy/history-transition-authorization.sh
-  activation_manifest=$RELEASE_DIR/$candidate_sha.json
-  activation_pointer=$RELEASE_DIR/current.json
-  APP_DIR="$APP_DIR" RELEASE_DIR="$RELEASE_DIR" sh "$transition_authorizer" --finalize \
-    450ed6a20959ce3f48cc06fb03afc3da1c25799a "$candidate_sha" \
-    "$activation_manifest" "$activation_pointer"
-}
-consume_history_transition_authorization() {
-  [ "$HISTORY_TRANSITION_AUTHORIZED" -eq 1 ] || return 0
-  finalize_history_transition_consumption "$SHA"
-}
-
-verify_overlap_surfaces() {
-  smoke_program=$APP_DIR/scripts/deploy/iwinv-overlap-smoke.mjs
-  [ -f "$smoke_program" ] && [ ! -L "$smoke_program" ] || fail 'Overlap smoke program must be a regular non-symbolic file.'
-  smoke_output=$(compose exec -T \
-    -e EXPECTED_SHA="$SHA" \
-    -e EXPECTED_FRONT_ORIGINS="$SMOKE_EXPECTED_FRONT_ORIGINS" \
-    -e EXPECTED_AUTH_COOKIE_SAME_SITE="$SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE" \
-    -e EXPECTED_AUTH_COOKIE_SECURE="$SMOKE_EXPECTED_AUTH_COOKIE_SECURE" \
-    backend node --input-type=module < "$smoke_program" 2>&1) || {
-    printf 'Overlap CORS/SSE/auth smoke failed:\n%s\n' "$smoke_output" >&2
-    return 1
-  }
-  printf '%s\n' "$smoke_output" | grep -Fx 'OVERLAP_SMOKE_OK' >/dev/null || {
-    printf 'Overlap CORS/SSE/auth smoke returned an invalid receipt:\n%s\n' "$smoke_output" >&2
-    return 1
-  }
-}
-edge_heartbeat_epoch() {
-  compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT COALESCE(FLOOR(EXTRACT(EPOCH FROM MAX(observed_at)))::bigint, 0) FROM (SELECT last_heartbeat_at AS observed_at FROM edge_installations UNION ALL SELECT last_seen_at FROM cameras) edge_observations;"'
-}
-# Edge heartbeats land in the DB only every ~30 s and the backend restart drops
-# the in-flight relay, so a single read right after `compose up --wait` races the
-# next batch. Poll a bounded window; the gate still fails closed on timeout, and
-# an advance observed only after the window (slow read) does not activate.
-# Window settings are validated in verify_deploy_receipts, before any mutation.
-verify_edge_continuity() {
-  log "poll Edge continuity for up to ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s every ${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS}s (before=$EDGE_BEFORE_EPOCH)"
-  edge_started=$(date -u +%s)
-  while :; do
-    edge_after=$(edge_heartbeat_epoch) || fail 'Unable to read post-deploy Edge continuity state.'
-    case "$edge_after" in ''|*[!0-9]*) fail 'Post-deploy Edge continuity state is invalid.' ;; esac
-    edge_elapsed=$(( $(date -u +%s) - edge_started ))
-    if [ "$edge_after" -gt "$EDGE_BEFORE_EPOCH" ]; then
-      [ "$edge_elapsed" -le "$EDGE_CONTINUITY_TIMEOUT_SECONDS" ] || fail "Edge continuity advanced only after the ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s window (before=$EDGE_BEFORE_EPOCH after=$edge_after elapsed=${edge_elapsed}s)."
-      break
-    fi
-    [ "$edge_elapsed" -lt "$EDGE_CONTINUITY_TIMEOUT_SECONDS" ] || fail "Edge continuity did not advance after deploy (before=$EDGE_BEFORE_EPOCH after=$edge_after elapsed=${edge_elapsed}s)."
-    edge_wait=$(( EDGE_CONTINUITY_TIMEOUT_SECONDS - edge_elapsed ))
-    [ "$edge_wait" -le "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" ] || edge_wait=$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS
-    sleep "$edge_wait"
-  done
-  TEMP_FILE=$EDGE_AFTER_RECEIPT.$$.tmp
-  umask 077
-  printf 'FORMAT=seeon-edge-continuity-after-v1\nRELEASE_SHA=%s\nBEFORE_HEARTBEAT_EPOCH=%s\nAFTER_HEARTBEAT_EPOCH=%s\nCAPTURED_EPOCH=%s\n' "$SHA" "$EDGE_BEFORE_EPOCH" "$edge_after" "$(date -u +%s)" > "$TEMP_FILE"
-  chmod 600 "$TEMP_FILE"
-  mv "$TEMP_FILE" "$EDGE_AFTER_RECEIPT"
-  TEMP_FILE=
-}
-verify_services() {
-  backend_output=$(compose exec -T -e EXPECTED_SHA="$SHA" backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const body=await r.text(); console.log("status="+r.status+"\\nbody="+body); let value; try { value=JSON.parse(body); } catch (_) { process.exit(1); } process.exit(r.ok && value.sha===process.env.EXPECTED_SHA && value.database==="ok" ? 0 : 1);}).catch(error=>{console.log("request_error="+error.message);process.exit(1);})' 2>&1) || { printf 'Backend exact-SHA health verification failed:\n%s\n' "$backend_output" >&2; return 1; }
-  if [ "$MANIFEST_SCHEMA" = 2 ]; then
-    ingress_body=$(mktemp "$APP_ROOT/shared/api-ingress-body.XXXXXX") || fail 'Unable to create API ingress health body capture.'
-    TEMP_FILE=$ingress_body
-    if ! compose exec -T api-ingress wget -q -O - http://127.0.0.1:3000/health > "$ingress_body"; then
-      printf 'API ingress health request failed; body:\n' >&2; sed -n '1,120p' "$ingress_body" >&2 || :
-      return 1
-    fi
-    if ! grep -Eq '"sha"[[:space:]]*:[[:space:]]*"'"$SHA"'"' "$ingress_body" || ! grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"' "$ingress_body"; then
-      printf 'API ingress exact-SHA health verification failed; body:\n' >&2
-      sed -n '1,120p' "$ingress_body" >&2 || :
-      return 1
-    fi
-    rm -f "$ingress_body" || fail 'Failed to remove API ingress health diagnostics.'
-    TEMP_FILE=
-  fi
-  if [ "$HAS_FRONT" -eq 1 ]; then
-    # Probe inside the container because Jenkins cannot reach host loopback.
-    body=$(mktemp "$APP_ROOT/shared/front-body.XXXXXX") || fail 'Unable to create frontend health body capture.'
-    TEMP_FILE=$body
-    if ! compose exec -T front wget -q -O - http://127.0.0.1:3000/version.txt > "$body"; then
-      printf 'Frontend version request failed; body:\n' >&2; sed -n '1,120p' "$body" >&2 || :
-      return 1
-    fi
-    version=$(sed -n '1p' "$body") || return 1
-    if ! printf '%s\n' "$SHA" | cmp -s - "$body"; then
-      printf 'Frontend exact-SHA verification failed (expected %s, got %s); body:\n' "$SHA" "${version:-unreadable}" >&2
-      sed -n '1,120p' "$body" >&2 || :
-      return 1
-    fi
-    rm -f "$body" || fail 'Failed to remove frontend health diagnostics.'
-    TEMP_FILE=
-  fi
-  if [ "$MANIFEST_SCHEMA" = 2 ] && [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ]; then
-    verify_overlap_surfaces
-    verify_edge_continuity
-  fi
-}
-
-write_immutable_manifest() {
-  [ "$DRY_RUN" -eq 1 ] && { log "would atomically write immutable $RELEASE_DIR/$SHA.json"; return; }
-  manifest=$RELEASE_DIR/$SHA.json
-  [ ! -e "$manifest" ] || fail "Immutable release manifest already exists: $manifest"
-  compose_hash=$(sha256sum compose.yaml compose.prod.yaml | sha256sum | awk '{print $1}')
-  env_hash=$(sha256sum "$ENV_FILE" | awk '{print $1}')
-  TEMP_FILE=$RELEASE_DIR/.$SHA.$$.tmp
-  umask 077
-  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  if [ "$HAS_FRONT" -eq 1 ]; then
-    printf '{"schema":"2","sha":"%s","backend_image":"%s","backend_image_id":"%s","api_ingress_image":"%s","api_ingress_image_id":"%s","embedded_front_image":"%s","embedded_front_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"%s"}\n' "$SHA" "$BACKEND_IMAGE" "$BACKEND_ID" "$API_INGRESS_IMAGE" "$API_INGRESS_ID" "$FRONT_IMAGE" "$FRONT_ID" "$compose_hash" "$env_hash" "$PRE_DUMP" "$timestamp" > "$TEMP_FILE"
-  else
-    printf '{"schema":"2","sha":"%s","backend_image":"%s","backend_image_id":"%s","api_ingress_image":"%s","api_ingress_image_id":"%s","compose_sha256":"%s","env_sha256":"%s","pre_migration_dump":"%s","timestamp":"%s"}\n' "$SHA" "$BACKEND_IMAGE" "$BACKEND_ID" "$API_INGRESS_IMAGE" "$API_INGRESS_ID" "$compose_hash" "$env_hash" "$PRE_DUMP" "$timestamp" > "$TEMP_FILE"
-  fi
-  mv "$TEMP_FILE" "$manifest"
-  TEMP_FILE=
-}
-validate_existing_pointers() {
-  saved_sha=$SHA
-  saved_manifest_schema=$MANIFEST_SCHEMA
-  saved_backend_image=$BACKEND_IMAGE
-  saved_api_ingress_image=$API_INGRESS_IMAGE
-  saved_front_image=$FRONT_IMAGE
-  saved_backend_id=$BACKEND_ID
-  saved_api_ingress_id=$API_INGRESS_ID
-  saved_front_id=$FRONT_ID
-  saved_has_front=$HAS_FRONT
-  saved_app_services=$APP_SERVICES
-  for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
-    [ ! -e "$pointer_manifest" ] || {
-      [ -f "$pointer_manifest" ] || fail "Release pointer is not a regular file: $pointer_manifest"
-      read_manifest "$pointer_manifest"
-      immutable_manifest=$RELEASE_DIR/$SHA.json
-      [ -f "$immutable_manifest" ] || fail "Release pointer immutable manifest not found: $immutable_manifest"
-      printf '%s\n' "$RELEASE_MANIFEST_LINE" | cmp -s - "$immutable_manifest" || fail "Release pointer does not match immutable manifest: $pointer_manifest"
-    }
-  done
-  SHA=$saved_sha
-  MANIFEST_SCHEMA=$saved_manifest_schema
-  BACKEND_IMAGE=$saved_backend_image
-  API_INGRESS_IMAGE=$saved_api_ingress_image
-  FRONT_IMAGE=$saved_front_image
-  BACKEND_ID=$saved_backend_id
-  API_INGRESS_ID=$saved_api_ingress_id
-  FRONT_ID=$saved_front_id
-  HAS_FRONT=$saved_has_front
-  APP_SERVICES=$saved_app_services
-}
-activate_manifest() {
-  target_manifest=$1
-  if [ "$DRY_RUN" -eq 1 ]; then log "would atomically activate $target_manifest as current and retain prior current as previous"; return; fi
-  [ -f "$target_manifest" ] || fail "Immutable release manifest not found: $target_manifest"
-  validate_existing_pointers
-  if [ -f "$RELEASE_DIR/current.json" ]; then
-    TEMP_FILE=$RELEASE_DIR/.previous.$$.tmp
-    cp "$RELEASE_DIR/current.json" "$TEMP_FILE"
-    mv "$TEMP_FILE" "$RELEASE_DIR/previous.json"
-    TEMP_FILE=
-  fi
-  TEMP_FILE=$RELEASE_DIR/.current.$$.tmp
-  cp "$target_manifest" "$TEMP_FILE"
-  mv "$TEMP_FILE" "$RELEASE_DIR/current.json"
-  TEMP_FILE=
-}
-protected_images() {
-  validate_existing_pointers
-  for selected_image in "$BACKEND_IMAGE" "$API_INGRESS_IMAGE" "$FRONT_IMAGE"; do
-    [ -z "$selected_image" ] || printf '%s\n' "$selected_image"
-  done
-  for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
-    [ -f "$pointer_manifest" ] || continue
-    for image_key in backend_image api_ingress_image front_image embedded_front_image; do
-      pointer_image=$(json_value "$pointer_manifest" "$image_key")
-      [ -z "$pointer_image" ] || printf '%s\n' "$pointer_image"
-    done
-  done
-}
-pointer_shas() {
-  validate_existing_pointers
-  for pointer_manifest in "$RELEASE_DIR/current.json" "$RELEASE_DIR/previous.json"; do
-    [ -f "$pointer_manifest" ] || continue
-    json_value "$pointer_manifest" sha
-  done
-}
-prune_release_manifests() {
-  validate_existing_pointers
-  protected_shas=$(pointer_shas)
-  for manifest in "$RELEASE_DIR"/*.json; do
-    [ -f "$manifest" ] || continue
-    case "$manifest" in
-      "$RELEASE_DIR/current.json"|"$RELEASE_DIR/previous.json"|"$RELEASE_DIR/pending.json"|"$RELEASE_DIR/history-transition-authorization-v1.json"|"$RELEASE_DIR/history-transition-authorization-v1.consumed.json") continue ;;
-    esac
-    manifest_sha=${manifest##*/}; manifest_sha=${manifest_sha%.json}
-    printf '%s\n' "$protected_shas" | grep -Fx "$manifest_sha" >/dev/null || { log "remove stale immutable manifest $manifest"; [ "$DRY_RUN" -eq 1 ] || rm -f "$manifest" || fail "Unable to remove stale immutable manifest: $manifest"; }
-  done
-}
-prune_images() {
-  protected=$(protected_images)
-  log "protected image tags: $protected"
-  images=$(docker images --format '{{.Repository}}:{{.Tag}}') || fail 'Unable to list Docker images for pruning.'
-  while IFS= read -r image; do
-    case "$image" in eldercare-backend:*|eldercare-api-ingress:*|eldercare-front:*)
-      printf '%s\n' "$protected" | grep -Fx "$image" >/dev/null || { log "docker image rm $image"; [ "$DRY_RUN" -eq 1 ] || docker image rm "$image" >/dev/null || fail "Unable to remove stale image: $image"; };;
-    esac
-  done <<EOF
-$images
-EOF
-}
-
-interrupted_history_transition_sha() {
-  [ -f "$RELEASE_DIR/current.json" ] && [ -f "$RELEASE_DIR/previous.json" ] || return 0
-  interrupted_current=$(json_value "$RELEASE_DIR/current.json" sha)
-  interrupted_previous=$(json_value "$RELEASE_DIR/previous.json" sha)
-  [ "$interrupted_previous" = 450ed6a20959ce3f48cc06fb03afc3da1c25799a ] || return 0
-  [ -n "$PENDING_SHA" ] && [ "$PENDING_SHA" = "$interrupted_current" ] || return 0
-  [ -f "$RELEASE_DIR/$interrupted_current.json" ] && cmp -s "$RELEASE_DIR/current.json" "$RELEASE_DIR/$interrupted_current.json" || return 0
-  printf '%s\n' "$interrupted_current"
-}
-
-validate_existing_pointers
-load_pending_recovery
-[ -f "$RELEASE_DIR/current.json" ] && HAS_CURRENT=1
-INTERRUPTED_TRANSITION_SHA=$(interrupted_history_transition_sha)
-if [ -n "$INTERRUPTED_TRANSITION_SHA" ]; then
-  # Activation may have completed immediately before a crash or any later
-  # cleanup failure. Finalize the durable one-shot receipt under the deploy lock
-  # before rollback, another candidate, or the already-current guard can run.
-  acquire_lock
-  validate_existing_pointers
-  load_pending_recovery
-  [ "$(interrupted_history_transition_sha)" = "$INTERRUPTED_TRANSITION_SHA" ] || fail 'Interrupted history transition activation changed before receipt finalization.'
-  finalize_history_transition_consumption "$INTERRUPTED_TRANSITION_SHA"
-  if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$SHA" = "$INTERRUPTED_TRANSITION_SHA" ]; then
-    read_manifest "$RELEASE_DIR/current.json"
-    prune_release_manifests
-    prune_images
-    printf 'History transition activation recovery complete. sha=%s\n' "$INTERRUPTED_TRANSITION_SHA"
-    finalize_success 1
-    exit 0
-  fi
-  finalize_success 0
-fi
-if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ -n "$PENDING_SHA" ] && [ "$PENDING_SHA" != "$SHA" ]; then
-  fail "Pending recovery record belongs to a different SHA: $PENDING_SHA"
-fi
-
-if [ "$ROLLBACK" -eq 1 ]; then
-  select_manifest
-elif [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 1 ]; then
-  select_manifest
-elif [ "$RESTORE_COUNT" -eq 0 ]; then
-  deploy_sha=$SHA
-  if [ "$HAS_CURRENT" -eq 1 ]; then
-    read_manifest "$RELEASE_DIR/current.json"
-    CURRENT_RELEASE_SHA=$SHA
-    [ "$deploy_sha" != "$SHA" ] || fail "Refusing deploy of already-current SHA: $deploy_sha"
-  fi
-  [ ! -e "$RELEASE_DIR/$deploy_sha.json" ] || fail "Immutable release manifest already exists: $RELEASE_DIR/$deploy_sha.json"
-  SHA=$deploy_sha
-  MANIFEST_SCHEMA=2
-  BACKEND_IMAGE=eldercare-backend:$SHA
-  API_INGRESS_IMAGE=eldercare-api-ingress:$SHA
-  FRONT_IMAGE=''
-  BACKEND_ID=''
-  API_INGRESS_ID=''
-  FRONT_ID=''
-  HAS_FRONT=0
-  APP_SERVICES='backend api-ingress'
-fi
-
-# Fail every normal-deploy prerequisite before taking the deploy lock or
-# mutating Compose, the database, release env, manifests, or pointers.
-preflight
-if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
-  verify_deploy_receipts
-  if [ -n "$CURRENT_RELEASE_SHA" ]; then
-    verify_candidate_migrations "$CURRENT_RELEASE_SHA" "$SHA"
-  fi
-  live_volume_verifier=$APP_DIR/scripts/deploy/verify-live-event-media-volume.sh
-  APP_DIR="$APP_DIR" ENV_FILE="$ENV_FILE" sh "$live_volume_verifier"
-  verify_image_ids
-fi
-acquire_lock
-if [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 0 ]; then
-  run compose config >/dev/null
-  run compose pull db
-  run compose up -d --wait --wait-timeout 120 db
-  validate_restore_dump
-  restore_database
-  printf 'Database restore complete; no release manifest exists, so application images were not started.\n'
-  finalize_success 1
+  compose up -d --wait --wait-timeout 120 backend api-ingress
+  printf 'Database restore complete from %s.\n' "$RESTORE_DUMP"
   exit 0
 fi
 
-write_release_env
-run compose config >/dev/null
-if [ "$DRY_RUN" -eq 1 ]; then
-  log "would verify exact local images $BACKEND_IMAGE and $API_INGRESS_IMAGE"
-elif [ "$IMAGE_IDS_VERIFIED" -eq 0 ]; then
-  verify_image_ids
-fi
+log "deploy $SHA"
+umask 077
+printf 'BACKEND_IMAGE=eldercare-backend:%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:%s\n' "$SHA" "$SHA" > "$RELEASE_ENV.tmp"
+mv "$RELEASE_ENV.tmp" "$RELEASE_ENV"
+compose config >/dev/null
+docker image inspect "eldercare-backend:$SHA" "eldercare-api-ingress:$SHA" >/dev/null || fail "Release images for $SHA are not built."
 
-if [ "$ROLLBACK" -eq 1 ] || [ "$RESTORE_COUNT" -eq 1 ]; then
-  run compose stop api-ingress backend
-  assert_backend_stopped
-  run compose up -d --wait --wait-timeout 120 db
-  if [ "$RESTORE_COUNT" -eq 1 ]; then
-    validate_restore_dump
-    restore_database
-  fi
-  # shellcheck disable=SC2086 # APP_SERVICES is selected from validated schema layouts.
-  run compose up -d --wait --wait-timeout 120 $APP_SERVICES
-  [ "$DRY_RUN" -eq 1 ] || verify_services
-  if [ "$ROLLBACK" -eq 1 ]; then
-    activate_manifest "$RELEASE_DIR/$SHA.json"
-    prune_release_manifests
-  fi
-  prune_images
-  finalize_success "$RESTORE_COUNT"
-  exit 0
-fi
+# 1. Pre-migration dump: a safety net only, never restored automatically.
+compose stop api-ingress backend
+compose up -d --wait --wait-timeout 120 db
+dump_path=$BACKUP_DIR/deploy-$(date -u +%Y%m%dT%H%M%SZ)-$SHA.dump
+log "pg_dump -> $dump_path"
+compose exec -T db sh -c 'pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Fc' > "$dump_path.tmp"
+compose exec -T db pg_restore --list < "$dump_path.tmp" >/dev/null
+mv "$dump_path.tmp" "$dump_path"
+DUMP=$dump_path
+# Keep the newest deploy-*.dump files; older dumps with other names are never touched.
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'deploy-*.dump' | LC_ALL=C sort -r | tail -n +$((DUMPS_TO_KEEP + 1)) | while IFS= read -r old; do
+  log "remove old dump $old"; rm -f "$old"
+done
 
-if [ "$HAS_CURRENT" -eq 1 ]; then
-  run compose stop api-ingress backend
-  assert_backend_stopped
-  if [ "$DRY_RUN" -eq 1 ]; then
-    if [ -n "$PENDING_DUMP" ]; then
-      log "would reuse pending validated pre-migration dump $PENDING_DUMP"
-      rotate_dumps
-    else
-      log 'would create and validate pre-migration dump, persist it, and rotate normal dumps'
-      rotate_dumps
-    fi
-  elif [ -n "$PENDING_DUMP" ]; then
-    PRE_DUMP=$PENDING_DUMP
-    log "reusing pending validated pre-migration dump $PRE_DUMP"
-    rotate_dumps
-  else
-    backup_and_validate
-  fi
-fi
-run compose pull db
-run compose up -d --wait --wait-timeout 120 db
-if [ "$HAS_CURRENT" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
-  if [ -n "$PENDING_DUMP" ]; then
-    log "would reuse pending validated pre-migration dump $PENDING_DUMP"
-    rotate_dumps
-  else
-    log 'would create and validate pre-migration dump, persist it, and rotate normal dumps'
-    rotate_dumps
-  fi
-elif [ "$HAS_CURRENT" -eq 0 ] && [ -n "$PENDING_DUMP" ]; then
-  PRE_DUMP=$PENDING_DUMP
-  log "reusing pending validated pre-migration dump $PRE_DUMP"
-  rotate_dumps
-elif [ "$HAS_CURRENT" -eq 0 ]; then
-  backup_and_validate
-fi
-if [ "$DRY_RUN" -eq 1 ]; then
-  log 'would sync app role, audit Prisma migration history, run migrate deploy, and bootstrap super-admin'
-else
-  sync_app_role
-  assert_prisma_managed
-  audit_prisma_migrations
-  run_migrations
-  bootstrap_super_admin
-fi
-# shellcheck disable=SC2086 # APP_SERVICES is the fixed schema-2 overlap service set here.
-run compose up -d --wait --wait-timeout 120 $APP_SERVICES
-[ "$DRY_RUN" -eq 1 ] || verify_services
-write_immutable_manifest
-activate_manifest "$RELEASE_DIR/$SHA.json"
-consume_history_transition_authorization
-prune_release_manifests
-prune_images
-printf 'Deploy complete. sha=%s\n' "$SHA"
-finalize_success 1
+# 2. Migrations run once from deploy tooling, never on app start.
+sync_app_role
+compose run --rm --no-deps backend pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js
+
+# 3. Start the release and wait for /health to report its SHA.
+compose up -d --wait --wait-timeout 120 backend api-ingress
+started=$(date -u +%s)
+while :; do
+  live=$(compose exec -T api-ingress wget -q -O - http://127.0.0.1:3000/health 2>/dev/null | sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p') || live=''
+  [ "$live" != "$SHA" ] || break
+  [ $(($(date -u +%s) - started)) -lt "$HEALTH_TIMEOUT_SECONDS" ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
+  sleep 5
+done
+
+# 4. Remove release images beyond the newest few; never broad prune.
+for repo in eldercare-backend eldercare-api-ingress; do
+  docker images --format '{{.Repository}}:{{.Tag}}' "$repo" | grep -Fxv "$repo:$SHA" | tail -n +"$IMAGES_TO_KEEP" | while IFS= read -r image; do
+    log "docker image rm $image"; docker image rm "$image" >/dev/null || printf 'WARN: unable to remove %s\n' "$image" >&2
+  done
+done
+DUMP=''
+printf 'Deploy complete. sha=%s dump=%s\n' "$SHA" "$dump_path"
