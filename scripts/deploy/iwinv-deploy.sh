@@ -37,10 +37,13 @@ cd "$APP_DIR"
 . "$APP_DIR/scripts/deploy/event-clip-runtime-env.sh"
 validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 
+# Later --env-file wins: the emergency feature override must come last.
 compose() {
-  set -- --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
-  if [ -f "$FEATURE_ENV" ]; then set -- --env-file "$FEATURE_ENV" "$@"; fi
-  controlled_compose docker compose "$@"
+  if [ -f "$FEATURE_ENV" ]; then
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
+  else
+    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
+  fi
 }
 sync_app_role() { compose exec -T db sh < backend/prisma/init/02-sync-app-role.sh; }
 

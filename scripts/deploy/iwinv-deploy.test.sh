@@ -85,6 +85,13 @@ assert_contains "$log" 'image rm eldercare-backend:old2'
 assert_contains "$log" 'image rm eldercare-backend:old1'
 assert_not_contains "$log" 'prune'
 
+# The emergency event-clip override is the last env file, so it wins over the base env.
+printf 'EVENT_CLIPS_ENABLED=false\n' > "$ROOT/shared/event-clips-runtime.env"; chmod 600 "$ROOT/shared/event-clips-runtime.env"
+: > "$TMP/docker.log"
+deploy --sha "$SHA" >/dev/null
+assert_contains "$(docker_log)" "--env-file $ROOT/shared/.env --env-file $ROOT/shared/release-images.env --env-file $ROOT/shared/event-clips-runtime.env -f compose.yaml"
+rm -f "$ROOT/shared/event-clips-runtime.env"
+
 # Missing images: refuse before stopping anything or dumping.
 : > "$TMP/docker.log"
 MOCK_MISSING_IMAGE=1 run_failing --sha "$SHA"

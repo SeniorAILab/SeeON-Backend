@@ -272,7 +272,7 @@ rmdir "$TMP/app/shared/deploy.lock"
 # backend before any new backend starts (zero overlap).
 deploy_source=$(cat "$DEPLOY")
 assert_contains "$deploy_source" 'FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}'
-assert_contains "$deploy_source" 'set -- --env-file "$FEATURE_ENV" "$@"'
+assert_contains "$deploy_source" '--env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV"'
 stop_line=$(grep -n -F 'compose stop api-ingress backend' "$DEPLOY" | sed -n '2s/:.*//p')
 start_line=$(grep -n -F 'compose up -d --wait --wait-timeout 120 backend api-ingress' "$DEPLOY" | sed -n '2s/:.*//p')
 [ -n "$stop_line" ] && [ -n "$start_line" ] && [ "$stop_line" -lt "$start_line" ] || {
