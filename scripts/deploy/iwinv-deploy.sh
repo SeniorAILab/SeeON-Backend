@@ -376,8 +376,11 @@ block_pending_supersede() {
   umask 077
   printf 'PENDING_SHA=%s\n' "$PENDING_SHA" > "$TEMP_FILE" || fail 'Unable to write pending supersede block.'
   printf 'PENDING_SHA=%s\n' "$PENDING_SHA" | cmp -s - "$TEMP_FILE" || fail 'Pending supersede block was not written canonically.'
+  # Durable before the restore or activation it guards: fsync file, rename, fsync directory.
+  sync -f "$TEMP_FILE" || fail 'Unable to fsync pending supersede block.'
   mv "$TEMP_FILE" "$block" || fail "Unable to publish pending supersede block: $block"
   TEMP_FILE=
+  sync -f "$RELEASE_DIR" || fail 'Unable to fsync release-state directory after pending supersede block.'
 }
 load_pending_recovery() {
   PENDING_SHA=''
@@ -488,8 +491,10 @@ supersede_pending_recovery() {
   umask 077
   printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$SHA" "$PENDING_DUMP" > "$TEMP_FILE" || fail 'Unable to write superseding pending recovery record.'
   printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$SHA" "$PENDING_DUMP" | cmp -s - "$TEMP_FILE" || fail 'Superseding pending recovery record was not written canonically.'
+  sync -f "$TEMP_FILE" || fail 'Unable to fsync superseding pending recovery record.'
   mv "$TEMP_FILE" "$pending" || fail "Unable to publish superseding pending recovery record: $pending"
   TEMP_FILE=
+  sync -f "$RELEASE_DIR" || fail 'Unable to fsync release-state directory after superseding pending recovery record.'
   load_pending_recovery
   [ "$PENDING_SHA" = "$SHA" ] && [ "$PENDING_DUMP" = "$SUPERSEDE_PENDING_DUMP" ] || fail 'Superseding pending recovery record did not persist.'
 }
@@ -501,12 +506,16 @@ finalize_success() {
   fi
   final_pending_sha=$PENDING_SHA
   final_pending_dump=$PENDING_DUMP
+  final_supersede_blocked=0
+  [ ! -e "$(pending_supersede_block_path)" ] || final_supersede_blocked=1
   if [ "$should_clear_pending" -eq 1 ]; then
     clear_pending_recovery
   fi
   if [ "$LOCK_HELD" -eq 1 ] && ! rmdir "$LOCK_DIR"; then
     if [ -n "$final_pending_sha" ]; then
       restore_pending_recovery "$final_pending_sha" "$final_pending_dump"
+      # Resurrected ownership must stay as non-supersedable as it was.
+      [ "$final_supersede_blocked" -eq 0 ] || block_pending_supersede
     fi
     fail "Failed to release deployment lock: $LOCK_DIR"
   fi

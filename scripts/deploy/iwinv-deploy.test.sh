@@ -307,6 +307,8 @@ path=${2:-}
 case "${MOCK_FINALIZE_FAILURE:-}:$path" in
   file-fsync:*/.history-transition-consumed.*) exit 1 ;;
   dir-fsync:*/releases) exit 1 ;;
+  block-file-fsync:*/.pending-supersede-blocked.*) exit 1 ;;
+  block-dir-fsync:*/releases) exit 1 ;;
 esac
 exit 0
 EOF
@@ -1529,6 +1531,43 @@ assert_failure "$status"
 # Mtimes stay in the eligible order: the block alone (not the clock) refuses it.
 stranded_mtimes
 cp "$REL/current.json" "$TMP/current.before-supersede"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
+[ ! -s "$TMP/mock.log" ]
+# The block is durable before what it guards: a failed fsync stops the restore
+# before pg_restore and the rollback activation before the pointer moves.
+for block_sync_failure in block-file-fsync block-dir-fsync; do
+  rm -f "$SUPERSEDE_BLOCK"
+  : > "$TMP/mock.log"
+  set +e
+  output=$(MOCK_FINALIZE_FAILURE=$block_sync_failure MOCK_SHA="$CURRENT_POINTER_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$?
+  set -e
+  assert_failure "$status"; assert_contains "$output" 'Unable to fsync'
+  assert_not_contains "$(cat "$TMP/mock.log")" 'pg_restore --username'
+  [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
+done
+rm -f "$SUPERSEDE_BLOCK"
+cp "$REL/current.json" "$TMP/current.before-block-sync"
+set +e
+output=$(MOCK_FINALIZE_FAILURE=block-file-fsync MOCK_SHA="$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$REL/previous.json")" run_deploy --rollback); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Unable to fsync pending supersede block.'
+cmp -s "$TMP/current.before-block-sync" "$REL/current.json" || { printf '%s\n' 'rollback activated without a durable supersede block' >&2; exit 1; }
+rm -f "$TMP/current.before-block-sync"
+# A successful restore whose lock release then fails resurrects the pending
+# record together with its block, so the pre-restore dump stays non-supersedable.
+rm -f "$SUPERSEDE_BLOCK"
+set +e
+output=$(FAIL_RMDIR=1 MOCK_SHA="$CURRENT_POINTER_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Failed to release deployment lock'
+/bin/rmdir "$TMP/root/shared/deploy.lock"
+[ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ] || { printf '%s\n' 'lock-release failure did not resurrect pending ownership' >&2; exit 1; }
+[ "$(cat "$SUPERSEDE_BLOCK")" = "PENDING_SHA=$STRANDED_SHA" ] || { printf '%s\n' 'resurrected pending ownership lost its supersede block' >&2; exit 1; }
+stranded_mtimes
 : > "$TMP/mock.log"
 set +e
 output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?

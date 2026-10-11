@@ -45,8 +45,11 @@ imaged, or started here.
     immutable manifest (pruning keeps the pending owner's manifest);
   - no activation (deploy or rollback) and no DB restore ran while the record
     existed. Both durably publish `releases/pending-supersede-blocked` naming
-    the pending SHA before acting, which makes this a clock-independent check.
-    A restore that later fails and keeps the record still blocks;
+    the pending SHA before acting (fsync file, rename, fsync directory; an
+    fsync failure stops the restore or activation), which makes this a
+    clock-independent check. A restore that later fails and keeps the record
+    still blocks, and so does pending ownership resurrected after a failed
+    lock release;
   - for records written before that marker existed, the dump must also be
     strictly newer than `current.json`, which every activation rewrites;
   - the candidate descends from the stranded SHA (`git merge-base --is-ancestor`).
