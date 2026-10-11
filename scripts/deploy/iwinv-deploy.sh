@@ -9,11 +9,14 @@ APP_ROOT=${APP_ROOT:-/opt/eldercare-fall-ai}
 APP_DIR=${APP_DIR:-$APP_ROOT/repo}
 ENV_FILE=${ENV_FILE:-$APP_ROOT/shared/.env}
 BACKUP_DIR=${BACKUP_DIR:-$APP_ROOT/backups/db}
+# release-images.env names the last successfully deployed images; a deploy runs
+# from candidate-images.env and promotes it only after /health reports its SHA.
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
+CANDIDATE_ENV=$APP_ROOT/shared/candidate-images.env
+IMAGES_ENV=$RELEASE_ENV
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
 LOCK_DIR=$APP_ROOT/shared/deploy.lock
-# Tooling comes from this script's directory (Jenkins runs main's copy), while
-# compose files and DB init come from the release checkout in APP_DIR.
+# Tooling comes from this script's directory (main's copy); compose files come from APP_DIR.
 TOOLS_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-120}
 DUMPS_TO_KEEP=5
@@ -41,12 +44,13 @@ cd "$APP_DIR"
 validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 
 # Later --env-file wins: the emergency feature override must come last.
+# COMPOSE_TIMEOUT, when set, bounds the whole docker invocation.
+COMPOSE_TIMEOUT=''
 compose() {
-  if [ -f "$FEATURE_ENV" ]; then
-    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" --env-file "$FEATURE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
-  else
-    controlled_compose docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_ENV" -f compose.yaml -f compose.prod.yaml "$@"
-  fi
+  set -- -f compose.yaml -f compose.prod.yaml "$@"
+  if [ -f "$FEATURE_ENV" ]; then set -- --env-file "$FEATURE_ENV" "$@"; fi
+  # shellcheck disable=SC2086 # Intentionally empty or "timeout <seconds>".
+  controlled_compose ${COMPOSE_TIMEOUT:+timeout "$COMPOSE_TIMEOUT"} docker compose --env-file "$ENV_FILE" --env-file "$IMAGES_ENV" "$@"
 }
 sync_app_role() { compose exec -T db sh < backend/prisma/init/02-sync-app-role.sh; }
 
@@ -56,23 +60,20 @@ on_exit() {
   if [ "$status" -ne 0 ] && [ -n "$DUMP" ]; then
     printf 'Deploy failed after the pre-migration dump. The database is NOT restored automatically.\n' >&2
     printf 'Rollback code: re-run Jenkins eldercare-fall-ai-cd with RELEASE_TAG=<previous tag>.\n' >&2
-    printf 'Restore data only if needed: sh scripts/deploy/iwinv-deploy.sh --restore-db %s --ack-data-loss\n' "$DUMP" >&2
+    printf 'Restore data only if needed: APP_DIR=%s sh %s/iwinv-deploy.sh --restore-db %s --ack-data-loss\n' "$APP_DIR" "$TOOLS_DIR" "$DUMP" >&2
   fi
 }
-trap on_exit 0
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap on_exit 0; trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 mkdir -p "$BACKUP_DIR"
 mkdir "$LOCK_DIR" 2>/dev/null || fail "Another deployment is already running: $LOCK_DIR"
 LOCK_HELD=1
 
 if [ "$ACK" -eq 1 ]; then
   [ -f "$RESTORE_DUMP" ] || fail "Database dump not found: $RESTORE_DUMP"
-  # Run the images that were live when the dump was taken, not a failed candidate.
-  if [ -f "$RESTORE_DUMP.images.env" ]; then cp "$RESTORE_DUMP.images.env" "$RELEASE_ENV"; chmod 600 "$RELEASE_ENV"; fi
-  [ -f "$RELEASE_ENV" ] || fail "No deployed release images recorded: $RELEASE_ENV"
-  log "restore runs $(tr '\n' ' ' < "$RELEASE_ENV")"
+  # Run the last successfully deployed images recorded with the dump, never inferred.
+  IMAGES_ENV=$RESTORE_DUMP.images.env
+  [ -f "$IMAGES_ENV" ] || fail "No image record for this dump: $IMAGES_ENV. Write it with the BACKEND_IMAGE= and API_INGRESS_IMAGE= tags that match the dump's schema, then retry."
+  log "restore runs $(tr '\n' ' ' < "$IMAGES_ENV")"
   log "restore database from $RESTORE_DUMP"
   compose stop api-ingress backend
   compose up -d --wait --wait-timeout 120 db
@@ -86,6 +87,7 @@ if [ "$ACK" -eq 1 ]; then
   authorization=$(compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT CASE WHEN (SELECT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication FROM pg_roles WHERE rolname = '\''fall_app'\'') AND has_database_privilege('\''fall_app'\'', current_database(), '\''CONNECT'\'') AND has_schema_privilege('\''fall_app'\'', '\''public'\'', '\''USAGE'\'') AND has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''SELECT'\'') AND has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''INSERT'\'') AND NOT has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''UPDATE'\'') AND NOT has_table_privilege('\''fall_app'\'', '\''public.events'\'', '\''DELETE'\'') AND NOT has_function_privilege('\''public'\'', '\''public.get_event_for_snapshot(text)'\'', '\''EXECUTE'\'') AND has_function_privilege('\''fall_app'\'', '\''public.get_event_for_snapshot(text)'\'', '\''EXECUTE'\'') AND NOT has_function_privilege('\''public'\'', '\''public.set_event_snapshot_key(text,text,text)'\'', '\''EXECUTE'\'') AND has_function_privilege('\''fall_app'\'', '\''public.set_event_snapshot_key(text,text,text)'\'', '\''EXECUTE'\'') THEN '\''ok'\'' ELSE '\''invalid'\'' END;"') || fail 'Post-restore authorization invariant query failed.'
   [ "$authorization" = ok ] || fail "Post-restore authorization invariant failed: $authorization"
   compose up -d --wait --wait-timeout 120 backend api-ingress
+  cp "$IMAGES_ENV" "$RELEASE_ENV.tmp" && chmod 600 "$RELEASE_ENV.tmp" && mv "$RELEASE_ENV.tmp" "$RELEASE_ENV"
   printf 'Database restore complete from %s.\n' "$RESTORE_DUMP"
   exit 0
 fi
@@ -93,10 +95,10 @@ fi
 log "deploy $SHA"
 umask 077
 dump_path=$BACKUP_DIR/deploy-$(date -u +%Y%m%dT%H%M%SZ)-$SHA.dump
-# Remember the images live before this deploy; --restore-db of this dump restarts them.
+# The last successful images go with the dump; --restore-db of this dump restarts them.
 if [ -f "$RELEASE_ENV" ]; then cp "$RELEASE_ENV" "$dump_path.images.env"; fi
-printf 'BACKEND_IMAGE=eldercare-backend:%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:%s\n' "$SHA" "$SHA" > "$RELEASE_ENV.tmp"
-mv "$RELEASE_ENV.tmp" "$RELEASE_ENV"
+printf 'BACKEND_IMAGE=eldercare-backend:%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:%s\n' "$SHA" "$SHA" > "$CANDIDATE_ENV"
+IMAGES_ENV=$CANDIDATE_ENV
 compose config >/dev/null
 docker image inspect "eldercare-backend:$SHA" "eldercare-api-ingress:$SHA" >/dev/null || fail "Release images for $SHA are not built."
 
@@ -120,18 +122,20 @@ compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js
 
 # 3. Start the release and wait for /health to report its SHA.
 compose up -d --wait --wait-timeout 120 backend api-ingress
-started=$(date -u +%s)
+deadline=$(($(date -u +%s) + HEALTH_TIMEOUT_SECONDS))
+live=''
 while :; do
-  # Each probe is bounded (-T 5); a failed probe never counts, even with matching-looking output.
-  body=$(compose exec -T api-ingress wget -q -T 5 -O - http://127.0.0.1:3000/health 2>/dev/null) || body=''
+  remaining=$((deadline - $(date -u +%s)))
+  [ "$remaining" -gt 0 ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
+  probe=$remaining; [ "$probe" -le 5 ] || probe=5
+  # The whole probe is bounded by the remaining window; a failed probe never counts.
+  body=$(COMPOSE_TIMEOUT=$probe; compose exec -T api-ingress wget -q -T "$probe" -O - http://127.0.0.1:3000/health 2>/dev/null) || body=''
   live=$(printf '%s\n' "$body" | sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p')
-  elapsed=$(($(date -u +%s) - started))
-  [ "$elapsed" -le "$HEALTH_TIMEOUT_SECONDS" ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
+  [ "$(date -u +%s)" -le "$deadline" ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
   [ "$live" != "$SHA" ] || break
-  wait_s=$((HEALTH_TIMEOUT_SECONDS - elapsed)); [ "$wait_s" -le 5 ] || wait_s=5
-  [ "$wait_s" -gt 0 ] || fail "Health did not report $SHA within ${HEALTH_TIMEOUT_SECONDS}s (last sha=${live:-none})."
-  sleep "$wait_s"
+  remaining=$((deadline - $(date -u +%s))); [ "$remaining" -le 5 ] || remaining=5; [ "$remaining" -le 0 ] || sleep "$remaining"
 done
+mv "$CANDIDATE_ENV" "$RELEASE_ENV"
 
 # 4. Remove release images beyond the newest few; never broad prune.
 for repo in eldercare-backend eldercare-api-ingress; do

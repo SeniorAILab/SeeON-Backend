@@ -33,14 +33,20 @@ case "$*" in
   'images --format '*) ;;
   *'pg_dump'*) printf 'PGDMP' ;;
   *'prisma migrate deploy'*) [ "${MOCK_MIGRATE_FAIL:-0}" != 1 ] || exit 1 ;;
-  *'wget -q -T 5 -O - http://127.0.0.1:3000/health'*)
+  *'wget -q -T '*' -O - http://127.0.0.1:3000/health'*)
     [ -z "${MOCK_HEALTH_DELAY:-}" ] || sleep "$MOCK_HEALTH_DELAY"
     printf '{"status":"ok","sha":"%s","database":"ok"}\n' "${MOCK_HEALTH_SHA:-$MOCK_SHA}"
     [ "${MOCK_HEALTH_FAIL:-0}" != 1 ] || exit 1 ;;
   *'SELECT CASE WHEN'*) printf '%s\n' "${MOCK_AUTHZ:-ok}" ;;
 esac
 EOF
-chmod +x "$TMP/bin/docker"
+# A timeout shim that can ignore its bound proves late matches are still rejected.
+cat > "$TMP/bin/timeout" <<'EOF'
+#!/usr/bin/env sh
+if [ "${MOCK_TIMEOUT_IGNORED:-0}" = 1 ]; then shift; exec "$@"; fi
+exec /usr/bin/timeout "$@"
+EOF
+chmod +x "$TMP/bin/docker" "$TMP/bin/timeout"
 
 deploy() {
   PATH="$TMP/bin:$PATH" MOCK_LOG="$TMP/docker.log" MOCK_SHA="$SHA" APP_ROOT="$ROOT" APP_DIR="$REPO_ROOT" \
@@ -76,8 +82,9 @@ assert_order "$log" 'compose' 'stop api-ingress backend'
 assert_order "$log" 'pg_dump' 'prisma migrate deploy'
 assert_order "$log" 'prisma migrate deploy' 'seed-super-admin.js'
 assert_order "$log" 'seed-super-admin.js' 'up -d --wait --wait-timeout 120 backend api-ingress'
-assert_order "$log" 'up -d --wait --wait-timeout 120 backend api-ingress' 'wget -q -T 5 -O - http://127.0.0.1:3000/health'
-assert_contains "$log" '--env-file '"$ROOT"'/shared/release-images.env -f compose.yaml -f compose.prod.yaml'
+assert_order "$log" 'up -d --wait --wait-timeout 120 backend api-ingress' '-O - http://127.0.0.1:3000/health'
+assert_contains "$log" '--env-file '"$ROOT"'/shared/candidate-images.env -f compose.yaml -f compose.prod.yaml'
+[ ! -e "$ROOT/shared/candidate-images.env" ] || fail 'candidate env not promoted on success'
 assert_not_contains "$log" 'pg_restore --username'
 cmp -s "$TMP/pending.before" "$ROOT/releases/pending.json" || fail 'leftover pending.json was modified'
 [ "$(cat "$ROOT/releases/current.json")" = stale ] || fail 'leftover current.json was modified'
@@ -101,7 +108,7 @@ assert_not_contains "$log" 'prune'
 printf 'EVENT_CLIPS_ENABLED=false\n' > "$ROOT/shared/event-clips-runtime.env"; chmod 600 "$ROOT/shared/event-clips-runtime.env"
 : > "$TMP/docker.log"
 deploy --sha "$SHA" >/dev/null
-assert_contains "$(docker_log)" "--env-file $ROOT/shared/.env --env-file $ROOT/shared/release-images.env --env-file $ROOT/shared/event-clips-runtime.env -f compose.yaml"
+assert_contains "$(docker_log)" "--env-file $ROOT/shared/.env --env-file $ROOT/shared/candidate-images.env --env-file $ROOT/shared/event-clips-runtime.env -f compose.yaml"
 rm -f "$ROOT/shared/event-clips-runtime.env"
 
 # Missing images: refuse before stopping anything or dumping.
@@ -119,7 +126,15 @@ assert_not_contains "$log" 'up -d --wait --wait-timeout 120 backend api-ingress'
 assert_not_contains "$log" 'pg_restore --username'
 assert_contains "$output" 'The database is NOT restored automatically.'
 assert_contains "$output" 'RELEASE_TAG=<previous tag>'
-assert_contains "$output" "sh scripts/deploy/iwinv-deploy.sh --restore-db $ROOT/backups/db/deploy-"
+assert_contains "$output" "APP_DIR=$REPO_ROOT sh $TOOLS/iwinv-deploy.sh --restore-db $ROOT/backups/db/deploy-"
+# A failed deploy leaves release-images.env on the last successful images, so a
+# retry's dump still records them, never the failed candidate.
+[ "$(cat "$ROOT/shared/release-images.env")" = "BACKEND_IMAGE=eldercare-backend:$SHA
+API_INGRESS_IMAGE=eldercare-api-ingress:$SHA" ] || fail 'failed deploy changed the last successful images'
+: > "$TMP/docker.log"
+MOCK_MIGRATE_FAIL=1 run_failing --sha 89abcdef0123456789abcdef0123456789abcdef
+retry_dump=$(find "$ROOT/backups/db" -name 'deploy-*-89abcdef0123456789abcdef0123456789abcdef.dump' | LC_ALL=C sort | tail -n 1)
+cmp -s "$ROOT/shared/release-images.env" "$retry_dump.images.env" || fail 'retry dump recorded a failed candidate'
 [ ! -d "$ROOT/shared/deploy.lock" ] || fail 'lock not released after migrate failure'
 
 # /health never reports the release SHA: bounded wait, then fail with the same hint.
@@ -130,9 +145,15 @@ assert_contains "$output" '--restore-db'
 assert_not_contains "$(docker_log)" 'image rm'
 # A matching response that arrives after the window is not accepted.
 : > "$TMP/docker.log"
-MOCK_HEALTH_DELAY=2 HEALTH_TIMEOUT_SECONDS=1 run_failing --sha "$SHA"
-assert_contains "$output" "Health did not report $SHA within 1s (last sha=$SHA)."
+t0=$(date -u +%s)
+MOCK_HEALTH_DELAY=30 HEALTH_TIMEOUT_SECONDS=2 run_failing --sha "$SHA"
+[ $(($(date -u +%s) - t0)) -le 6 ] || fail 'stalled health probe overran the window'
+assert_contains "$output" "Health did not report $SHA within 2s"
 assert_not_contains "$(docker_log)" 'image rm'
+[ ! -d "$ROOT/shared/deploy.lock" ] || fail 'lock not released after stalled probe'
+: > "$TMP/docker.log"
+MOCK_TIMEOUT_IGNORED=1 MOCK_HEALTH_DELAY=3 HEALTH_TIMEOUT_SECONDS=1 run_failing --sha "$SHA"
+assert_contains "$output" "Health did not report $SHA within 1s (last sha=$SHA)."
 # A failed probe never counts, even if it printed the matching SHA.
 : > "$TMP/docker.log"
 MOCK_HEALTH_FAIL=1 HEALTH_TIMEOUT_SECONDS=1 run_failing --sha "$SHA"
@@ -142,6 +163,10 @@ assert_contains "$output" "Health did not report $SHA within 1s (last sha=none).
 # Explicit operator restore: restarts the images live when the dump was taken
 # (not the failed candidate), restores, re-applies the event ACL, verifies authorization.
 : > "$TMP/restore.dump"
+: > "$TMP/docker.log"
+run_failing --restore-db "$TMP/restore.dump" --ack-data-loss
+assert_contains "$output" "No image record for this dump: $TMP/restore.dump.images.env"
+assert_not_contains "$(docker_log)" 'pg_restore'
 cp "$TMP/prev-images.env" "$TMP/restore.dump.images.env"
 : > "$TMP/docker.log"
 output=$(deploy --restore-db "$TMP/restore.dump" --ack-data-loss)

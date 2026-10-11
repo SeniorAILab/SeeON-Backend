@@ -20,15 +20,21 @@ re-run of the Jenkins job with `RELEASE_TAG=<previous tag>`.
 - There is no server-side release state machine. Deploys do not read or write
   `releases/{current,previous,pending,<sha>}.json`; leftovers on the host are
   ignored and may be archived manually. The only state is
-  `shared/release-images.env` (the exact image tags Compose runs).
+  `shared/release-images.env` (the last successfully deployed image tags).
 - On failure after the dump, the database is never restored automatically. The
   deploy prints the exact operator command:
   `sh scripts/deploy/iwinv-deploy.sh --restore-db <dump> --ack-data-loss`.
-  Each dump has a `<dump>.images.env` companion recording the images live before
-  that deploy; `--restore-db` reinstates them, never the failed candidate.
-- Jenkins runs the deploy helper from `origin/main` (`git archive`) against the
-  release checkout (`APP_DIR`), so a `RELEASE_TAG` rollback to a tag older than
-  this pipeline still uses the current helper.
+  `release-images.env` names the last successfully deployed images: a deploy
+  runs from `candidate-images.env` and promotes it only after `/health` reports
+  the SHA. Each dump has a `<dump>.images.env` companion copied from it, and
+  `--restore-db` requires that record (or an operator-written one) and never
+  infers images.
+- Jenkins extracts `scripts/deploy` from `origin/main` into
+  `shared/deploy-tools` and runs it against the release checkout (`APP_DIR`), so
+  a `RELEASE_TAG` rollback to an older tag still uses the current helper, and
+  the printed restore command stays runnable after the build.
+- Each `/health` probe is bounded by the remaining window (`timeout`), and a
+  match observed after the window does not count.
 
 ## Where to look
 - `Jenkinsfile` — Resolve release (`RELEASE_TAG` parameter or latest stable tag),

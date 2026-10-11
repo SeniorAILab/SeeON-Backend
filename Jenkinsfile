@@ -162,8 +162,10 @@ pipeline {
             set -eu
             # Deploy tooling always comes from main so RELEASE_TAG rollbacks to older
             # tags still use the current helper; the checkout supplies compose/app files.
-            tools=$(mktemp -d)
-            trap 'rm -rf "$tools"' EXIT HUP INT TERM
+            # Kept after the build so the printed --restore-db command stays runnable.
+            tools="$DEPLOY_ROOT/shared/deploy-tools"
+            rm -rf "$tools"
+            mkdir -p "$tools"
             git archive refs/remotes/origin/main scripts/deploy | tar -x -C "$tools"
             APP_DIR="$WORKSPACE" sh "$tools/scripts/deploy/iwinv-deploy.sh" --sha "$RELEASE_SHA"
           '''
