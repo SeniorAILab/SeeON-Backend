@@ -39,7 +39,8 @@ pipeline {
           if (requestedTag && !(requestedTag ==~ /v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)/)) {
             error("RELEASE_TAG must be a stable vX.Y.Z tag: ${requestedTag}")
           }
-          env.REQUESTED_RELEASE_TAG = requestedTag
+          // Jenkins drops empty env values, so the shell must also default it (set -u).
+          env.REQUESTED_RELEASE_TAG = (requestedTag ?: '')
           def resolverOutput = sshagent(credentials: ['seeon-backend-github-deploy-key']) {
             sh(
               script: '''#!/usr/bin/env sh
@@ -55,7 +56,7 @@ pipeline {
                 git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
                 trap 'rm -f "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"' EXIT HUP INT TERM
                 git show refs/remotes/origin/main:scripts/deploy/iwinv-resolve-release.sh > "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
-                RELEASE_TAG="$REQUESTED_RELEASE_TAG" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
+                RELEASE_TAG="${REQUESTED_RELEASE_TAG:-}" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"
               ''',
               returnStdout: true
             ).trim()

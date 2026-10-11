@@ -194,7 +194,21 @@ done
 jenkins=$(cat "$JENKINSFILE")
 seed=$(cat "$REPO_ROOT/scripts/deploy/jenkins-job-seed.groovy")
 assert_contains "$jenkins" "string(name: 'RELEASE_TAG', defaultValue: ''"
-assert_contains "$jenkins" 'RELEASE_TAG="$REQUESTED_RELEASE_TAG" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"'
+assert_contains "$jenkins" 'RELEASE_TAG="${REQUESTED_RELEASE_TAG:-}" sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"'
+# Webhook builds have no RELEASE_TAG; Jenkins drops empty env values, so under
+# set -u every reference to it must carry a default (build #51 regression).
+bare=$(printf '%s\n' "$jenkins" | grep -o '\$[{]\?REQUESTED_RELEASE_TAG[}:]\?' | grep -v -c '^\${REQUESTED_RELEASE_TAG:$' || :)
+[ "$bare" -eq 0 ] || fail 'REQUESTED_RELEASE_TAG is referenced without a :- default in a set -u shell'
+# Reproduce the webhook case: the resolver line must run with the variable unset.
+resolver_line=$(printf '%s\n' "$jenkins" | grep -F '.iwinv-resolve-release.jenkins.sh"' | grep -F 'RELEASE_TAG=' | sed 's/^ *//; s#sh "$WORKSPACE/.iwinv-resolve-release.jenkins.sh"#env#')
+for requested in '' v0.1.7; do
+  if [ -n "$requested" ]; then
+    resolved=$(env REQUESTED_RELEASE_TAG="$requested" WORKSPACE="$TMP" sh -euc "$resolver_line") || fail 'resolver line failed with RELEASE_TAG given'
+  else
+    resolved=$(env -u REQUESTED_RELEASE_TAG WORKSPACE="$TMP" sh -euc "$resolver_line") || fail 'resolver line fails with an unset REQUESTED_RELEASE_TAG'
+  fi
+  printf '%s\n' "$resolved" | grep -Fxq "RELEASE_TAG=$requested" || fail "resolver did not receive RELEASE_TAG=$requested"
+done
 assert_contains "$jenkins" "sshagent(credentials: ['seeon-backend-github-deploy-key'])"
 assert_contains "$jenkins" "repository='git@github.com:SeniorAILab/SeeON-Backend.git'"
 assert_contains "$jenkins" 'verify-github-ci-gate.sh "$RELEASE_SHA"'
