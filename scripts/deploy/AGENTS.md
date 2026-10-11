@@ -35,6 +35,18 @@ imaged, or started here.
   Jenkins consumption.
 - Roll back with `iwinv-deploy.sh --rollback`. Rollback remains an explicit
   operator action.
+- `releases/pending.json` records the candidate SHA and its validated
+  pre-migration dump from backup until activation, and a retry of that SHA
+  reuses the dump. A normal deploy of a different SHA fails closed
+  (`Pending recovery record belongs to a different SHA`). The single exception
+  is a stranded record: its SHA was never activated (no immutable manifest,
+  not `current.json`) and the new candidate descends from it
+  (`git merge-base --is-ancestor`). Only then does the deploy, under the lock,
+  re-validate the record and atomically rewrite it to the new SHA with the
+  SAME dump. That dump stays the pre-migration snapshot of the current
+  manifest's database, so no fresh, possibly half-migrated dump is taken, and
+  the dump stays referenced and rotation-protected throughout. Dry-run only
+  logs `would supersede`. Rollback and restore never supersede.
 - Release manifests are dual-read: absent `schema` is schema 1; quoted
   `"schema":"2"` is schema 2. Writers publish backend-only schema 2 (backend +
   API ingress images). Schema-1 and transitional schema-2 manifests, which name

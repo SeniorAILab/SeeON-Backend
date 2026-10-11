@@ -22,7 +22,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' SUPERSEDE_PENDING_SHA='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
 SMOKE_EXPECTED_FRONT_ORIGINS='' SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE='' SMOKE_EXPECTED_AUTH_COOKIE_SECURE=''
 
 usage() {
@@ -414,6 +414,32 @@ restore_pending_recovery() {
   PENDING_SHA=$1
   PENDING_DUMP=$2
 }
+# A failed deploy that never activated strands pending.json on its SHA. A later
+# release may take it over only if it descends from the stranded SHA and that SHA
+# was never activated: the record's dump is then still the pre-migration snapshot
+# of the current manifest's database, so it stays the correct rollback point and
+# is reused instead of dumping a possibly half-migrated database.
+pending_supersedable() {
+  stranded_sha=$1
+  candidate_sha=$2
+  [ ! -e "$RELEASE_DIR/$stranded_sha.json" ] || return 1
+  if [ -f "$RELEASE_DIR/current.json" ]; then
+    [ "$(json_value "$RELEASE_DIR/current.json" sha)" != "$stranded_sha" ] || return 1
+  fi
+  git -C "$APP_DIR" merge-base --is-ancestor "$stranded_sha" "$candidate_sha"
+}
+supersede_pending_recovery() {
+  # Re-validate under the deploy lock; the record must be exactly the one approved.
+  load_pending_recovery
+  [ "$PENDING_SHA" = "$SUPERSEDE_PENDING_SHA" ] || fail 'Pending recovery record changed before supersede.'
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "would supersede pending recovery record $PENDING_SHA -> $SHA (dump $PENDING_DUMP)"
+    return
+  fi
+  log "superseding pending recovery record $PENDING_SHA -> $SHA (dump $PENDING_DUMP)"
+  # Atomic rename keeps the dump referenced (and rotation-protected) throughout.
+  restore_pending_recovery "$SHA" "$PENDING_DUMP"
+}
 finalize_success() {
   should_clear_pending=$1
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -782,7 +808,8 @@ if [ -n "$INTERRUPTED_TRANSITION_SHA" ]; then
   finalize_success 0
 fi
 if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ -n "$PENDING_SHA" ] && [ "$PENDING_SHA" != "$SHA" ]; then
-  fail "Pending recovery record belongs to a different SHA: $PENDING_SHA"
+  pending_supersedable "$PENDING_SHA" "$SHA" || fail "Pending recovery record belongs to a different SHA: $PENDING_SHA"
+  SUPERSEDE_PENDING_SHA=$PENDING_SHA
 fi
 
 if [ "$ROLLBACK" -eq 1 ]; then
@@ -822,6 +849,7 @@ if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; 
   verify_image_ids
 fi
 acquire_lock
+[ -z "$SUPERSEDE_PENDING_SHA" ] || supersede_pending_recovery
 if [ "$RESTORE_COUNT" -eq 1 ] && [ "$HAS_CURRENT" -eq 0 ]; then
   run compose config >/dev/null
   run compose pull db
