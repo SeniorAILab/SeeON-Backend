@@ -331,6 +331,15 @@ cat > "$TMP/bin/rm" <<'EOF'
 case "${MOCK_PRUNE_MANIFEST_FAIL:-0}:$*" in 1:*stale-transition-fixture.json*) exit 1 ;; esac
 exec /bin/rm "$@"
 EOF
+cat > "$TMP/bin/mkdir" <<'EOF'
+#!/usr/bin/env sh
+# MOCK_LOCK_HOOK simulates a concurrent state change landing while the deploy waits for its lock.
+case "$*" in
+  */shared/deploy.lock) [ -z "${MOCK_LOCK_HOOK:-}" ] || sh -c "$MOCK_LOCK_HOOK" ;;
+esac
+exec /bin/mkdir "$@"
+EOF
+chmod +x "$TMP/bin/mkdir"
 chmod +x "$TMP/bin/docker" "$TMP/bin/free" "$TMP/bin/sha256sum" "$TMP/bin/rmdir" "$TMP/bin/git" "$TMP/bin/stat" "$TMP/bin/sync" "$TMP/bin/mktemp" "$TMP/bin/mv" "$TMP/bin/rm"
 
 NO_NODE_BIN=$TMP/no-node-bin
@@ -1454,16 +1463,27 @@ cmp -s "$TMP/pending.before-code-only-rollback" "$TMP/root/releases/pending.json
 [ -f "$TMP/root/backups/db/$ROLLBACK_PENDING_DUMP" ]
 
 # A stranded (never activated) pending record may be superseded only by a
-# descendant release, which reuses its dump as the rollback point.
+# descendant release, and only while its dump is provably the pre-migration
+# snapshot of the current manifest's database. The dump reference is reused.
 STRANDED_SHA=$ROLLBACK_PENDING_SHA
 STRANDED_DUMP=$ROLLBACK_PENDING_DUMP
 SUPERSEDE_SHA=9999999999999999999999999999999999999999
-[ ! -e "$TMP/root/releases/$STRANDED_SHA.json" ] && [ ! -e "$TMP/root/releases/$SUPERSEDE_SHA.json" ]
-printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$STRANDED_SHA" "$STRANDED_DUMP" > "$TMP/root/releases/$STRANDED_SHA.pending.expected"
-cmp -s "$TMP/root/releases/$STRANDED_SHA.pending.expected" "$TMP/root/releases/pending.json"
-rm -f "$TMP/root/releases/$STRANDED_SHA.pending.expected"
-cp "$TMP/root/releases/current.json" "$TMP/current.before-supersede"
+REL=$TMP/root/releases
+DUMPS=$TMP/root/backups/db
+[ ! -e "$REL/$STRANDED_SHA.json" ] && [ ! -e "$REL/$SUPERSEDE_SHA.json" ]
+STRANDED_RECORD=$(printf '{"sha":"%s","pre_migration_dump":"%s"}' "$STRANDED_SHA" "$STRANDED_DUMP")
+[ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
+# Dump taken after current.json was last activated (the production shape).
+stranded_mtimes() { touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"; }
+stranded_mtimes
+cp "$REL/current.json" "$TMP/current.before-supersede"
 cp "$TMP/root/shared/release-images.env" "$TMP/release-images.env.before-supersede"
+assert_supersede_untouched() {
+  [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ] || { printf '%s\n' "$1: pending record changed" >&2; exit 1; }
+  cmp -s "$TMP/current.before-supersede" "$REL/current.json"
+  cmp -s "$TMP/release-images.env.before-supersede" "$TMP/root/shared/release-images.env"
+  [ -f "$DUMPS/$STRANDED_DUMP" ] || { printf '%s\n' "$1: stranded dump lost" >&2; exit 1; }
+}
 # Non-ancestor: unchanged fail-closed error after only the ancestry query.
 : > "$TMP/mock.log"
 set +e
@@ -1472,15 +1492,48 @@ set -e
 assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
 assert_contains "$(cat "$TMP/mock.log")" "merge-base --is-ancestor $STRANDED_SHA $SUPERSEDE_SHA"
 [ -z "$(grep -v 'merge-base --is-ancestor' "$TMP/mock.log")" ] || { printf '%s\n' 'non-ancestor pending failure had side effects' >&2; exit 1; }
-cmp -s "$TMP/pending.before-code-only-rollback" "$TMP/root/releases/pending.json"
-cmp -s "$TMP/current.before-supersede" "$TMP/root/releases/current.json"
-cmp -s "$TMP/release-images.env.before-supersede" "$TMP/root/shared/release-images.env"
+assert_supersede_untouched non-ancestor
+# Any activation (deploy or rollback) after the dump rewrites current.json, so the
+# dump no longer belongs to the current baseline: refuse before any side effect.
+touch -d @1700000900 "$REL/current.json"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
+[ ! -s "$TMP/mock.log" ]
+assert_supersede_untouched activated-since-dump
+stranded_mtimes
 # Dry-run reports the supersede and dump reuse without rewriting the record.
 output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA" --dry-run)
 assert_contains "$output" "would supersede pending recovery record $STRANDED_SHA -> $SUPERSEDE_SHA (dump $STRANDED_DUMP)"
 assert_contains "$output" "would reuse pending validated pre-migration dump $STRANDED_DUMP"
-assert_not_contains "$output" "would remove $TMP/root/backups/db/$STRANDED_DUMP"
-cmp -s "$TMP/pending.before-code-only-rollback" "$TMP/root/releases/pending.json"
+assert_not_contains "$output" "would remove $DUMPS/$STRANDED_DUMP"
+assert_supersede_untouched dry-run
+# Under the lock the exact record and its eligibility are re-checked: an activation
+# or a record rewrite (same SHA, other dump) that lands while waiting fails closed.
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_LOCK_HOOK="touch -d @1700000900 '$REL/current.json'" MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" "Pending recovery record is no longer supersedable: $STRANDED_SHA"
+assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
+assert_not_contains "$(cat "$TMP/mock.log")" 'compose stop'
+[ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
+stranded_mtimes
+OTHER_DUMP=normal-other-stranded.dump
+: > "$DUMPS/$OTHER_DUMP"
+printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$STRANDED_SHA" "$OTHER_DUMP" > "$TMP/other-pending.json"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_LOCK_HOOK="cp '$TMP/other-pending.json' '$REL/pending.json'" MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Pending recovery record changed before supersede.'
+assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
+printf '%s\n' "$STRANDED_RECORD" > "$REL/pending.json"
+rm -f "$DUMPS/$OTHER_DUMP" "$TMP/other-pending.json"
+stranded_mtimes
+assert_supersede_untouched lock-race
 # Ancestor: the record moves to the new SHA with the same dump, no fresh dump is
 # taken, and a later failure keeps the dump owned for the next attempt.
 : > "$TMP/mock.log"
@@ -1491,27 +1544,42 @@ assert_failure "$status"
 assert_contains "$output" "superseding pending recovery record $STRANDED_SHA -> $SUPERSEDE_SHA (dump $STRANDED_DUMP)"
 assert_contains "$output" "reusing pending validated pre-migration dump $STRANDED_DUMP"
 assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
-[ "$(cat "$TMP/root/releases/pending.json")" = "{\"sha\":\"$SUPERSEDE_SHA\",\"pre_migration_dump\":\"$STRANDED_DUMP\"}" ] || { printf '%s\n' 'supersede did not rewrite pending to the new SHA with the same dump' >&2; exit 1; }
-[ -f "$TMP/root/backups/db/$STRANDED_DUMP" ] || { printf '%s\n' 'supersede lost the rollback dump' >&2; exit 1; }
-cmp -s "$TMP/current.before-supersede" "$TMP/root/releases/current.json"
+[ "$(cat "$REL/pending.json")" = "{\"sha\":\"$SUPERSEDE_SHA\",\"pre_migration_dump\":\"$STRANDED_DUMP\"}" ] || { printf '%s\n' 'supersede did not rewrite pending to the new SHA with the same dump' >&2; exit 1; }
+[ -f "$DUMPS/$STRANDED_DUMP" ] || { printf '%s\n' 'supersede lost the rollback dump' >&2; exit 1; }
+cmp -s "$TMP/current.before-supersede" "$REL/current.json"
 # The retried same-SHA deploy activates with the stranded dump as its rollback point.
 : > "$TMP/mock.log"
 output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA")
 assert_contains "$output" "Deploy complete. sha=$SUPERSEDE_SHA"
 assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
-[ ! -e "$TMP/root/releases/pending.json" ] || { printf '%s\n' 'superseded deploy did not clear pending recovery' >&2; exit 1; }
-[ "$(sed -n 's/.*"pre_migration_dump":"\([^"]*\)".*/\1/p' "$TMP/root/releases/current.json")" = "$STRANDED_DUMP" ]
-[ -f "$TMP/root/backups/db/$STRANDED_DUMP" ]
+[ ! -e "$REL/pending.json" ] || { printf '%s\n' 'superseded deploy did not clear pending recovery' >&2; exit 1; }
+[ "$(sed -n 's/.*"pre_migration_dump":"\([^"]*\)".*/\1/p' "$REL/current.json")" = "$STRANDED_DUMP" ]
+[ -f "$DUMPS/$STRANDED_DUMP" ]
 # A pending record whose SHA is the current activated release is never superseded.
-ACTIVE_DUMP=$STRANDED_DUMP
-printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$SUPERSEDE_SHA" "$ACTIVE_DUMP" > "$TMP/root/releases/pending.json"
+printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$SUPERSEDE_SHA" "$STRANDED_DUMP" > "$REL/pending.json"
+touch -d @1700000000 "$REL/current.json"
 : > "$TMP/mock.log"
 set +e
 output=$(MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
 set -e
 assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $SUPERSEDE_SHA"
 [ ! -s "$TMP/mock.log" ]
-rm -f "$TMP/root/releases/pending.json"
+# Rollback pruning keeps the pending owner's immutable manifest (its activation
+# evidence) even when it is neither current nor previous; without a pending
+# owner the same manifest is pruned.
+rm -f "$REL/pending.json"
+OWNER_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+cp "$REL/current.json" "$REL/$OWNER_SHA.json"
+ROLLBACK_TARGET_SHA=$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$REL/previous.json")
+output=$(MOCK_SHA="$ROLLBACK_TARGET_SHA" run_deploy --rollback)
+[ ! -e "$REL/$OWNER_SHA.json" ] || { printf '%s\n' 'control: unowned stale manifest was not pruned' >&2; exit 1; }
+cp "$REL/current.json" "$REL/$OWNER_SHA.json"
+printf '{"sha":"%s","pre_migration_dump":"%s"}\n' "$OWNER_SHA" "$STRANDED_DUMP" > "$REL/pending.json"
+ROLLBACK_TARGET_SHA=$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$REL/previous.json")
+output=$(MOCK_SHA="$ROLLBACK_TARGET_SHA" run_deploy --rollback)
+[ "$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$REL/current.json")" = "$ROLLBACK_TARGET_SHA" ]
+[ -f "$REL/$OWNER_SHA.json" ] || { printf '%s\n' 'rollback pruned the pending owner manifest' >&2; exit 1; }
+rm -f "$REL/pending.json" "$REL/$OWNER_SHA.json"
 
 # Jenkins resolves the latest main-reachable release, builds its exact SHA once, and has no alternate delivery path.
 jenkins=$(sed -n '1,280p' "$JENKINSFILE")
