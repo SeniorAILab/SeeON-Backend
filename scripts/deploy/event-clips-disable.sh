@@ -6,7 +6,6 @@ APP_DIR=${APP_DIR:-$APP_ROOT/repo}
 ENV_FILE=${ENV_FILE:-$APP_ROOT/shared/.env}
 RELEASE_ENV=${RELEASE_ENV:-$APP_ROOT/shared/release-images.env}
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
-RELEASE_DIR=${RELEASE_DIR:-$APP_ROOT/releases}
 LOCK_DIR=$APP_ROOT/shared/deploy.lock
 COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
 LOCK_HELD=0
@@ -45,10 +44,6 @@ cleanup() {
   trap - 0 HUP INT TERM
   [ "$status" -ne 0 ] && exit "$status"
   exit "$cleanup_status"
-}
-
-json_value() {
-  sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p" "$1"
 }
 
 valid_sha() {
@@ -106,8 +101,6 @@ CONTROLLED_COMPOSE_HELPER=$APP_DIR/scripts/deploy/controlled-compose.sh
 . "$CONTROLLED_COMPOSE_HELPER"
 owner_only_file "$ENV_FILE" 'production environment file'
 owner_only_file "$RELEASE_ENV" 'release image environment'
-current_manifest=$RELEASE_DIR/current.json
-owner_only_file "$current_manifest" 'current release manifest'
 if [ -L "$FEATURE_ENV" ]; then
   fail 'feature override must not be a symbolic link'
 fi
@@ -115,18 +108,12 @@ if [ -e "$FEATURE_ENV" ]; then
   owner_only_file "$FEATURE_ENV" 'feature override'
 fi
 
-sha=$(json_value "$current_manifest" sha)
-backend_image=$(json_value "$current_manifest" backend_image)
-api_ingress_image=$(json_value "$current_manifest" api_ingress_image)
-backend_image_id=$(json_value "$current_manifest" backend_image_id)
-api_ingress_image_id=$(json_value "$current_manifest" api_ingress_image_id)
-valid_sha "$sha" || fail 'current release manifest SHA is invalid'
-[ "$backend_image" = "eldercare-backend:$sha" ] && [ "$api_ingress_image" = "eldercare-api-ingress:$sha" ] || {
-  fail 'current release manifest image policy is invalid'
-}
-[ -n "$backend_image_id" ] && [ -n "$api_ingress_image_id" ] || fail 'current release manifest image IDs are required'
+sha=$(sed -n '1s/^BACKEND_IMAGE=eldercare-backend://p' "$RELEASE_ENV")
+valid_sha "$sha" || fail 'release image environment SHA is invalid'
+backend_image=eldercare-backend:$sha
+api_ingress_image=eldercare-api-ingress:$sha
 printf 'BACKEND_IMAGE=%s\nAPI_INGRESS_IMAGE=%s\n' "$backend_image" "$api_ingress_image" | cmp -s - "$RELEASE_ENV" || {
-  fail 'release image environment does not match current manifest'
+  fail 'release image environment must contain exactly the compatible image tags'
 }
 
 mkdir "$LOCK_DIR" 2>/dev/null || fail 'another deployment or feature-disable operation is running'
@@ -135,8 +122,11 @@ trap cleanup 0 HUP INT TERM
 
 env_before=$(sha256sum "$ENV_FILE")
 release_before=$(sha256sum "$RELEASE_ENV")
-manifest_before=$(sha256sum "$current_manifest")
 compose_before=$(sha256sum "$APP_DIR/compose.yaml" "$APP_DIR/compose.prod.yaml")
+
+backend_image_id=$(docker image inspect --format '{{.Id}}' "$backend_image") || fail 'backend image identity is unavailable'
+api_ingress_image_id=$(docker image inspect --format '{{.Id}}' "$api_ingress_image") || fail 'API ingress image identity is unavailable'
+[ -n "$backend_image_id" ] && [ -n "$api_ingress_image_id" ] || fail 'release image identities are required'
 
 cd "$APP_DIR"
 db_container=$(compose ps -q db)
@@ -192,7 +182,6 @@ new_api_ingress_container=$(compose ps -q api-ingress)
 }
 [ "$env_before" = "$(sha256sum "$ENV_FILE")" ] || fail 'production environment changed during feature disable'
 [ "$release_before" = "$(sha256sum "$RELEASE_ENV")" ] || fail 'release image environment changed during feature disable'
-[ "$manifest_before" = "$(sha256sum "$current_manifest")" ] || fail 'current release manifest changed during feature disable'
 [ "$compose_before" = "$(sha256sum "$APP_DIR/compose.yaml" "$APP_DIR/compose.prod.yaml")" ] || fail 'compose configuration changed during feature disable'
 printf '%s\n' 'EVENT_CLIPS_ENABLED=false' | cmp -s - "$FEATURE_ENV" || fail 'feature override changed during verification'
 

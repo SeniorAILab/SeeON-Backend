@@ -77,9 +77,11 @@ AI requires all of the following before release publication:
 - database volumes healthy, plus exact named volume `repo_clips` mounted readably
   by the one running backend at `/app/backend/clips`
 - durable queues drained for the deployment boundary
-- a validated pre-migration `pg_dump -Fc` archive and retained previous release manifest
-- candidate migrations descend from the current release and pass the
-  comment/string-aware additive, non-destructive classifier
+- a validated pre-migration `pg_dump -Fc` archive (written by the deploy, with
+  `<dump>.images.env` recording the images to restore) and the previous release
+  tag for a `RELEASE_TAG` rollback re-run
+- candidate migrations reviewed as additive and non-destructive in the PR (CI
+  and review gate this; the deploy has no migration classifier)
 - legacy compatibility enabled through the rollback window
 
 The edge requires all of the following before image replacement:

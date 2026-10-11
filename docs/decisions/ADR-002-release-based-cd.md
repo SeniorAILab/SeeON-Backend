@@ -38,16 +38,28 @@ version release from `main`; publishing it starts the Jenkins deployment path.
 The GitHub workflow classifies a published canonical non-draft, non-prerelease
 production release and sends Jenkins an empty signal. Jenkins uses its existing
 deploy key to resolve release state with one `git ls-remote` lookup, producing
-`RELEASE_TAG=`, `RELEASE_SHA=`, and `NO_OP=`. The resolved tagged commit must be
+`RELEASE_TAG=` and `RELEASE_SHA=`. The resolved tagged commit must be
 contained by `origin/main`. Backend and API-ingress images are named only with
 the resolved commit SHA. (As originally decided in the combined repository this
 read "backend and frontend images"; since the SeeON-Backend extraction the
-pipeline builds no frontend image, and transitional manifests that name one
-survive only in the deploy script's READ path.)
+pipeline builds no frontend image.)
 
-Repeated delivery of the same version, or a version lower than the deployed
-semantic version, converges as a successful no-op. It does not build or deploy.
-Rollback remains the explicit `iwinv-deploy.sh --rollback` operation.
+### Amendment (2026-10-11): plain deploy pipeline
+
+CI gates quality; deploy = build, dump, migrate, up, health-sha; rollback =
+re-run the Jenkins job with `RELEASE_TAG=<previous tag>`. Only these steps can
+fail a deploy: release resolution, the GitHub `CI gate` check for the SHA, the
+image builds, the pre-migration `pg_dump` (a safety net that is never restored
+automatically), `prisma migrate deploy`, `docker compose up --wait`, and
+`/health` reporting the release SHA within 120 s. Nothing else blocks or warns.
+The server-side release state machine (`current.json`, `previous.json`,
+`pending.json`, immutable `<sha>.json` manifests, no-op detection, Edge
+heartbeat continuity, overlap readiness, migration classification) was
+removed. Builds #47–#50 failed on those runtime gates while production was
+already healthy: gates that depend on live devices or leftover server state
+made deploys non-deterministic without catching code defects, and code
+defects belong in CI. Every release signal now redeploys the resolved tag, which
+is idempotent.
 
 ## Drivers
 

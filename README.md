@@ -88,7 +88,7 @@ See [AGENTS.md](./AGENTS.md) for the schema, migration, repository-boundary, and
 
 ## Deployment
 
-`pnpm release:prod -- vX.Y.Z` publishes a qualifying production release from `main` and signals Jenkins. Jenkins resolves the release to a commit SHA, builds the backend images, and handles deployment to the iwinv host. A release signal alone is not evidence that deployment completed; the pipeline can also no-op when the SHA is already live.
+`pnpm release:prod -- vX.Y.Z` publishes a qualifying production release from `main` and signals Jenkins. Jenkins resolves the release to a commit SHA, builds the backend images, and handles deployment to the iwinv host. A release signal alone is not evidence that deployment completed; check that `/health` reports the release SHA. To roll back, re-run the Jenkins job with `RELEASE_TAG` set to the previous tag.
 
 Keep real `.env.local` and `.env.host.prod` files out of git. Do not create package-local environment files or commit secrets.
 

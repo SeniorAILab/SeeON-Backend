@@ -50,9 +50,6 @@ const LEGACY_PRODUCT_IPV4_FILES = new Set([
   'backend/src/config/frontend-origins.spec.ts',
   'backend/test/cors.spec.ts',
   'docs/runbooks/product-ready-cutover.md',
-  'scripts/deploy/iwinv-deploy.test.sh',
-  'scripts/deploy/iwinv-overlap-readiness.sh',
-  'scripts/deploy/iwinv-overlap-readiness.test.sh',
   'scripts/env/verify-compose-env-contract.mjs',
   'scripts/env/verify-event-clip-compose.mjs',
 ]);
@@ -202,20 +199,14 @@ describe('프라이버시 가드 판정 로직', () => {
 
   it('limits the legacy public origin exception to deployment contract files', () => {
     expect(
-      isApprovedLegacyOrigin(
-        'scripts/deploy/iwinv-overlap-readiness.sh',
-        LEGACY_PRODUCT_IPV4,
-      ),
+      isApprovedLegacyOrigin('.env.host.prod.example', LEGACY_PRODUCT_IPV4),
     ).toBe(true);
     expect(isApprovedLegacyOrigin('README.md', LEGACY_PRODUCT_IPV4)).toBe(
       false,
     );
-    expect(
-      isApprovedLegacyOrigin(
-        'scripts/deploy/iwinv-overlap-readiness.sh',
-        '8.8.8.8',
-      ),
-    ).toBe(false);
+    expect(isApprovedLegacyOrigin('.env.host.prod.example', '8.8.8.8')).toBe(
+      false,
+    );
   });
 
   it.each([

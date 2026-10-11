@@ -37,15 +37,14 @@ are not DTO fields, and retired routes return 404.
 
 ## Backend and database cutover
 
-The current production deploy path accepts additive migrations and uses overlap
-readiness. It will intentionally reject this destructive migration. Before a
-release is published, land a separately reviewed, one-migration authorization
-and maintenance-mode/zero-overlap deploy procedure pinned to migration 49 and
-its reviewed checksum. Do not weaken or bypass the general migration
-classifier. This removal PR is not itself deployable through the current
-production pipeline. Migration 50 has the same requirement: authorize a
-separately reviewed, checksum-pinned maintenance-mode/zero-overlap procedure;
-do not weaken the Jenkins migration classifier.
+Historical note: when this removal was written, the deploy path used overlap
+readiness and an additive-migration classifier that rejected migrations 49/50.
+Since the 2026-10-11 plain-pipeline amendment (ADR-002), deploy runs build →
+pg_dump → `prisma migrate deploy` → `compose up --wait` → `/health` sha with no
+migration classifier. Destructive migrations are therefore gated only by code
+review and CI: confirm the pre-migration dump exists and the operator restore
+command (`iwinv-deploy.sh --restore-db <dump> --ack-data-loss`) before publishing
+a release that carries one.
 
 Migration 49 atomically deletes all relationally identified SYSTEM_TEST events,
 their SYSTEM_TEST alerts, related dashboard receipts and alert notes, and
