@@ -86,6 +86,17 @@ imaged, or started here.
   release and pass the comment/string-aware additive classifier. Audit Prisma
   history before `migrate deploy`; migrations run once from deploy tooling,
   never on app start.
+- After `compose up --wait`, the Edge continuity gate polls the latest
+  `edge_installations.last_heartbeat_at` / `cameras.last_seen_at` epoch until
+  it exceeds the seed, for up to `EDGE_CONTINUITY_TIMEOUT_SECONDS` (default
+  120) every `EDGE_CONTINUITY_POLL_INTERVAL_SECONDS` (default 5). Heartbeats
+  reach the DB only about every 30 s and the backend restart drops the in-flight
+  relay, so a single read races the next batch. This is a bounded observation
+  window, not a deploy retry: non-canonical window settings (leading zeros,
+  zero timeout) fail with the receipt prerequisites before the lock or any
+  mutation, an invalid read fails immediately, a timeout or an advance
+  observed only after the window fails closed before activation, and the
+  `seeon-edge-continuity-after-v1` receipt is unchanged.
 - Deployment and pruning may remove only individually classified stale images
   and manifests. They must never run broad image/system pruning or remove/prune
   Docker volumes; current and previous manifest images stay protected.
