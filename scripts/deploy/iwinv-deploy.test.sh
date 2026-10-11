@@ -66,6 +66,7 @@ if [ "${1:-}" = compose ]; then
     *'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction'*) ;;
     *has_table_privilege*) printf '%s\n' "${MOCK_AUTH_RESULT:-ok}" ;;
     *edge_observations*)
+      [ -z "${MOCK_EDGE_READ_DELAY:-}" ] || sleep "$MOCK_EDGE_READ_DELAY"
       if [ -n "${MOCK_EDGE_AFTER_SEQUENCE:-}" ]; then
         edge_reads=$(($(cat "$MOCK_LOG.edge-reads" 2>/dev/null || printf 0) + 1))
         printf '%s\n' "$edge_reads" > "$MOCK_LOG.edge-reads"
@@ -1226,7 +1227,9 @@ set +e
 output=$(MOCK_EDGE_AFTER_EPOCH=100 EDGE_CONTINUITY_TIMEOUT_SECONDS=2 EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=1 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
 set -e
 # A stalled heartbeat fails closed after the bounded window, naming both epochs and the elapsed time.
-assert_failure "$status"; assert_contains "$output" 'Edge continuity did not advance after deploy (before=100 after=100 elapsed=2s).'
+assert_failure "$status"; assert_contains "$output" 'Edge continuity did not advance after deploy (before=100 after=100 elapsed='
+edge_elapsed_seen=$(printf '%s\n' "$output" | sed -n 's/.*did not advance after deploy (before=100 after=100 elapsed=\([0-9]*\)s)\./\1/p')
+[ -n "$edge_elapsed_seen" ] && [ "$edge_elapsed_seen" -ge 2 ] || { printf '%s\n' 'Edge continuity timeout fired before the configured window' >&2; exit 1; }
 assert_contains "$output" 'poll Edge continuity for up to 2s every 1s (before=100)'
 [ "$(grep -c edge_observations "$TMP/mock.log")" -ge 2 ] || { printf '%s\n' 'Edge continuity gate did not poll more than once before timing out' >&2; exit 1; }
 cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
@@ -1239,13 +1242,30 @@ set -e
 assert_failure "$status"; assert_contains "$output" 'Post-deploy Edge continuity state is invalid.'
 [ "$(grep -c edge_observations "$TMP/mock.log")" -eq 1 ] || { printf '%s\n' 'invalid Edge continuity read was retried' >&2; exit 1; }
 cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
-# A non-numeric window configuration is rejected before any read.
+# An advance that is only observed after the window (slow read) fails closed.
 : > "$TMP/mock.log"
 set +e
-output=$(EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=5s MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+output=$(MOCK_EDGE_AFTER_EPOCH=137 MOCK_EDGE_READ_DELAY=2 EDGE_CONTINUITY_TIMEOUT_SECONDS=1 EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=1 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative integer.'
+assert_failure "$status"; assert_contains "$output" 'Edge continuity advanced only after the 1s window (before=100 after=137 elapsed='
 cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+[ ! -e "$TMP/root/releases/$NEXT_SHA.json" ] || { printf '%s\n' 'late Edge advance published an immutable manifest' >&2; exit 1; }
+# Noncanonical window settings are rejected before any read: dash treats leading zeros as octal.
+for edge_window_case in timeout:5s timeout:08 timeout:010 timeout:0 interval:5s interval:08; do
+  edge_window_value=${edge_window_case#*:}
+  : > "$TMP/mock.log"
+  set +e
+  case "$edge_window_case" in
+    timeout:*) output=$(EDGE_CONTINUITY_TIMEOUT_SECONDS=$edge_window_value MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+      expected_window_error='EDGE_CONTINUITY_TIMEOUT_SECONDS must be a positive decimal integer without leading zeros.' ;;
+    interval:*) output=$(EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=$edge_window_value MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+      expected_window_error='EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative decimal integer without leading zeros.' ;;
+  esac
+  set -e
+  assert_failure "$status"; assert_contains "$output" "$expected_window_error"
+  assert_not_contains "$(cat "$TMP/mock.log")" 'edge_observations'
+  cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+done
 # Heartbeats that land on a later poll (the post-restart relay gap) pass and record the advanced epoch.
 : > "$TMP/mock.log"
 rm -f "$TMP/mock.log.edge-reads"

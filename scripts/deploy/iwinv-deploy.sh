@@ -570,17 +570,22 @@ edge_heartbeat_epoch() {
 }
 # Edge heartbeats land in the DB only every ~30 s and the backend restart drops
 # the in-flight relay, so a single read right after `compose up --wait` races the
-# next batch. Poll a bounded window; the gate still fails closed on timeout.
+# next batch. Poll a bounded window; the gate still fails closed on timeout, and
+# an advance observed only after the window (slow read) does not activate.
+# Canonical decimals only: dash arithmetic reads leading-zero values as octal.
 verify_edge_continuity() {
-  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a non-negative integer.' ;; esac
-  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in ''|*[!0-9]*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative integer.' ;; esac
+  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a positive decimal integer without leading zeros.' ;; esac
+  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in 0) ;; ''|*[!0-9]*|0*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative decimal integer without leading zeros.' ;; esac
   log "poll Edge continuity for up to ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s every ${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS}s (before=$EDGE_BEFORE_EPOCH)"
   edge_started=$(date -u +%s)
   while :; do
     edge_after=$(edge_heartbeat_epoch) || fail 'Unable to read post-deploy Edge continuity state.'
     case "$edge_after" in ''|*[!0-9]*) fail 'Post-deploy Edge continuity state is invalid.' ;; esac
-    [ "$edge_after" -le "$EDGE_BEFORE_EPOCH" ] || break
     edge_elapsed=$(( $(date -u +%s) - edge_started ))
+    if [ "$edge_after" -gt "$EDGE_BEFORE_EPOCH" ]; then
+      [ "$edge_elapsed" -le "$EDGE_CONTINUITY_TIMEOUT_SECONDS" ] || fail "Edge continuity advanced only after the ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s window (before=$EDGE_BEFORE_EPOCH after=$edge_after elapsed=${edge_elapsed}s)."
+      break
+    fi
     [ "$edge_elapsed" -lt "$EDGE_CONTINUITY_TIMEOUT_SECONDS" ] || fail "Edge continuity did not advance after deploy (before=$EDGE_BEFORE_EPOCH after=$edge_after elapsed=${edge_elapsed}s)."
     edge_wait=$(( EDGE_CONTINUITY_TIMEOUT_SECONDS - edge_elapsed ))
     [ "$edge_wait" -le "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" ] || edge_wait=$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS
