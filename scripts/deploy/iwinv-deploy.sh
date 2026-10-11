@@ -421,6 +421,8 @@ restore_pending_recovery() {
 # - the stranded SHA has no immutable manifest (pruning keeps the pending owner's);
 # - the dump is strictly newer than current.json. Every activation, deploy or
 #   rollback, rewrites current.json, so no release was activated since the dump;
+# - the dump is strictly newer than the last database restore stamp, so a
+#   restore (even one that later failed) did not replace the database since;
 # - the candidate descends from the stranded SHA.
 # Every read is checked explicitly: callers use this as a condition, where
 # errexit does not apply.
@@ -439,6 +441,12 @@ pending_supersedable() {
   case "$current_mtime" in ''|*[!0-9]*) return 1 ;; esac
   case "$dump_mtime" in ''|*[!0-9]*) return 1 ;; esac
   [ "$dump_mtime" -gt "$current_mtime" ] || return 1
+  restore_stamp=$(database_restore_stamp_path)
+  if [ -e "$restore_stamp" ]; then
+    restore_mtime=$(stat -c '%Y' "$restore_stamp" 2>/dev/null || stat -f '%m' "$restore_stamp") || return 1
+    case "$restore_mtime" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$dump_mtime" -gt "$restore_mtime" ] || return 1
+  fi
   git -C "$APP_DIR" merge-base --is-ancestor "$stranded_sha" "$candidate_sha" || return 1
 }
 supersede_pending_recovery() {
@@ -531,11 +539,24 @@ backup_and_validate() {
   publish_pending_recovery
   rotate_dumps
 }
+database_restore_stamp_path() { printf '%s\n' "$RELEASE_DIR/last-database-restore.stamp"; }
+stamp_database_restore() {
+  stamp=$(database_restore_stamp_path)
+  TEMP_FILE=$RELEASE_DIR/.last-database-restore.$$.tmp
+  umask 077
+  printf 'RESTORED_EPOCH=%s\n' "$(date -u +%s)" > "$TEMP_FILE" || fail 'Unable to write database restore stamp.'
+  mv "$TEMP_FILE" "$stamp" || fail "Unable to publish database restore stamp: $stamp"
+  TEMP_FILE=
+}
 restore_database() {
   if [ "$DRY_RUN" -eq 1 ]; then
     log "would ensure app role, restore database ACLs from $RESTORE_DUMP with pg_restore --dbname \$POSTGRES_DB --clean --if-exists --no-owner --exit-on-error --single-transaction, reconcile the event-SSOT ACL contract, and verify authorization invariants"
     return
   fi
+  # Durable evidence that the live database was replaced: pending dumps taken
+  # before this instant are no longer a snapshot of it, even if the restore
+  # later fails and retains the pending record.
+  stamp_database_restore
   sync_app_role
   compose exec -T db sh -c 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction' < "$RESTORE_DUMP"
   # pg_restore recreates events under the init migration's ALTER DEFAULT PRIVILEGES

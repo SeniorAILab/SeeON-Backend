@@ -45,6 +45,9 @@ imaged, or started here.
     immutable manifest (pruning keeps the pending owner's manifest);
   - the dump is strictly newer than `current.json`, since every activation
     (deploy or rollback) rewrites it, so nothing was activated after the dump;
+  - the dump is strictly newer than `releases/last-database-restore.stamp`,
+    which every non-dry-run DB restore publishes before `pg_restore`. A
+    failed restore that retained the record still disqualifies it;
   - the candidate descends from the stranded SHA (`git merge-base --is-ancestor`).
 
   Under the lock the deploy re-checks the exact record (SHA and dump) and its

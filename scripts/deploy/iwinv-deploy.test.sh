@@ -1474,7 +1474,12 @@ DUMPS=$TMP/root/backups/db
 STRANDED_RECORD=$(printf '{"sha":"%s","pre_migration_dump":"%s"}' "$STRANDED_SHA" "$STRANDED_DUMP")
 [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
 # Dump taken after current.json was last activated (the production shape).
-stranded_mtimes() { touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"; }
+RESTORE_STAMP=$REL/last-database-restore.stamp
+# Earlier restore tests left a stamp; an older restore does not block supersede.
+stranded_mtimes() {
+  touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"
+  [ ! -e "$RESTORE_STAMP" ] || touch -d @1699999000 "$RESTORE_STAMP"
+}
 stranded_mtimes
 cp "$REL/current.json" "$TMP/current.before-supersede"
 cp "$TMP/root/shared/release-images.env" "$TMP/release-images.env.before-supersede"
@@ -1504,6 +1509,27 @@ assert_failure "$status"; assert_contains "$output" "Pending recovery record bel
 [ ! -s "$TMP/mock.log" ]
 assert_supersede_untouched activated-since-dump
 stranded_mtimes
+# A database restore after the dump (even one whose app start then failed and
+# kept the pending record) replaced the live database: refuse supersede.
+CURRENT_POINTER_SHA=$(sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' "$REL/current.json")
+: > "$TMP/restore.dump"
+set +e
+output=$(MOCK_BACKEND_FAIL=1 MOCK_SHA="$CURRENT_POINTER_SHA" run_deploy --restore-db "$TMP/restore.dump" --ack-data-loss); status=$?
+set -e
+assert_failure "$status"
+[ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ] || { printf '%s\n' 'failed restore did not retain the pending record' >&2; exit 1; }
+grep -Eq '^RESTORED_EPOCH=[0-9]+$' "$RESTORE_STAMP" || { printf '%s\n' 'restore did not publish its stamp' >&2; exit 1; }
+touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"; touch -d @1700000700 "$RESTORE_STAMP"
+cp "$REL/current.json" "$TMP/current.before-supersede"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
+[ ! -s "$TMP/mock.log" ]
+stranded_mtimes
+cp "$REL/current.json" "$TMP/current.before-supersede"
+cp "$TMP/root/shared/release-images.env" "$TMP/release-images.env.before-supersede"
 # Dry-run reports the supersede and dump reuse without rewriting the record.
 output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA" --dry-run)
 assert_contains "$output" "would supersede pending recovery record $STRANDED_SHA -> $SUPERSEDE_SHA (dump $STRANDED_DUMP)"
