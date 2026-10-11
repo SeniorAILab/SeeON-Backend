@@ -19,6 +19,10 @@ assert_order() { first=${1%%"$2"*}; [ "$first" != "$1" ] || fail "missing: $2"; 
 SHA=0123456789abcdef0123456789abcdef01234567
 ROOT=$TMP/root
 mkdir -p "$TMP/bin" "$ROOT/shared" "$ROOT/backups/db" "$ROOT/releases"
+# Jenkins runs main's tooling from a temp dir against the release checkout (APP_DIR).
+TOOLS=$TMP/tools
+mkdir -p "$TOOLS"
+cp "$SCRIPT" "$REPO_ROOT/scripts/deploy/controlled-compose.sh" "$REPO_ROOT/scripts/deploy/event-clip-runtime-env.sh" "$TOOLS/"
 printf 'POSTGRES_USER=x\n' > "$ROOT/shared/.env"; chmod 600 "$ROOT/shared/.env"
 cat > "$TMP/bin/docker" <<'EOF'
 #!/usr/bin/env sh
@@ -37,7 +41,7 @@ chmod +x "$TMP/bin/docker"
 
 deploy() {
   PATH="$TMP/bin:$PATH" MOCK_LOG="$TMP/docker.log" MOCK_SHA="$SHA" APP_ROOT="$ROOT" APP_DIR="$REPO_ROOT" \
-    HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}" sh "$SCRIPT" "$@" 2>&1
+    HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}" sh "$TOOLS/iwinv-deploy.sh" "$@" 2>&1
 }
 run_failing() { set +e; output=$(deploy "$@"); status=$?; set -e; [ "$status" -ne 0 ] || fail "deploy unexpectedly passed: $*"; }
 docker_log() { cat "$TMP/docker.log"; }
@@ -55,6 +59,9 @@ printf 'stale\n' > "$ROOT/releases/current.json"
 : > "$ROOT/backups/db/normal-old.dump"
 for n in 1 2 3 4 5 6; do : > "$ROOT/backups/db/deploy-20260101T00000${n}Z-old.dump"; done
 cp "$ROOT/releases/pending.json" "$TMP/pending.before"
+PREV_SHA=e9ba287204ba8bb2dce0f55cceecc6661fd5f4b5
+printf 'BACKEND_IMAGE=eldercare-backend:%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:%s\n' "$PREV_SHA" "$PREV_SHA" > "$ROOT/shared/release-images.env"
+cp "$ROOT/shared/release-images.env" "$TMP/prev-images.env"
 : > "$TMP/docker.log"
 output=$(deploy --sha "$SHA")
 log=$(docker_log)
@@ -75,6 +82,8 @@ cmp -s "$TMP/pending.before" "$ROOT/releases/pending.json" || fail 'leftover pen
 # Dump retention: newest 5 deploy-*.dump kept, other dumps never touched.
 [ "$(find "$ROOT/backups/db" -name 'deploy-*.dump' | wc -l)" -eq 5 ] || fail 'deploy dump retention is not 5'
 find "$ROOT/backups/db" -name "deploy-*-$SHA.dump" -size +0 | grep -q . || fail 'new deploy dump missing'
+NEW_DUMP=$(find "$ROOT/backups/db" -name "deploy-*-$SHA.dump")
+cmp -s "$TMP/prev-images.env" "$NEW_DUMP.images.env" || fail 'dump does not record the pre-deploy images'
 [ ! -e "$ROOT/backups/db/deploy-20260101T000001Z-old.dump" ] && [ ! -e "$ROOT/backups/db/deploy-20260101T000002Z-old.dump" ] || fail 'oldest dumps not rotated'
 [ -e "$ROOT/backups/db/normal-old.dump" ] || fail 'non-deploy dump was removed'
 # Image retention: current + 2 newest others kept; never a broad prune.
@@ -117,11 +126,15 @@ assert_contains "$output" "Health did not report $SHA within 1s (last sha=e9ba28
 assert_contains "$output" '--restore-db'
 assert_not_contains "$(docker_log)" 'image rm'
 
-# Explicit operator restore: needs ack, restores, re-applies the event ACL, verifies authorization.
+# Explicit operator restore: restarts the images live when the dump was taken
+# (not the failed candidate), restores, re-applies the event ACL, verifies authorization.
 : > "$TMP/restore.dump"
+cp "$TMP/prev-images.env" "$TMP/restore.dump.images.env"
 : > "$TMP/docker.log"
 output=$(deploy --restore-db "$TMP/restore.dump" --ack-data-loss)
 log=$(docker_log)
+cmp -s "$TMP/prev-images.env" "$ROOT/shared/release-images.env" || fail 'restore did not reinstate the pre-deploy images'
+assert_contains "$output" "eldercare-backend:$PREV_SHA"
 assert_contains "$output" "Database restore complete from $TMP/restore.dump."
 assert_order "$log" 'stop api-ingress backend' 'pg_restore --username'
 assert_order "$log" 'pg_restore --username' 'REVOKE UPDATE, DELETE ON public.events FROM fall_app'
@@ -155,7 +168,8 @@ assert_contains "$jenkins" "\${env.RELEASE_SHA ?: 'unresolved'}"
 assert_order "$jenkins" "stage('Resolve release')" "stage('Verify GitHub CI gate')"
 assert_order "$jenkins" "stage('Verify GitHub CI gate')" "stage('Build backend')"
 assert_order "$jenkins" "stage('Build API ingress')" "stage('Deploy')"
-[ "$(printf '%s\n' "$jenkins" | grep -c -F 'sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"')" -eq 1 ] || fail 'expected exactly one deploy invocation'
+[ "$(printf '%s\n' "$jenkins" | grep -c -F 'APP_DIR="$WORKSPACE" sh "$tools/scripts/deploy/iwinv-deploy.sh" --sha "$RELEASE_SHA"')" -eq 1 ] || fail 'expected exactly one deploy invocation'
+assert_order "$jenkins" 'git archive refs/remotes/origin/main scripts/deploy' 'APP_DIR="$WORKSPACE" sh "$tools/scripts/deploy/iwinv-deploy.sh"'
 [ "$(printf '%s\n' "$jenkins" | grep -c "stage('")" -eq 6 ] || fail 'Jenkinsfile must have exactly 6 stages'
 for forbidden in NO_OP overlap-readiness preflight-only RELEASES_DIR eldercare-front GHCR ghcr.io 'docker push' 'docker pull' event-media-backup.sh; do
   assert_not_contains "$jenkins" "$forbidden"

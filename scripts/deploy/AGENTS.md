@@ -24,6 +24,11 @@ re-run of the Jenkins job with `RELEASE_TAG=<previous tag>`.
 - On failure after the dump, the database is never restored automatically. The
   deploy prints the exact operator command:
   `sh scripts/deploy/iwinv-deploy.sh --restore-db <dump> --ack-data-loss`.
+  Each dump has a `<dump>.images.env` companion recording the images live before
+  that deploy; `--restore-db` reinstates them, never the failed candidate.
+- Jenkins runs the deploy helper from `origin/main` (`git archive`) against the
+  release checkout (`APP_DIR`), so a `RELEASE_TAG` rollback to a tag older than
+  this pipeline still uses the current helper.
 
 ## Where to look
 - `Jenkinsfile` — Resolve release (`RELEASE_TAG` parameter or latest stable tag),

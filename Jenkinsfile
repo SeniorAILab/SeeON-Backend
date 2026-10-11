@@ -160,7 +160,12 @@ pipeline {
         lock(resource: 'eldercare-fall-ai-deploy') {
           sh '''#!/usr/bin/env sh
             set -eu
-            sh scripts/deploy/iwinv-deploy.sh --sha "$RELEASE_SHA"
+            # Deploy tooling always comes from main so RELEASE_TAG rollbacks to older
+            # tags still use the current helper; the checkout supplies compose/app files.
+            tools=$(mktemp -d)
+            trap 'rm -rf "$tools"' EXIT HUP INT TERM
+            git archive refs/remotes/origin/main scripts/deploy | tar -x -C "$tools"
+            APP_DIR="$WORKSPACE" sh "$tools/scripts/deploy/iwinv-deploy.sh" --sha "$RELEASE_SHA"
           '''
         }
       }

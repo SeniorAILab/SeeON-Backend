@@ -12,6 +12,9 @@ BACKUP_DIR=${BACKUP_DIR:-$APP_ROOT/backups/db}
 RELEASE_ENV=$APP_ROOT/shared/release-images.env
 FEATURE_ENV=${FEATURE_ENV:-$APP_ROOT/shared/event-clips-runtime.env}
 LOCK_DIR=$APP_ROOT/shared/deploy.lock
+# Tooling comes from this script's directory (Jenkins runs main's copy), while
+# compose files and DB init come from the release checkout in APP_DIR.
+TOOLS_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-120}
 DUMPS_TO_KEEP=5
 IMAGES_TO_KEEP=3
@@ -32,9 +35,9 @@ esac
 case "$(stat -c '%a' "$ENV_FILE")" in 400|600) ;; *) fail 'Production environment permissions must be 400 or 600.' ;; esac
 cd "$APP_DIR"
 # shellcheck source=scripts/deploy/controlled-compose.sh
-. "$APP_DIR/scripts/deploy/controlled-compose.sh"
+. "$TOOLS_DIR/controlled-compose.sh"
 # shellcheck source=scripts/deploy/event-clip-runtime-env.sh
-. "$APP_DIR/scripts/deploy/event-clip-runtime-env.sh"
+. "$TOOLS_DIR/event-clip-runtime-env.sh"
 validate_event_clip_runtime_env "$FEATURE_ENV" || fail "Invalid event clip feature override: $FEATURE_ENV"
 
 # Later --env-file wins: the emergency feature override must come last.
@@ -66,7 +69,10 @@ LOCK_HELD=1
 
 if [ "$ACK" -eq 1 ]; then
   [ -f "$RESTORE_DUMP" ] || fail "Database dump not found: $RESTORE_DUMP"
+  # Run the images that were live when the dump was taken, not a failed candidate.
+  if [ -f "$RESTORE_DUMP.images.env" ]; then cp "$RESTORE_DUMP.images.env" "$RELEASE_ENV"; chmod 600 "$RELEASE_ENV"; fi
   [ -f "$RELEASE_ENV" ] || fail "No deployed release images recorded: $RELEASE_ENV"
+  log "restore runs $(tr '\n' ' ' < "$RELEASE_ENV")"
   log "restore database from $RESTORE_DUMP"
   compose stop api-ingress backend
   compose up -d --wait --wait-timeout 120 db
@@ -86,6 +92,9 @@ fi
 
 log "deploy $SHA"
 umask 077
+dump_path=$BACKUP_DIR/deploy-$(date -u +%Y%m%dT%H%M%SZ)-$SHA.dump
+# Remember the images live before this deploy; --restore-db of this dump restarts them.
+if [ -f "$RELEASE_ENV" ]; then cp "$RELEASE_ENV" "$dump_path.images.env"; fi
 printf 'BACKEND_IMAGE=eldercare-backend:%s\nAPI_INGRESS_IMAGE=eldercare-api-ingress:%s\n' "$SHA" "$SHA" > "$RELEASE_ENV.tmp"
 mv "$RELEASE_ENV.tmp" "$RELEASE_ENV"
 compose config >/dev/null
@@ -94,7 +103,6 @@ docker image inspect "eldercare-backend:$SHA" "eldercare-api-ingress:$SHA" >/dev
 # 1. Pre-migration dump: a safety net only, never restored automatically.
 compose stop api-ingress backend
 compose up -d --wait --wait-timeout 120 db
-dump_path=$BACKUP_DIR/deploy-$(date -u +%Y%m%dT%H%M%SZ)-$SHA.dump
 log "pg_dump -> $dump_path"
 compose exec -T db sh -c 'pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Fc' > "$dump_path.tmp"
 compose exec -T db pg_restore --list < "$dump_path.tmp" >/dev/null
@@ -102,7 +110,7 @@ mv "$dump_path.tmp" "$dump_path"
 DUMP=$dump_path
 # Keep the newest deploy-*.dump files; older dumps with other names are never touched.
 find "$BACKUP_DIR" -maxdepth 1 -type f -name 'deploy-*.dump' | LC_ALL=C sort -r | tail -n +$((DUMPS_TO_KEEP + 1)) | while IFS= read -r old; do
-  log "remove old dump $old"; rm -f "$old"
+  log "remove old dump $old"; rm -f "$old" "$old.images.env"
 done
 
 # 2. Migrations run once from deploy tooling, never on app start.

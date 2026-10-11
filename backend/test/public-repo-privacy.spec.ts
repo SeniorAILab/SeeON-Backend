@@ -199,20 +199,14 @@ describe('프라이버시 가드 판정 로직', () => {
 
   it('limits the legacy public origin exception to deployment contract files', () => {
     expect(
-      isApprovedLegacyOrigin(
-        '.env.host.prod.example',
-        LEGACY_PRODUCT_IPV4,
-      ),
+      isApprovedLegacyOrigin('.env.host.prod.example', LEGACY_PRODUCT_IPV4),
     ).toBe(true);
     expect(isApprovedLegacyOrigin('README.md', LEGACY_PRODUCT_IPV4)).toBe(
       false,
     );
-    expect(
-      isApprovedLegacyOrigin(
-        '.env.host.prod.example',
-        '8.8.8.8',
-      ),
-    ).toBe(false);
+    expect(isApprovedLegacyOrigin('.env.host.prod.example', '8.8.8.8')).toBe(
+      false,
+    );
   });
 
   it.each([
