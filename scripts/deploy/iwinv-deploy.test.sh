@@ -65,7 +65,18 @@ if [ "${1:-}" = compose ]; then
     *'pg_restore --list'*) [ "${MOCK_RESTORE_LIST_FAIL:-0}" != 1 ] || exit 1 ;;
     *'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction'*) ;;
     *has_table_privilege*) printf '%s\n' "${MOCK_AUTH_RESULT:-ok}" ;;
-    *edge_observations*) printf '%s\n' "${MOCK_EDGE_AFTER_EPOCH:-101}" ;;
+    *edge_observations*)
+      if [ -n "${MOCK_EDGE_AFTER_SEQUENCE:-}" ]; then
+        edge_reads=$(($(cat "$MOCK_LOG.edge-reads" 2>/dev/null || printf 0) + 1))
+        printf '%s\n' "$edge_reads" > "$MOCK_LOG.edge-reads"
+        # shellcheck disable=SC2086 # Space-separated per-read epochs.
+        set -- $MOCK_EDGE_AFTER_SEQUENCE
+        edge_value=
+        while [ "$#" -gt 0 ]; do edge_value=$1; edge_reads=$((edge_reads - 1)); [ "$edge_reads" -gt 0 ] || break; shift; done
+        printf '%s\n' "$edge_value"
+      else
+        printf '%s\n' "${MOCK_EDGE_AFTER_EPOCH:-101}"
+      fi ;;
     *'finished_at IS NULL AND rolled_back_at IS NULL'*) printf '0\n' ;;
     *'SELECT migration_name FROM public._prisma_migrations'*) printf '%s\n' '20260613164810_init_domain_models' ;;
     *to_regclass*) printf 't\n' ;;
@@ -1169,6 +1180,8 @@ assert_contains "$log" 'api-ingress wget'
 assert_not_contains "$log" 'front wget'
 assert_contains "$log" 'backend node --input-type=module'
 assert_contains "$log" 'edge_observations'
+# Default Edge continuity window: 120 s total, 5 s between reads.
+assert_contains "$output" 'poll Edge continuity for up to 120s every 5s (before=100)'
 assert_order "$log" 'finished_at IS NULL AND rolled_back_at IS NULL' 'prisma migrate deploy'
 [ -f "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" ] || { printf '%s\n' 'post-deploy Edge receipt was not published' >&2; exit 1; }
 # Schema-2 writer output is one canonical line with a fixed key order and all image IDs.
@@ -1210,14 +1223,39 @@ cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
 [ -f "$TMP/root/releases/pending.json" ] || { printf '%s\n' 'stale-container smoke failure lost pending recovery ownership' >&2; exit 1; }
 : > "$TMP/mock.log"
 set +e
-output=$(MOCK_EDGE_AFTER_EPOCH=100 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+output=$(MOCK_EDGE_AFTER_EPOCH=100 EDGE_CONTINUITY_TIMEOUT_SECONDS=2 EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=1 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
 set -e
-assert_failure "$status"; assert_contains "$output" 'Edge continuity did not advance after deploy'
+# A stalled heartbeat fails closed after the bounded window, naming both epochs and the elapsed time.
+assert_failure "$status"; assert_contains "$output" 'Edge continuity did not advance after deploy (before=100 after=100 elapsed=2s).'
+assert_contains "$output" 'poll Edge continuity for up to 2s every 1s (before=100)'
+[ "$(grep -c edge_observations "$TMP/mock.log")" -ge 2 ] || { printf '%s\n' 'Edge continuity gate did not poll more than once before timing out' >&2; exit 1; }
 cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
 [ ! -e "$TMP/root/releases/$NEXT_SHA.json" ] || { printf '%s\n' 'Edge failure published an immutable manifest' >&2; exit 1; }
+# A non-numeric read fails immediately instead of being polled through.
 : > "$TMP/mock.log"
-output=$(MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA")
+set +e
+output=$(MOCK_EDGE_AFTER_EPOCH=not-a-number EDGE_CONTINUITY_TIMEOUT_SECONDS=60 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Post-deploy Edge continuity state is invalid.'
+[ "$(grep -c edge_observations "$TMP/mock.log")" -eq 1 ] || { printf '%s\n' 'invalid Edge continuity read was retried' >&2; exit 1; }
+cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+# A non-numeric window configuration is rejected before any read.
+: > "$TMP/mock.log"
+set +e
+output=$(EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=5s MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative integer.'
+cmp -s "$TMP/current.before-edge-failure" "$TMP/root/releases/current.json"
+# Heartbeats that land on a later poll (the post-restart relay gap) pass and record the advanced epoch.
+: > "$TMP/mock.log"
+rm -f "$TMP/mock.log.edge-reads"
+output=$(MOCK_EDGE_AFTER_SEQUENCE='100 100 137' EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=0 MOCK_SHA="$NEXT_SHA" run_deploy --sha "$NEXT_SHA")
+rm -f "$TMP/mock.log.edge-reads"
 assert_contains "$output" "Deploy complete. sha=$NEXT_SHA"
+[ "$(grep -c edge_observations "$TMP/mock.log")" -eq 3 ] || { printf '%s\n' 'Edge continuity gate did not pass on the third poll' >&2; exit 1; }
+grep -Fx 'BEFORE_HEARTBEAT_EPOCH=100' "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" >/dev/null
+grep -Fx 'AFTER_HEARTBEAT_EPOCH=137' "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" >/dev/null
+grep -Fx 'FORMAT=seeon-edge-continuity-after-v1' "$TMP/root/shared/release-receipts/edge-continuity-after.receipt" >/dev/null
 printf 'real writer-to-validator lockstep proof: sha=%s deploy_reader=accepted resolver_reader=accepted bytes=unchanged\n' "$writer_sha"
 cmp -s "$TMP/root/releases/$NEXT_SHA.json" "$TMP/root/releases/current.json"
 cmp -s "$TMP/root/releases/$SHA.json" "$TMP/root/releases/previous.json"

@@ -14,6 +14,8 @@ RECEIPT_DIR=${RECEIPT_DIR:-$APP_ROOT/shared/release-receipts}
 EDGE_RECEIPT=${EDGE_RECEIPT:-$RECEIPT_DIR/edge-continuity.receipt}
 EDGE_AFTER_RECEIPT=${EDGE_AFTER_RECEIPT:-$RECEIPT_DIR/edge-continuity-after.receipt}
 RECEIPT_MAX_AGE_SECONDS=${RECEIPT_MAX_AGE_SECONDS:-3600}
+EDGE_CONTINUITY_TIMEOUT_SECONDS=${EDGE_CONTINUITY_TIMEOUT_SECONDS:-120}
+EDGE_CONTINUITY_POLL_INTERVAL_SECONDS=${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS:-5}
 COMPOSE_FILES='-f compose.yaml -f compose.prod.yaml'
 MEMORY_MIN_MB=${MEMORY_MIN_MB:-1024}
 DISK_MIN_MB=${DISK_MIN_MB:-2048}
@@ -566,10 +568,24 @@ verify_overlap_surfaces() {
 edge_heartbeat_epoch() {
   compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -Atc "SELECT COALESCE(FLOOR(EXTRACT(EPOCH FROM MAX(observed_at)))::bigint, 0) FROM (SELECT last_heartbeat_at AS observed_at FROM edge_installations UNION ALL SELECT last_seen_at FROM cameras) edge_observations;"'
 }
+# Edge heartbeats land in the DB only every ~30 s and the backend restart drops
+# the in-flight relay, so a single read right after `compose up --wait` races the
+# next batch. Poll a bounded window; the gate still fails closed on timeout.
 verify_edge_continuity() {
-  edge_after=$(edge_heartbeat_epoch) || fail 'Unable to read post-deploy Edge continuity state.'
-  case "$edge_after" in ''|*[!0-9]*) fail 'Post-deploy Edge continuity state is invalid.' ;; esac
-  [ "$edge_after" -gt "$EDGE_BEFORE_EPOCH" ] || fail "Edge continuity did not advance after deploy (before=$EDGE_BEFORE_EPOCH after=$edge_after)."
+  case "$EDGE_CONTINUITY_TIMEOUT_SECONDS" in ''|*[!0-9]*) fail 'EDGE_CONTINUITY_TIMEOUT_SECONDS must be a non-negative integer.' ;; esac
+  case "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" in ''|*[!0-9]*) fail 'EDGE_CONTINUITY_POLL_INTERVAL_SECONDS must be a non-negative integer.' ;; esac
+  log "poll Edge continuity for up to ${EDGE_CONTINUITY_TIMEOUT_SECONDS}s every ${EDGE_CONTINUITY_POLL_INTERVAL_SECONDS}s (before=$EDGE_BEFORE_EPOCH)"
+  edge_started=$(date -u +%s)
+  while :; do
+    edge_after=$(edge_heartbeat_epoch) || fail 'Unable to read post-deploy Edge continuity state.'
+    case "$edge_after" in ''|*[!0-9]*) fail 'Post-deploy Edge continuity state is invalid.' ;; esac
+    [ "$edge_after" -le "$EDGE_BEFORE_EPOCH" ] || break
+    edge_elapsed=$(( $(date -u +%s) - edge_started ))
+    [ "$edge_elapsed" -lt "$EDGE_CONTINUITY_TIMEOUT_SECONDS" ] || fail "Edge continuity did not advance after deploy (before=$EDGE_BEFORE_EPOCH after=$edge_after elapsed=${edge_elapsed}s)."
+    edge_wait=$(( EDGE_CONTINUITY_TIMEOUT_SECONDS - edge_elapsed ))
+    [ "$edge_wait" -le "$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS" ] || edge_wait=$EDGE_CONTINUITY_POLL_INTERVAL_SECONDS
+    sleep "$edge_wait"
+  done
   TEMP_FILE=$EDGE_AFTER_RECEIPT.$$.tmp
   umask 077
   printf 'FORMAT=seeon-edge-continuity-after-v1\nRELEASE_SHA=%s\nBEFORE_HEARTBEAT_EPOCH=%s\nAFTER_HEARTBEAT_EPOCH=%s\nCAPTURED_EPOCH=%s\n' "$SHA" "$EDGE_BEFORE_EPOCH" "$edge_after" "$(date -u +%s)" > "$TEMP_FILE"
