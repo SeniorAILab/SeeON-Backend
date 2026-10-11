@@ -22,7 +22,7 @@ DISK_MIN_MB=${DISK_MIN_MB:-2048}
 
 SHA='' REQUESTED_ROLLBACK_SHA='' DRY_RUN=0 ROLLBACK=0 RESTORE_DUMP='' ACK_DATA_LOSS=0 PREFLIGHT_ONLY=0
 SHA_COUNT=0 ROLLBACK_COUNT=0 RESTORE_COUNT=0 ACK_COUNT=0 DRY_RUN_COUNT=0 PREFLIGHT_COUNT=0
-LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' SUPERSEDE_PENDING_SHA='' SUPERSEDE_PENDING_DUMP='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
+LOCK_HELD=0 TEMP_FILE='' TEMP_FILE_SECOND='' MANIFEST_SCHEMA='' BACKEND_IMAGE='' API_INGRESS_IMAGE='' FRONT_IMAGE='' BACKEND_ID='' API_INGRESS_ID='' FRONT_ID='' HAS_FRONT=0 APP_SERVICES='' PRE_DUMP='' HAS_CURRENT=0 CURRENT_RELEASE_SHA='' PENDING_SHA='' PENDING_DUMP='' SUPERSEDE_PENDING_SHA='' SUPERSEDE_PENDING_DUMP='' SUPERSEDE_CURRENT_BYTES='' EDGE_BEFORE_EPOCH='' IMAGE_IDS_VERIFIED=0 HISTORY_TRANSITION_AUTHORIZED=0 DEPLOY_CLEANED_UP=0 CLEANUP_STATUS=0
 SMOKE_EXPECTED_FRONT_ORIGINS='' SMOKE_EXPECTED_AUTH_COOKIE_SAME_SITE='' SMOKE_EXPECTED_AUTH_COOKIE_SECURE=''
 
 usage() {
@@ -364,6 +364,21 @@ run_migrations() { log 'docker compose run backend pnpm exec prisma migrate depl
 bootstrap_super_admin() { compose run --rm --no-deps backend node dist-tools/prisma/seed-super-admin.js; }
 
 pending_recovery_path() { printf '%s\n' "$RELEASE_DIR/pending.json"; }
+pending_supersede_block_path() { printf '%s\n' "$RELEASE_DIR/pending-supersede-blocked"; }
+# Called before any activation or database restore. While a pending record
+# exists, durably record that its dump may no longer be superseded.
+block_pending_supersede() {
+  [ "$DRY_RUN" -eq 0 ] || return 0
+  load_pending_recovery
+  [ -n "$PENDING_SHA" ] || return 0
+  block=$(pending_supersede_block_path)
+  TEMP_FILE=$RELEASE_DIR/.pending-supersede-blocked.$$.tmp
+  umask 077
+  printf 'PENDING_SHA=%s\n' "$PENDING_SHA" > "$TEMP_FILE" || fail 'Unable to write pending supersede block.'
+  printf 'PENDING_SHA=%s\n' "$PENDING_SHA" | cmp -s - "$TEMP_FILE" || fail 'Pending supersede block was not written canonically.'
+  mv "$TEMP_FILE" "$block" || fail "Unable to publish pending supersede block: $block"
+  TEMP_FILE=
+}
 load_pending_recovery() {
   PENDING_SHA=''
   PENDING_DUMP=''
@@ -401,6 +416,7 @@ clear_pending_recovery() {
     return
   fi
   rm -f "$pending" || fail "Unable to clear pending recovery record: $pending"
+  rm -f "$(pending_supersede_block_path)" || fail 'Unable to clear pending supersede block.'
   PENDING_SHA=''
   PENDING_DUMP=''
 }
@@ -415,14 +431,15 @@ restore_pending_recovery() {
   PENDING_DUMP=$2
 }
 # A failed deploy that never activated strands pending.json on its SHA. A later
-# release may take it over only when the record's dump is provably the
+# release may take it over only when the record's dump is still the
 # pre-migration snapshot of the CURRENT manifest's database:
 # - a current release exists (bootstrap never supersedes) and is not the stranded SHA;
 # - the stranded SHA has no immutable manifest (pruning keeps the pending owner's);
-# - the dump is strictly newer than current.json. Every activation, deploy or
-#   rollback, rewrites current.json, so no release was activated since the dump;
-# - the dump is strictly newer than the last database restore stamp, so a
-#   restore (even one that later failed) did not replace the database since;
+# - no activation or restore ran while the record existed: both durably publish
+#   pending-supersede-blocked naming the pending SHA before they act
+#   (clock-independent authority);
+# - defence for records written before that marker existed: the dump is strictly
+#   newer than current.json, which every activation rewrites;
 # - the candidate descends from the stranded SHA.
 # Every read is checked explicitly: callers use this as a condition, where
 # errexit does not apply.
@@ -441,11 +458,11 @@ pending_supersedable() {
   case "$current_mtime" in ''|*[!0-9]*) return 1 ;; esac
   case "$dump_mtime" in ''|*[!0-9]*) return 1 ;; esac
   [ "$dump_mtime" -gt "$current_mtime" ] || return 1
-  restore_stamp=$(database_restore_stamp_path)
-  if [ -e "$restore_stamp" ]; then
-    restore_mtime=$(stat -c '%Y' "$restore_stamp" 2>/dev/null || stat -f '%m' "$restore_stamp") || return 1
-    case "$restore_mtime" in ''|*[!0-9]*) return 1 ;; esac
-    [ "$dump_mtime" -gt "$restore_mtime" ] || return 1
+  supersede_block=$(pending_supersede_block_path)
+  if [ -e "$supersede_block" ]; then
+    blocked_sha=$(sed -n 's/^PENDING_SHA=\([0-9a-f]*\)$/\1/p' "$supersede_block") || return 1
+    valid_sha "$blocked_sha" || return 1
+    [ "$blocked_sha" != "$stranded_sha" ] || return 1
   fi
   git -C "$APP_DIR" merge-base --is-ancestor "$stranded_sha" "$candidate_sha" || return 1
 }
@@ -453,6 +470,9 @@ supersede_pending_recovery() {
   # Re-validate the exact approved record and its eligibility under the deploy lock.
   load_pending_recovery
   [ "$PENDING_SHA" = "$SUPERSEDE_PENDING_SHA" ] && [ "$PENDING_DUMP" = "$SUPERSEDE_PENDING_DUMP" ] || fail 'Pending recovery record changed before supersede.'
+  # The current pointer must be byte-identical to the one migration preflight classified against.
+  locked_current_bytes=$(cat "$RELEASE_DIR/current.json") || fail 'Unable to read current release pointer.'
+  [ "$locked_current_bytes" = "$SUPERSEDE_CURRENT_BYTES" ] || fail 'Current release pointer changed before supersede.'
   if ! pending_supersedable "$PENDING_SHA" "$PENDING_DUMP" "$SHA"; then
     fail "Pending recovery record is no longer supersedable: $PENDING_SHA"
   fi
@@ -539,24 +559,14 @@ backup_and_validate() {
   publish_pending_recovery
   rotate_dumps
 }
-database_restore_stamp_path() { printf '%s\n' "$RELEASE_DIR/last-database-restore.stamp"; }
-stamp_database_restore() {
-  stamp=$(database_restore_stamp_path)
-  TEMP_FILE=$RELEASE_DIR/.last-database-restore.$$.tmp
-  umask 077
-  printf 'RESTORED_EPOCH=%s\n' "$(date -u +%s)" > "$TEMP_FILE" || fail 'Unable to write database restore stamp.'
-  mv "$TEMP_FILE" "$stamp" || fail "Unable to publish database restore stamp: $stamp"
-  TEMP_FILE=
-}
 restore_database() {
   if [ "$DRY_RUN" -eq 1 ]; then
     log "would ensure app role, restore database ACLs from $RESTORE_DUMP with pg_restore --dbname \$POSTGRES_DB --clean --if-exists --no-owner --exit-on-error --single-transaction, reconcile the event-SSOT ACL contract, and verify authorization invariants"
     return
   fi
-  # Durable evidence that the live database was replaced: pending dumps taken
-  # before this instant are no longer a snapshot of it, even if the restore
-  # later fails and retains the pending record.
-  stamp_database_restore
+  # The live database is about to be replaced: the pending dump stops being a
+  # snapshot of it, even if this restore later fails and keeps the record.
+  block_pending_supersede
   sync_app_role
   compose exec -T db sh -c 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error --single-transaction' < "$RESTORE_DUMP"
   # pg_restore recreates events under the init migration's ALTER DEFAULT PRIVILEGES
@@ -764,6 +774,7 @@ activate_manifest() {
   if [ "$DRY_RUN" -eq 1 ]; then log "would atomically activate $target_manifest as current and retain prior current as previous"; return; fi
   [ -f "$target_manifest" ] || fail "Immutable release manifest not found: $target_manifest"
   validate_existing_pointers
+  block_pending_supersede
   if [ -f "$RELEASE_DIR/current.json" ]; then
     TEMP_FILE=$RELEASE_DIR/.previous.$$.tmp
     cp "$RELEASE_DIR/current.json" "$TEMP_FILE"
@@ -862,6 +873,7 @@ if [ "$ROLLBACK" -eq 0 ] && [ "$RESTORE_COUNT" -eq 0 ] && [ -n "$PENDING_SHA" ] 
   if pending_supersedable "$PENDING_SHA" "$PENDING_DUMP" "$SHA"; then
     SUPERSEDE_PENDING_SHA=$PENDING_SHA
     SUPERSEDE_PENDING_DUMP=$PENDING_DUMP
+    SUPERSEDE_CURRENT_BYTES=$(cat "$RELEASE_DIR/current.json") || fail 'Unable to read current release pointer.'
   else
     fail "Pending recovery record belongs to a different SHA: $PENDING_SHA"
   fi

@@ -43,15 +43,17 @@ imaged, or started here.
   CURRENT manifest's database. That requires all of the following:
   - a current release exists, and the stranded SHA is neither current nor has an
     immutable manifest (pruning keeps the pending owner's manifest);
-  - the dump is strictly newer than `current.json`, since every activation
-    (deploy or rollback) rewrites it, so nothing was activated after the dump;
-  - the dump is strictly newer than `releases/last-database-restore.stamp`,
-    which every non-dry-run DB restore publishes before `pg_restore`. A
-    failed restore that retained the record still disqualifies it;
+  - no activation (deploy or rollback) and no DB restore ran while the record
+    existed. Both durably publish `releases/pending-supersede-blocked` naming
+    the pending SHA before acting, which makes this a clock-independent check.
+    A restore that later fails and keeps the record still blocks;
+  - for records written before that marker existed, the dump must also be
+    strictly newer than `current.json`, which every activation rewrites;
   - the candidate descends from the stranded SHA (`git merge-base --is-ancestor`).
 
-  Under the lock the deploy re-checks the exact record (SHA and dump) and its
-  eligibility. It then publishes `{new SHA, SAME dump}` via a verified temp file
+  Under the lock the deploy re-checks the exact record (SHA and dump), that
+  `current.json` is byte-identical to the pointer migration preflight
+  classified against, and eligibility. It then publishes `{new SHA, SAME dump}` via a verified temp file
   and atomic rename, so the dump stays referenced and rotation-protected, and
   no fresh, possibly half-migrated dump is taken. Dry-run only logs
   `would supersede`. Rollback, restore, and bootstrap never supersede.

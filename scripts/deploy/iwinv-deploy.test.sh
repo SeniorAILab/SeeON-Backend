@@ -1473,13 +1473,20 @@ DUMPS=$TMP/root/backups/db
 [ ! -e "$REL/$STRANDED_SHA.json" ] && [ ! -e "$REL/$SUPERSEDE_SHA.json" ]
 STRANDED_RECORD=$(printf '{"sha":"%s","pre_migration_dump":"%s"}' "$STRANDED_SHA" "$STRANDED_DUMP")
 [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
+SUPERSEDE_BLOCK=$REL/pending-supersede-blocked
+# The code-only rollback above activated a release while this record existed,
+# so it durably blocked superseding it (clock-independent).
+[ "$(cat "$SUPERSEDE_BLOCK")" = "PENDING_SHA=$STRANDED_SHA" ] || { printf '%s\n' 'rollback activation did not block pending supersede' >&2; exit 1; }
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
+[ ! -s "$TMP/mock.log" ]
+# Fixture: from here the record is a fresh stranded one, created after that rollback.
+rm -f "$SUPERSEDE_BLOCK"
 # Dump taken after current.json was last activated (the production shape).
-RESTORE_STAMP=$REL/last-database-restore.stamp
-# Earlier restore tests left a stamp; an older restore does not block supersede.
-stranded_mtimes() {
-  touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"
-  [ ! -e "$RESTORE_STAMP" ] || touch -d @1699999000 "$RESTORE_STAMP"
-}
+stranded_mtimes() { touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"; }
 stranded_mtimes
 cp "$REL/current.json" "$TMP/current.before-supersede"
 cp "$TMP/root/shared/release-images.env" "$TMP/release-images.env.before-supersede"
@@ -1518,8 +1525,9 @@ output=$(MOCK_BACKEND_FAIL=1 MOCK_SHA="$CURRENT_POINTER_SHA" run_deploy --restor
 set -e
 assert_failure "$status"
 [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ] || { printf '%s\n' 'failed restore did not retain the pending record' >&2; exit 1; }
-grep -Eq '^RESTORED_EPOCH=[0-9]+$' "$RESTORE_STAMP" || { printf '%s\n' 'restore did not publish its stamp' >&2; exit 1; }
-touch -d @1700000000 "$REL/current.json"; touch -d @1700000600 "$DUMPS/$STRANDED_DUMP"; touch -d @1700000700 "$RESTORE_STAMP"
+[ "$(cat "$SUPERSEDE_BLOCK")" = "PENDING_SHA=$STRANDED_SHA" ] || { printf '%s\n' 'restore did not block pending supersede' >&2; exit 1; }
+# Mtimes stay in the eligible order: the block alone (not the clock) refuses it.
+stranded_mtimes
 cp "$REL/current.json" "$TMP/current.before-supersede"
 : > "$TMP/mock.log"
 set +e
@@ -1527,6 +1535,7 @@ output=$(MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
 set -e
 assert_failure "$status"; assert_contains "$output" "Pending recovery record belongs to a different SHA: $STRANDED_SHA"
 [ ! -s "$TMP/mock.log" ]
+rm -f "$SUPERSEDE_BLOCK"
 stranded_mtimes
 cp "$REL/current.json" "$TMP/current.before-supersede"
 cp "$TMP/root/shared/release-images.env" "$TMP/release-images.env.before-supersede"
@@ -1546,6 +1555,18 @@ assert_failure "$status"; assert_contains "$output" "Pending recovery record is 
 assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
 assert_not_contains "$(cat "$TMP/mock.log")" 'compose stop'
 [ "$(cat "$REL/pending.json")" = "$STRANDED_RECORD" ]
+stranded_mtimes
+# The current pointer must stay byte-identical to the one migration preflight
+# classified against, even when a swapped-in retained manifest keeps an old mtime.
+cmp -s "$REL/previous.json" "$REL/current.json" && { printf '%s\n' 'fixture: previous equals current' >&2; exit 1; }
+cp "$REL/current.json" "$TMP/current.saved"
+: > "$TMP/mock.log"
+set +e
+output=$(MOCK_LOCK_HOOK="cp '$REL/previous.json' '$REL/current.json' && touch -d @1700000000 '$REL/current.json'" MOCK_SHA="$SUPERSEDE_SHA" run_deploy --sha "$SUPERSEDE_SHA"); status=$?
+set -e
+assert_failure "$status"; assert_contains "$output" 'Current release pointer changed before supersede.'
+assert_not_contains "$(cat "$TMP/mock.log")" 'pg_dump'
+cp "$TMP/current.saved" "$REL/current.json"; rm -f "$TMP/current.saved"
 stranded_mtimes
 OTHER_DUMP=normal-other-stranded.dump
 : > "$DUMPS/$OTHER_DUMP"
