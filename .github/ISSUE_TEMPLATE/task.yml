@@ -8,7 +8,7 @@ body:
       label: Type
       description: >
         Select the type that best describes this work. This drives the `<type>` prefix you use
-        when naming the branch `<type>/<issue#>-<slug>` (see docs/rules/worktree-workflow.md).
+        when naming the branch `<type>/<issue#>-<slug>`.
       options:
         - "feat — new feature or capability"
         - "fix — bug fix"

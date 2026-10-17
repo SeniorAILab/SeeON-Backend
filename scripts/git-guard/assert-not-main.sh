@@ -11,6 +11,5 @@ branch=$(gg_current_branch)
 if gg_is_protected "$branch"; then
   gg_die "You are on protected branch '$branch' — don't work here.
   -> Open an idle lane and branch there:         git switch -c <type>/<issue#>-<slug> origin/main
-  -> Why / how:                                  docs/rules/worktree-workflow.md
   -> Deliberate maintenance escape hatch:        GIT_GUARD_PROTECTED= git <cmd>"
 fi

@@ -38,7 +38,7 @@ backend/src/       # NestJS API, 인증·도메인·미디어 모듈
 backend/prisma/    # Prisma 스키마, 마이그레이션, 시드 및 DB 역할 초기화
 infra/             # API ingress nginx 및 Jenkins 컨트롤러 이미지 정의
 scripts/           # 로컬 실행, 환경 계약, 저장소 가드, 릴리스·배포 도구
-docs/              # 아키텍처, OpenAPI, 결정 기록, 운영 규칙, 추출 이력
+docs/              # 아키텍처, OpenAPI, 결정 기록, 추출 이력
 compose*.yaml      # PostgreSQL 로컬 스택 및 백엔드 운영 오버레이
 ```
 
@@ -46,7 +46,6 @@ compose*.yaml      # PostgreSQL 로컬 스택 및 백엔드 운영 오버레이
 - [OpenAPI v1 계약](./docs/openapi/v1.json) · 실행 중 문서 UI: `/api/docs`
 - [추출 이력과 커밋 맵](./docs/provenance/README.md)
 - [릴리스 기반 CD 결정](./docs/decisions/ADR-002-release-based-cd.md)
-- [파일럿 운영 런북](./docs/rules/pilot-launch-runbook.md)
 - [기여·마이그레이션·배포 규칙](./AGENTS.md)
 
 ## 시작하기

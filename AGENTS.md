@@ -43,14 +43,13 @@ on by routing or CI.
 | Task                  | Location                                                                 | Notes                                                                  |
 | --------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
 | CD decisions          | `docs/decisions/ADR-002-release-based-cd.md`                             | Current release-based CD; new ADRs are explicit-request only.          |
-| Standing rules        | `docs/rules/`                                                            | Pilot launch runbook.                                                  |
 | Extraction provenance | `docs/provenance/README.md`                                              | Source repo, commit map, source PRs #675 through #678.                 |
 | Backend API / DB      | `backend/AGENTS.md`, `backend/src/AGENTS.md`, `backend/prisma/AGENTS.md` | Modules, Prisma schema, migrations.                                    |
 | Alert domain          | `backend/src/alerts/AGENTS.md`                                           | Policy, write path, outbox, email channel port.                        |
 | Media clips           | `backend/src/media/AGENTS.md`                                            | Largest backend module; clip lifecycle + access audit.                 |
 | Backend tests         | `backend/test/AGENTS.md`                                                 | Integration/e2e placement, real-Postgres harnesses.                    |
 | API ingress           | `infra/api-ingress/`                                                     | nginx config + `nginx-config.test.sh`.                                 |
-| Jenkins controller    | `infra/jenkins/`, `docs/rules/jenkins-controller-replacement.md`         | Pinned image/plugins, host service contract, replacement and rollback. |
+| Jenkins controller    | `infra/jenkins/`                                                         | Pinned image/plugins, host service contract.                           |
 | Scripts / guards      | `scripts/AGENTS.md`, `scripts/deploy/AGENTS.md`                          | Hard gates and deploy/release automation.                              |
 | CI / PR policy        | `.github/AGENTS.md`, `.github/workflows/`                                | CI gates, PR policy, release signal.                                   |
 
@@ -93,7 +92,7 @@ pnpm release:prod -- vX.Y.Z
 
 - `pnpm` only (single workspace package: `backend`); never add an npm/yarn lockfile.
 - Local/native/Prisma/Compose env comes from root `.env.local`; local prod Compose from `.env.host.prod`. Real VM prod env is host-only at `/opt/eldercare-fall-ai/shared/.env` (legacy host path retained on the server). Do not create package-local `.env*`.
-- Root `AGENTS.md` is a router. Durable implementation rules go in the owning scoped `AGENTS.md` or `docs/rules/**`, not here.
+- Root `AGENTS.md` is a router. Durable implementation rules go in the owning scoped `AGENTS.md`, not here.
 - ADRs belong in `docs/decisions/**` only when the user explicitly asks.
 - Frontend work belongs in `SeniorAILab/SeeON-Front`; the only coupling allowed here is the API/DTO/SSE contract and the `FRONT_ORIGINS` CORS allowlist.
 - Cross-repo work proceeds only through agreed API, DTO, event, or schema contracts.
@@ -107,11 +106,11 @@ pnpm release:prod -- vX.Y.Z
 - Do not add an embedded frontend (`front/`), Vercel config, ML runtime code, `ml/`, `compose.edge.yaml`, or ML image/CD logic here. Hard-blocked by `scripts/repo-residue-check.mjs --repo-role backend` in CI.
 - Do not call mock/stub/fake harnesses E2E. Documentation-only rule with no automated check, so the claim is on you: real E2E must pass production code paths.
 - Do not duplicate guard logic across CI, package scripts, or hooks. `scripts/**` owns reusable automation; no detector enforces this.
-- Do not bury new standing rules in scratch notes or memory. Promote them to `docs/rules/**` or the scoped `AGENTS.md`.
+- Do not bury new standing rules in scratch notes or memory. Promote them to the scoped `AGENTS.md`.
 
 ## Notes
 
 - Read the nearest scoped `AGENTS.md` before editing under `backend/`, `scripts/`, or `.github/`. Deep subtrees with their own files: `backend/src/{alerts,auth,media}`, `backend/{prisma,test}`, `scripts/deploy`.
 - CI jobs: `changes`, `backend`, `env-contract`, `deploy-contract`, `repo-residue` (display name "Backend repository residue"), aggregate `ci-gate`. PR checks allow bases `main`/`release/*`/`hotfix/*`, reject same-repo `main` heads, and hard-fail logic churn over 1000 lines unless the PR carries `size/override`.
 - Publishing a release does not itself deploy: `deploy-iwinv.yml` sends Jenkins an empty signal; Jenkins resolves the latest stable tag (or the `RELEASE_TAG` job parameter, which is the rollback path) and runs build → dump → migrate → up → `/health` sha. See `scripts/deploy/AGENTS.md`.
-- Backend convention SoT is the lint policy itself, not a rule doc: `backend/eslint.config.mjs` (and `backend/eslint.dto.config.mjs`, used by `pnpm --filter backend run dto:check`) enables `architecture/boundaries` from `backend/eslint/architecture.mjs`, whose accepted and rejected cases are pinned by `backend/eslint/architecture.test.mjs` (`pnpm --filter backend run architecture:check`). No `docs/rules/**` doc restates it; do not add one unless the user asks.
+- Backend convention SoT is the lint policy itself, not a rule doc: `backend/eslint.config.mjs` (and `backend/eslint.dto.config.mjs`, used by `pnpm --filter backend run dto:check`) enables `architecture/boundaries` from `backend/eslint/architecture.mjs`, whose accepted and rejected cases are pinned by `backend/eslint/architecture.test.mjs` (`pnpm --filter backend run architecture:check`). No rule doc restates it; do not add one unless the user asks.

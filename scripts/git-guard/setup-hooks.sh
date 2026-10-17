@@ -29,4 +29,4 @@ printf '[git-guard] hooks active    : .githooks/pre-commit  .githooks/pre-push\n
 printf '[git-guard] session start   : sync-main (ff main) + check-freshness (warn)\n'
 printf '[git-guard] guard scripts   : scripts/git-guard/\n'
 printf '[git-guard] backend guard   : scripts/backend-guard/ (schema↔migration coupling)\n'
-printf '[git-guard] setup complete  — open an idle lane and branch with `git switch -c <type>/<issue#>-<slug> origin/main` (see docs/rules/worktree-workflow.md).\n'
+printf '[git-guard] setup complete  — open an idle lane and branch with `git switch -c <type>/<issue#>-<slug> origin/main`.\n'

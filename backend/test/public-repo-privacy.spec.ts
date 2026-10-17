@@ -49,7 +49,6 @@ const LEGACY_PRODUCT_IPV4_FILES = new Set([
   'backend/src/config/env-validation.spec.ts',
   'backend/src/config/frontend-origins.spec.ts',
   'backend/test/cors.spec.ts',
-  'docs/runbooks/product-ready-cutover.md',
   'scripts/env/verify-compose-env-contract.mjs',
   'scripts/env/verify-event-clip-compose.mjs',
 ]);

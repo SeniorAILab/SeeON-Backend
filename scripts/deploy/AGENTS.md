@@ -76,8 +76,7 @@ re-run of the Jenkins job with `RELEASE_TAG=<previous tag>`.
 
 ## Jenkins controller and job seed
 - `infra/jenkins/` is the versioned source of truth for the pinned controller
-  image, plugin lock, and `/opt/jenkins` Compose service contract. Replace it
-  only through `docs/rules/jenkins-controller-replacement.md`.
+  image, plugin lock, and `/opt/jenkins` Compose service contract.
 - `scripts/deploy/jenkins-job-seed.groovy` is the versioned Job DSL seed. The
   server copy at `/opt/jenkins/jobs.groovy` must stay byte-identical; update both
   in the same change. The `RELEASE_TAG` parameter is declared in the Jenkinsfile.
