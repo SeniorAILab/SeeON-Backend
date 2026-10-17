@@ -14,7 +14,6 @@ scripts/
 ├── deploy/         # iwinv host bootstrap and VM-side deploy execution
 ├── env/            # compose/env example contract verification
 ├── git-guard/      # worktree, freshness, lint/type, migration, asset guards
-├── integration/    # cloud/edge provisioning integration harness
 ├── release/        # production release creation
 └── repo-residue-check.mjs  # backend ownership residue gate (CI job `repo-residue`)
 ```
