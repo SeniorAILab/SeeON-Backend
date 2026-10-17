@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "Eldercare Edge Enrollment and Topology API",
+    "title": "Eldercare backend API",
     "version": "1.0.0",
-    "description": "Canonical frozen v1 contract for edge credential administration, installation enrollment, edge-authored topology reconciliation, machine ingest/config access, and audited clip download. Server-derived facility, installation, and enrollment-generation identity is authoritative on every edge-bearer request."
+    "description": "Frozen v1 contract for the backend API: auth, facilities, floors, spaces, cameras, users, alerts and alert media, dashboard stream and receipts, ML config, edge credential administration, enrollment and topology, and the machine ingest API (events, clips, capabilities). Server-derived facility, installation, and enrollment-generation identity is authoritative on every edge-bearer request."
   },
   "servers": [
     {
@@ -1969,6 +1969,25 @@
             "$ref": "#/components/responses/AuthNotConfigured"
           }
         }
+      },
+      "get": {
+        "description": "Returns the authenticated facility's recorded ML event history for operational review.",
+        "operationId": "EventsController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List recorded events",
+        "tags": [
+          "Events"
+        ]
       }
     },
     "/api/v1/events/heartbeat": {
