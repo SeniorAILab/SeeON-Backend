@@ -1971,17 +1971,44 @@
         }
       },
       "get": {
-        "description": "Returns the authenticated facility's recorded ML event history for operational review.",
-        "operationId": "EventsController_list_v1",
-        "parameters": [],
+        "description": "Returns the authenticated facility's recorded ML event history, newest first, as a cursor-paginated page for operational review. Pass `nextCursor` from the previous page as `cursor` to continue; a null `nextCursor` means the history is exhausted.",
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                }
+              }
+            }
           }
         },
         "security": [
           {
-            "cookie": []
+            "sessionCookie": []
           }
         ],
         "summary": "List recorded events",
@@ -5449,6 +5476,150 @@
         "items": {
           "$ref": "#/components/schemas/Alert"
         }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "facilityId": {
+            "type": "string"
+          },
+          "cameraId": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "confidence": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "configVersion": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelVersion": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detectorVersion": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operatingThreshold": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshotKey": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clockSource": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "facilityId",
+          "cameraId",
+          "spaceId",
+          "type",
+          "confidence",
+          "detectedAt",
+          "createdAt",
+          "modifiedAt",
+          "configVersion",
+          "modelVersion",
+          "detectorVersion",
+          "operatingThreshold",
+          "snapshotKey",
+          "clockSource"
+        ]
+      },
+      "EventList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
       }
     },
     "parameters": {
