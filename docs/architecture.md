@@ -100,7 +100,8 @@ sequenceDiagram
 
   E->>G: POST /api/v1/events + Edge 자격 증명
   G->>C: 프록시된 요청
-  C->>R: camera_id와 이벤트 사실 전달
+  C->>A: camera_id와 이벤트 사실 전달
+  A->>R: 이벤트 기록 요청
   R->>DB: 카메라 소유 시설 해석 후 중복 방지 기록
   DB-->>R: 기존 또는 생성된 Event
   R-->>A: 기록 결과

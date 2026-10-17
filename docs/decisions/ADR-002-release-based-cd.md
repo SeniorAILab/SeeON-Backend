@@ -112,7 +112,6 @@ so the deployer acts on repository truth rather than payload data.
 
 ## Follow-ups
 
-- Remove obsolete Jenkins parameters after cutover housekeeping.
 - Track public transport hardening in issue #587 (pre-extraction source-repo
   issue; see references note above).
 
@@ -121,3 +120,4 @@ so the deployer acts on repository truth rather than payload data.
 - 2026-07-12: initial decision (combined `SeniorAILab/eldercare-fall-ai` repo).
 - 2026-08-12: amended for the `SeniorAILab/SeeON-Backend` extraction: the image
   set is backend + API ingress; no frontend image is built or deployed here.
+- 2026-10-11: amended with the plain deploy pipeline (build, dump, migrate, up, health-sha); the server-side release state machine was removed.
